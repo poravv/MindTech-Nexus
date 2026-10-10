@@ -1,4 +1,4 @@
-# Desarrollo local: Postgres de Nexus + nexus-api (perfil Spring "local").
+# Desarrollo local: Postgres de Nexus + nexus-api (perfil Spring "local") + consola (nginx, host 4200).
 # Los secretos salen de .env (gitignored; plantilla en .env.example). Puertos de host elegidos para no
 # chocar con los stacks locales de punto-venta/electronico-sifen/gift-hub.
 name: mindtech-nexus
@@ -36,6 +36,14 @@ services:
     ports:
       - "8090:8080"
       - "8091:8081"
+
+  # Misma imagen que en el cluster: nginx hace proxy de /api/admin/ y /api/v1/webhooks/ a nexus-api:8080.
+  nexus-console:
+    build: ./nexus-console
+    depends_on:
+      - nexus-api
+    ports:
+      - "4200:8080"
 
 volumes:
   nexus-pgdata:
