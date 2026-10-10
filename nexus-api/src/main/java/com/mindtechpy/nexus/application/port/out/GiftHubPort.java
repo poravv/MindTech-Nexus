@@ -44,4 +44,10 @@ public interface GiftHubPort {
 
     /** Upserts up to 500 products; {@code dryRun} only reports what would happen. */
     BulkResult upsertProducts(Endpoint giftHub, Duration readTimeout, List<Product> products, boolean dryRun);
+
+    /**
+     * Takes up to 500 products off sale ({@code archived: true} in the bulk upsert: GiftHub keeps the product
+     * with {@code available = false}); listing them again in an upsert puts them back on sale.
+     */
+    BulkResult archiveProducts(Endpoint giftHub, Duration readTimeout, List<String> externalIds);
 }

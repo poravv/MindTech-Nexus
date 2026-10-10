@@ -84,6 +84,14 @@ class GiftHubRestClient implements GiftHubPort {
         return dryRun ? dryRunResult(body) : bulkResult(body);
     }
 
+    @Override
+    public BulkResult archiveProducts(Endpoint giftHub, Duration readTimeout, List<String> externalIds) {
+        List<Object> rows = externalIds.stream().<Object>map(id -> object("external_id", id, "archived", true)).toList();
+        Response response = http.call(giftHub.connection().baseUrl(), readTimeout, HttpMethod.PUT, BASE + "/products/bulk",
+                bearer(giftHub, null), Map.of("products", rows));
+        return bulkResult(requireSuccess(response));
+    }
+
     private static BulkResult bulkResult(JsonNode body) {
         int created = 0;
         int updated = 0;

@@ -7,6 +7,9 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -38,6 +41,53 @@ class JdbcEntityMappingRepository implements EntityMappingRepository {
                 .param("connectionId", connectionId)
                 .param("type", type.name())
                 .param("pairs", json.writeValueAsString(externalByInternal))
+                .update();
+    }
+
+    @Override
+    public void markSeen(TenantId tenantId, UUID connectionId, EntityType type, Collection<String> internalIds, Instant runStartedAt) {
+        if (internalIds.isEmpty()) {
+            return;
+        }
+        jdbc.sql("""
+                        UPDATE entity_mappings SET last_seen_at = GREATEST(last_seen_at, :runStartedAt)
+                        WHERE tenant_id = :tenantId AND connection_id = :connectionId AND entity_type = :type
+                          AND internal_id = ANY (CAST(:ids AS text[]))""")
+                .param("runStartedAt", JdbcValues.timestamp(runStartedAt))
+                .param("tenantId", tenantId.value())
+                .param("connectionId", connectionId)
+                .param("type", type.name())
+                .param("ids", internalIds.toArray(String[]::new))
+                .update();
+    }
+
+    @Override
+    public List<String> findNotSeenSince(TenantId tenantId, UUID connectionId, EntityType type, Instant runStartedAt) {
+        return jdbc.sql("""
+                        SELECT internal_id FROM entity_mappings
+                        WHERE tenant_id = :tenantId AND connection_id = :connectionId AND entity_type = :type
+                          AND (last_seen_at IS NULL OR last_seen_at < :runStartedAt)
+                        ORDER BY internal_id""")
+                .param("tenantId", tenantId.value())
+                .param("connectionId", connectionId)
+                .param("type", type.name())
+                .param("runStartedAt", JdbcValues.timestamp(runStartedAt))
+                .query(String.class).list();
+    }
+
+    @Override
+    public void deleteAll(TenantId tenantId, UUID connectionId, EntityType type, Collection<String> internalIds) {
+        if (internalIds.isEmpty()) {
+            return;
+        }
+        jdbc.sql("""
+                        DELETE FROM entity_mappings
+                        WHERE tenant_id = :tenantId AND connection_id = :connectionId AND entity_type = :type
+                          AND internal_id = ANY (CAST(:ids AS text[]))""")
+                .param("tenantId", tenantId.value())
+                .param("connectionId", connectionId)
+                .param("type", type.name())
+                .param("ids", internalIds.toArray(String[]::new))
                 .update();
     }
 }

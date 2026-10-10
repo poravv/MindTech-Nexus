@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static java.lang.System.Logger.Level.INFO;
 
@@ -29,11 +30,18 @@ import static java.lang.System.Logger.Level.INFO;
  * page of {@value #PAGE_SIZE} (the POS and GiftHub bulk maximum): read the page, upsert it with
  * {@code PUT /products/bulk}, record the counts and move to the next page until the POS total is covered.
  * A failure retries the same page (both calls are idempotent), never the pages already pushed. No
- * compensation: an upsert leaves nothing to undo. Products the POS stops listing are not archived in v1.
+ * compensation: an upsert leaves nothing to undo.
+ * <p>
+ * Every page marks its POS codes as seen by the run (its start time). After the last page,
+ * {@code ARCHIVE_MISSING} takes off sale in GiftHub the mapped products neither this run nor a newer one saw
+ * (the POS stopped listing them) and forgets their mappings, so the next run that sees them again puts them
+ * back on sale. A run whose POS catalog came back
+ * empty archives nothing: an empty catalog is far likelier a POS fault than a shop with nothing to sell.
  */
 public class CatalogSyncSaga implements Saga {
 
     static final String SYNC_PAGE = "SYNC_PAGE";
+    static final String ARCHIVE_MISSING = "ARCHIVE_MISSING";
     static final int PAGE_SIZE = 500;
     static final String DEFAULT_CATEGORY = "General";
     private static final int ERROR_SAMPLES = 10;
@@ -69,6 +77,9 @@ public class CatalogSyncSaga implements Saga {
                     "La integración CATALOG debe tener el POS como origen y GiftHub como destino"));
         }
         Map<String, Object> result = new HashMap<>(op.result() == null ? Map.of() : op.result());
+        if (ARCHIVE_MISSING.equals(context.step())) {
+            return archiveMissing(context, result);
+        }
         int page = ((Number) result.getOrDefault("nextPage", 1)).intValue();
         boolean dryRun = Boolean.TRUE.equals(context.target().connection().settings().get("dryRun"));
         Duration readTimeout = Duration.ofMillis(context.integration().policy().readTimeoutMs());
@@ -77,8 +88,11 @@ public class CatalogSyncSaga implements Saga {
             GiftHubPort.BulkResult pushed = catalog.items().isEmpty()
                     ? new GiftHubPort.BulkResult(0, 0, 0, List.of(), Map.of())
                     : giftHub.upsertProducts(context.target(), readTimeout, catalog.items().stream().map(CatalogSyncSaga::product).toList(), dryRun);
-            if (!dryRun && !pushed.productIds().isEmpty()) {
-                mappings.saveAll(op.tenantId(), context.target().connection().id(), EntityType.PRODUCT, pushed.productIds());
+            if (!dryRun) {
+                UUID giftHubId = context.target().connection().id();
+                mappings.saveAll(op.tenantId(), giftHubId, EntityType.PRODUCT, pushed.productIds());
+                mappings.markSeen(op.tenantId(), giftHubId, EntityType.PRODUCT,
+                        catalog.items().stream().map(PosPort.CatalogItem::code).toList(), op.createdAt());
             }
             accumulate(result, page, catalog, pushed, dryRun);
             boolean more = (long) page * PAGE_SIZE < catalog.total() && !catalog.items().isEmpty();
@@ -90,10 +104,39 @@ public class CatalogSyncSaga implements Saga {
                 return new StepResult.Next(SYNC_PAGE, null, "page-" + page, result);
             }
             result.remove("nextPage");
+            if (!dryRun && ((Number) result.get("fetched")).longValue() > 0) {
+                return new StepResult.Next(ARCHIVE_MISSING, null, "page-" + page, result);
+            }
             return new StepResult.Completed("page-" + page, result);
         } catch (ConnectorException e) {
             return new StepResult.Failed(e.error());
         }
+    }
+
+    /**
+     * Archives in chunks of {@value #PAGE_SIZE}; each chunk forgets the mappings GiftHub applied, so a retry
+     * only resends what is left. Rows GiftHub rejects keep their mapping and are counted in {@code archiveErrors}.
+     */
+    private StepResult archiveMissing(StepContext context, Map<String, Object> result) {
+        Operation op = context.operation();
+        UUID giftHubId = context.target().connection().id();
+        Duration readTimeout = Duration.ofMillis(context.integration().policy().readTimeoutMs());
+        List<String> missing = mappings.findNotSeenSince(op.tenantId(), giftHubId, EntityType.PRODUCT, op.createdAt());
+        try {
+            for (int from = 0; from < missing.size(); from += PAGE_SIZE) {
+                List<String> chunk = missing.subList(from, Math.min(from + PAGE_SIZE, missing.size()));
+                GiftHubPort.BulkResult archived = giftHub.archiveProducts(context.target(), readTimeout, chunk);
+                mappings.deleteAll(op.tenantId(), giftHubId, EntityType.PRODUCT, archived.productIds().keySet());
+                add(result, "archived", archived.productIds().size());
+                add(result, "archiveErrors", archived.errors().size());
+            }
+        } catch (ConnectorException e) {
+            return new StepResult.Failed(e.error());
+        }
+        log.log(INFO, "[NEXUS-CATALOG] op={0} tenant={1} {2} productos que el POS ya no lista: archivados={3} errores={4}",
+                op.id(), op.tenantId(), missing.size(), result.getOrDefault("archived", 0), result.getOrDefault("archiveErrors", 0));
+        result.putIfAbsent("archived", 0L);
+        return new StepResult.Completed("archived-" + missing.size(), result);
     }
 
     /**

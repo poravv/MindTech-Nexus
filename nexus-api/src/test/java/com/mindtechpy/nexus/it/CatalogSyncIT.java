@@ -98,6 +98,64 @@ class CatalogSyncIT extends AbstractConnectorIT {
     }
 
     @Test
+    void should_archive_in_gifthub_the_mapped_products_the_pos_no_longer_lists() {
+        UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+        insertProductMapping("P-0001");
+        insertProductMapping("P-RETIRADO");
+        stubPos(get(urlPathEqualTo(pos("/api/integration/catalog"))).willReturn(okJson(catalogPage(1, 1, 1))));
+        stubGiftHub(put(urlPathEqualTo(gh("/products/bulk"))).willReturn(okJson(bulkResponse()).withTransformers("response-template")));
+
+        Operation op = runNow(integration);
+        drain();
+
+        Operation done = reload(op.id());
+        assertThat(done.status()).isEqualTo(OperationStatus.SUCCEEDED);
+        assertThat(done.result()).containsEntry("archived", 1).containsEntry("archiveErrors", 0);
+        var bulks = giftHubRequests("PUT", "/products/bulk");
+        assertThat(bulks).hasSize(2);
+        JsonNode archived = jsonOf(bulks.get(1)).get("products");
+        assertThat(archived).hasSize(1);
+        assertThat(archived.get(0).get("external_id").asString()).isEqualTo("P-RETIRADO");
+        assertThat(archived.get(0).get("archived").asBoolean()).isTrue();
+        assertThat(productMappings()).containsExactly("P-0001");
+    }
+
+    @Test
+    void should_keep_mapping_and_report_error_when_gifthub_rejects_the_archive_of_a_product() {
+        UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+        insertProductMapping("P-BORRADO-EN-GIFTHUB");
+        stubPos(get(urlPathEqualTo(pos("/api/integration/catalog"))).willReturn(okJson(catalogPage(1, 1, 1))));
+        stubGiftHub(put(urlPathEqualTo(gh("/products/bulk"))).withRequestBody(notContaining("\"archived\""))
+                .willReturn(okJson(bulkResponse()).withTransformers("response-template")));
+        stubGiftHub(put(urlPathEqualTo(gh("/products/bulk"))).withRequestBody(containing("\"archived\""))
+                .willReturn(okJson("{\"results\":[{\"external_id\":\"P-BORRADO-EN-GIFTHUB\",\"result\":\"error\","
+                        + "\"error\":\"name es obligatorio al crear\"}]}")));
+
+        Operation op = runNow(integration);
+        drain();
+
+        Operation done = reload(op.id());
+        assertThat(done.status()).isEqualTo(OperationStatus.SUCCEEDED);
+        assertThat(done.result()).containsEntry("archived", 0).containsEntry("archiveErrors", 1);
+        assertThat(productMappings()).contains("P-BORRADO-EN-GIFTHUB");
+    }
+
+    @Test
+    void should_archive_nothing_when_the_pos_catalog_comes_back_empty() {
+        UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+        insertProductMapping("P-0001");
+        stubPos(get(urlPathEqualTo(pos("/api/integration/catalog")))
+                .willReturn(okJson(toJson(Map.of("items", List.of(), "page", 1, "limit", 500, "total", 0)))));
+
+        Operation op = runNow(integration);
+        drain();
+
+        assertThat(reload(op.id()).status()).isEqualTo(OperationStatus.SUCCEEDED);
+        assertThat(giftHubRequests("PUT", "/products/bulk")).isEmpty();
+        assertThat(productMappings()).containsExactly("P-0001");
+    }
+
+    @Test
     void should_create_one_run_per_window_when_scheduler_ticks_repeatedly() {
         UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
 
@@ -130,6 +188,18 @@ class CatalogSyncIT extends AbstractConnectorIT {
         JsonNode started = body(perform(MockMvcRequestBuilders.post("/api/admin/integrations/{id}/run", integration).param("tenantId", tenant.toString())
                 .header("Authorization", bearer(admin)), 202));
         return reload(UUID.fromString(started.get("operationId").asString()));
+    }
+
+    private void insertProductMapping(String code) {
+        jdbc.sql("""
+                INSERT INTO entity_mappings (id, tenant_id, connection_id, entity_type, internal_id, external_id)
+                VALUES (gen_random_uuid(), :t, :c, 'PRODUCT', :code, :gh)""")
+                .param("t", tenant).param("c", giftHubConnection).param("code", code).param("gh", "gh-" + code).update();
+    }
+
+    private List<String> productMappings() {
+        return jdbc.sql("SELECT internal_id FROM entity_mappings WHERE tenant_id = :t AND entity_type = 'PRODUCT' ORDER BY internal_id")
+                .param("t", tenant).query(String.class).list();
     }
 
     private void stubCatalogPages() {
