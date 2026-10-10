@@ -18,10 +18,11 @@
       @for (signal of node.signals; track signal.label) {
         <span class="signal" [class]="'signal tone-' + signal.tone" [attr.title]="signal.label"><app-icon [name]="signal.icon" /></span>
       }
-      @if (node.note) {
-        <span class="node-note">{{ node.note }}</span>
-      }
+      <span class="node-note">{{ node.signals[0]?.label }}</span>
     </p>
+    @if (node.note) {
+      <p class="node-note" aria-hidden="true" [attr.title]="node.note">{{ node.note }}</p>
+    }
   </div>
 
   @if (node.actions?.length) {

@@ -24,7 +24,7 @@ export interface MapNode {
   title: string;
   link?: string | unknown[];
   signals: MapSignal[];
-  /** Short text after the signals ("Degradada · 3 en DLQ"). */
+  /** Second line under the signals ("3 integraciones · 1 con fallas"). */
   note?: string;
   /** ISO date for the age pill (last activity or last change). */
   since?: string | null;
@@ -53,10 +53,10 @@ export interface TreeLayout {
   height: number;
 }
 
-export const NODE_WIDTH = 330;
-export const NODE_HEIGHT = 92;
-export const ROW = 124;
-export const GAP_X = 96;
+export const NODE_WIDTH = 320;
+export const NODE_HEIGHT = 112;
+export const ROW = 144;
+export const GAP_X = 72;
 const ARROW_GAP = 4;
 
 /**

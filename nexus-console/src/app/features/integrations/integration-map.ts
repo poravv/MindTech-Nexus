@@ -71,7 +71,7 @@ export function operationNode(op: Operation): MapNode {
     title: op.kind,
     link: ['/operaciones', op.id],
     signals: [statusSignal(op.status)],
-    note: `${STATUS_META[op.status]?.label ?? op.status} · ${op.currentStep ?? 'sin paso'} · ${op.attempts}/${op.maxAttempts}`,
+    note: `${op.currentStep ?? 'sin paso'} · intento ${op.attempts}/${op.maxAttempts}`,
     since: op.createdAt,
   };
 }
@@ -79,7 +79,7 @@ export function operationNode(op: Operation): MapNode {
 function countNote(rows: IntegrationRow[]): string {
   const degraded = rows.filter((row) => row.health === 'DEGRADED').length;
   const count = `${rows.length} ${rows.length === 1 ? 'integración' : 'integraciones'}`;
-  return degraded ? `${count} · ${degraded} con fallas` : count;
+  return degraded ? `${count} · ${degraded} ${degraded === 1 ? 'falla' : 'fallan'}` : count;
 }
 
 export function tenantNode(tenant: Tenant, rows: IntegrationRow[], children: MapNode[], actions: MapAction[] = []): MapNode {
@@ -104,7 +104,7 @@ export function platformNode(tenants: Tenant[], rows: IntegrationRow[], children
     kind: 'plataforma',
     title: 'MindTech Nexus',
     signals: [healthSignal(worstHealth(rows.map((row) => row.health)))],
-    note: `${tenants.length} ${tenants.length === 1 ? 'tenant' : 'tenants'} · ${countNote(rows)}`,
+    note: `${tenants.length} ${tenants.length === 1 ? 'tenant' : 'tenants'} · ${rows.length} ${rows.length === 1 ? 'integración' : 'integraciones'}`,
     children,
   };
 }

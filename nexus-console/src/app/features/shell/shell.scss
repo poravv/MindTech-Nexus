@@ -356,6 +356,15 @@
     padding-left: var(--rail-width);
   }
 
+  // The rail is fixed; painting its color on the layout too keeps the column navy however long the page is.
+  .layout {
+    background: linear-gradient(to right, var(--color-rail) var(--rail-width), transparent 0);
+  }
+
+  .layout.collapsed {
+    background: linear-gradient(to right, var(--color-rail) var(--rail-width-collapsed), transparent 0);
+  }
+
   .topbar {
     padding: 0 var(--space-4) 0 var(--space-5);
   }

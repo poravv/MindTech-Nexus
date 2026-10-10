@@ -102,7 +102,9 @@ export class TreeMap {
     return this.collapsed().has(id);
   }
 
+  /** Folds or unfolds a subtree; an unfolded column that lands past the right edge is panned into view. */
   protected toggle(node: MapNode): void {
+    this.touched = true;
     this.collapsed.update((current) => {
       const next = new Set(current);
       if (!next.delete(node.id)) {
@@ -110,6 +112,12 @@ export class TreeMap {
       }
       return next;
     });
+    const box = this.viewportBox();
+    const { x, k } = this.view();
+    const overflow = x + this.layout().width * k - ((box?.width ?? 0) - MARGIN);
+    if (box && overflow > 0) {
+      this.view.update((view) => ({ ...view, x: view.x - overflow }));
+    }
   }
 
   protected age(iso: string): string {
@@ -160,9 +168,9 @@ export class TreeMap {
       return;
     }
     const { width, height, nodes } = this.layout();
-    const k = scale ?? clamp((box.width - 2 * MARGIN) / (width + ROOT_OVERHANG), MIN_READABLE, 1);
+    const k = scale ?? clamp((box.width - 1.5 * MARGIN) / (width + ROOT_OVERHANG), MIN_READABLE, 1);
     const rootBottom = ((nodes[0]?.y ?? 0) + NODE_HEIGHT) * k;
-    const x = (width + ROOT_OVERHANG) * k + 2 * MARGIN <= box.width ? (box.width - width * k + ROOT_OVERHANG * k) / 2 : ROOT_OVERHANG * k + MARGIN;
+    const x = (width + ROOT_OVERHANG) * k + 2 * MARGIN <= box.width ? (box.width - width * k + ROOT_OVERHANG * k) / 2 : ROOT_OVERHANG * k + MARGIN / 2;
     // Short trees are centered; tall ones start at the top unless that hides the root, then the root is centered.
     const y =
       height * k + 2 * MARGIN <= box.height
