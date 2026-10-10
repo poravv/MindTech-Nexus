@@ -52,13 +52,13 @@
       </section>
       <section class="block" aria-labelledby="b-last">
         @if (row.insight?.lastFailure; as failure) {
-          <h2 id="b-last" class="eyebrow">Última falla</h2>
+          <h2 id="b-last" class="eyebrow">{{ failure.status === 'FAILED' ? 'Último rechazo' : 'Última falla' }}</h2>
           <p class="block-value"><app-status-badge [status]="failure.status" [large]="true" /></p>
           <p class="block-note">
             En <span class="mono">{{ failure.step ?? '—' }}</span>{{ failure.errorCode ? ' · ' + failure.errorCode : '' }}
             · {{ failure.at | date: 'dd/MM HH:mm' }}
           </p>
-          <a class="block-link" [routerLink]="['/operaciones', failure.operationId, { tenantId: integration.tenantId }]">Ver detalle y reintentar<app-icon name="chevron-right" /></a>
+          <a class="block-link" [routerLink]="['/operaciones', failure.operationId, { tenantId: integration.tenantId }]">{{ failure.status === 'DEAD' ? 'Ver detalle y reintentar' : 'Ver detalle' }}<app-icon name="chevron-right" /></a>
         } @else {
           <h2 id="b-last" class="eyebrow">Última operación</h2>
           @if (recent.value()[0]; as last) {

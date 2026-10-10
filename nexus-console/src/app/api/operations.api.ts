@@ -4,7 +4,8 @@ import { Observable } from 'rxjs';
 import { TenantScope } from '../core/tenant-scope.service';
 import { Flow } from './integrations.api';
 
-export const OPERATION_STATUSES = ['PENDING', 'RUNNING', 'RETRY', 'SUCCEEDED', 'FAILED', 'DEAD'] as const;
+/** FAILED: rejected by the business rules of the target (final, not a platform fault). DISCARDED: a DEAD one an operator dropped. */
+export const OPERATION_STATUSES = ['PENDING', 'RUNNING', 'RETRY', 'SUCCEEDED', 'FAILED', 'DEAD', 'DISCARDED'] as const;
 export type OperationStatus = (typeof OPERATION_STATUSES)[number];
 
 export interface Operation {
