@@ -76,7 +76,10 @@ class InvoiceController {
         this.json = json;
     }
 
-    @io.swagger.v3.oas.annotations.Operation(summary = "Emitir factura, nota de crédito o débito (idempotente por sourceRef)")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Emitir factura, nota de crédito o débito (idempotente por sourceRef)",
+            description = "items[].discount es el descuento total de la línea (no por unidad); Nexus lo envía a SIFEN por "
+                    + "unidad. 422 discount-not-divisible si en PYG no se reparte en guaraníes enteros por unidad "
+                    + "dentro de la tolerancia de SIFEN (0,8).")
     @PostMapping
     ResponseEntity<Object> issue(@RequestBody InvoiceRequest request) {
         Actor client = TenantContext.currentClient(Scope.FISCAL_ISSUE);

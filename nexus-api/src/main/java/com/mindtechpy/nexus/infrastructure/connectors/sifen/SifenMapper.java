@@ -100,10 +100,20 @@ final class SifenMapper {
         detail.put("descripcion", item.description());
         detail.put("cantidad", new BigDecimal(item.quantity()));
         detail.put("precioUnitario", item.unitPrice());
-        putIfPresent(detail, "descuento", item.discount());
+        putIfPresent(detail, "descuento", perUnit(item));
         detail.put("ivaTipo", item.vatRate());
         putIfPresent(detail, "unidadMedida", item.unit());
         return detail;
+    }
+
+    /** SIFEN's {@code descuento} is per unit; a whole amount stays an integer so the payload bytes do not change. */
+    private static Object perUnit(InvoiceRequest.Item item) {
+        BigDecimal unitDiscount = item.unitDiscount();
+        if (unitDiscount == null) {
+            return null;
+        }
+        BigDecimal stripped = unitDiscount.stripTrailingZeros();
+        return stripped.scale() <= 0 ? (Object) stripped.longValueExact() : stripped;
     }
 
     private static void putIfPresent(Map<String, Object> target, String key, Object value) {

@@ -90,6 +90,20 @@ class InvoiceApiIT extends AbstractFiscalIT {
     }
 
     @Test
+    void should_reject_with_422_and_persist_nothing_when_a_line_discount_does_not_split_per_unit() {
+        String ref = newSourceRef();
+        Map<String, Object> request = invoice(ref);
+        request.put("items", List.of(Map.of("code", "PAN-001", "description", "Chipa", "quantity", "3",
+                "unitPrice", 10000, "discount", 2000, "vatRate", "10")));
+
+        JsonNode problem = body(issue(pos, request, 422));
+
+        assertThat(problem.get("code").asString()).isEqualTo("discount-not-divisible");
+        assertThat(jdbc.sql("SELECT count(*) FROM operations WHERE idempotency_key = :ref").param("ref", ref)
+                .query(Long.class).single()).isZero();
+    }
+
+    @Test
     void should_reject_with_422_and_persist_nothing_when_a_credit_sale_has_no_credit_block() {
         String ref = newSourceRef();
 

@@ -3,6 +3,7 @@ package com.mindtechpy.nexus.domain.fiscal;
 import com.mindtechpy.nexus.domain.shared.DomainException;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
@@ -25,6 +26,8 @@ public record InvoiceRequest(String sourceRef, String documentType, String issue
     private static final Set<String> DOCUMENT_TYPES = Set.of("INVOICE", "CREDIT_NOTE", "DEBIT_NOTE");
     private static final Set<String> PAYMENT_CONDITIONS = Set.of("CASH", "CREDIT");
     private static final Set<String> VAT_RATES = Set.of("0", "5", "10");
+    /** Variation SIFEN admits between a per-unit discount and its amount (rule 1862, NT 001). */
+    private static final BigDecimal SIFEN_TOLERANCE = new BigDecimal("0.8");
 
     public record Header(String currency, String paymentCondition, String paymentMethod) {
     }
@@ -32,8 +35,18 @@ public record InvoiceRequest(String sourceRef, String documentType, String issue
     public record Customer(String documentType, String documentNumber, String name, String email) {
     }
 
+    /**
+     * {@code discount} is the discount of the whole line (what the POS computes), not per unit; SIFEN takes it
+     * per unit ({@link #unitDiscount()}), so the line total stays {@code quantity × unitPrice − discount}.
+     */
     public record Item(String code, String description, String quantity, Long unitPrice, Long discount,
                        String vatRate, String unit) {
+
+        /** The line discount spread per unit, with the 8 decimals SIFEN keeps; null without discount. */
+        public BigDecimal unitDiscount() {
+            return discount == null ? null
+                    : BigDecimal.valueOf(discount).divide(new BigDecimal(quantity), 8, RoundingMode.HALF_UP);
+        }
     }
 
     /** Exactly one of {@code termDays} or {@code installments}. */
@@ -59,7 +72,7 @@ public record InvoiceRequest(String sourceRef, String documentType, String issue
         require(customer != null && present(customer.documentType()) && present(customer.documentNumber())
                 && present(customer.name()), "customer requiere documentType, documentNumber y name");
         require(items != null && !items.isEmpty(), "items no puede estar vacío");
-        items.forEach(InvoiceRequest::validate);
+        items.forEach(item -> validate(item, header.currency()));
         require(globalDiscount == null || globalDiscount >= 0, "globalDiscount no puede ser negativo");
         items = List.copyOf(items);
         if (documentType.equals("INVOICE") && header.paymentCondition().equals("CREDIT")) {
@@ -70,13 +83,35 @@ public record InvoiceRequest(String sourceRef, String documentType, String issue
         }
     }
 
-    private static void validate(Item item) {
+    private static void validate(Item item, String currency) {
         require(item != null && present(item.code()) && present(item.description()),
                 "cada item requiere code y description");
         require(isPositiveDecimal(item.quantity()), "quantity debe ser un decimal mayor a 0");
         require(item.unitPrice() != null && item.unitPrice() > 0, "unitPrice debe ser mayor a 0");
         require(item.discount() == null || item.discount() >= 0, "discount no puede ser negativo");
         require(VAT_RATES.contains(item.vatRate()), "vatRate debe ser 0, 5 o 10");
+        if (item.discount() != null && item.discount() > 0) {
+            validateDiscount(item, currency);
+        }
+    }
+
+    /**
+     * SIFEN prints the per-unit discount rounded (whole guaraníes in PYG) and rebuilds the line from it; the
+     * line it gets must match the POS line within its tolerance, or the document total would not be the sale's.
+     */
+    private static void validateDiscount(Item item, String currency) {
+        BigDecimal quantity = new BigDecimal(item.quantity());
+        BigDecimal discount = BigDecimal.valueOf(item.discount());
+        if (discount.compareTo(quantity.multiply(BigDecimal.valueOf(item.unitPrice()))) > 0) {
+            throw DomainException.invalid("invalid-invoice", "discount del item " + item.code() + " supera quantity × unitPrice");
+        }
+        BigDecimal printed = "PYG".equals(currency) ? item.unitDiscount().setScale(0, RoundingMode.HALF_UP) : item.unitDiscount();
+        if (printed.multiply(quantity).subtract(discount).abs().compareTo(SIFEN_TOLERANCE) > 0) {
+            throw DomainException.invalid("discount-not-divisible", "El descuento " + discount.toPlainString() + " del item "
+                    + item.code() + " no se reparte por unidad entre " + item.quantity() + " sin desviarse más de "
+                    + SIFEN_TOLERANCE.toPlainString() + " (SIFEN lo expresa por unidad); el más cercano es "
+                    + printed.multiply(quantity).stripTrailingZeros().toPlainString());
+        }
     }
 
     private static void validate(Credit credit) {

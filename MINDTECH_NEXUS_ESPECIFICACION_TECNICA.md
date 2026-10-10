@@ -240,6 +240,7 @@ Request `POST /api/v1/invoices` (alineado 1:1 con `FacturarTransaccionRequest` d
   "globalDiscount": 0
 }
 ```
+`items[].discount` es el descuento **de la línea** (como lo calcula el POS), no por unidad: Nexus envía a SIFEN `descuento = discount / quantity` (SIFEN lo toma por unidad: total de línea = (precio − descuento) × cantidad). En PYG SIFEN imprime ese valor en guaraníes enteros; si `round(discount / quantity) × quantity` se aparta del descuento más de 0,8 (tolerancia de SIFEN), la emisión se rechaza con 422 `discount-not-divisible` antes de persistir nada.
 Response `202`:
 ```json
 { "operationId": "…", "sourceRef": "…", "status": "PENDING" }
