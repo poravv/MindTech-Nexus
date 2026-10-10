@@ -17,7 +17,7 @@ import java.util.UUID;
 public interface OperationRepository {
 
     /** Console filters; every field is optional. {@code q} matches id, idempotency key or correlation id. */
-    record Filter(Flow flow, OperationStatus status, Instant from, Instant to, String q) {
+    record Filter(UUID integrationId, Flow flow, OperationStatus status, Instant from, Instant to, String q) {
     }
 
     record StatusFlowCount(OperationStatus status, Flow flow, long count) {

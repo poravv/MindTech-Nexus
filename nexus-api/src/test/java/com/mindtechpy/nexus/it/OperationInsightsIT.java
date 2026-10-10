@@ -113,6 +113,20 @@ class OperationInsightsIT extends AbstractOperationIT {
     }
 
     @Test
+    void should_list_only_the_operations_of_the_requested_integration() {
+        UUID own = createIntegration(fastPolicy());
+        UUID sibling = createIntegration(fastPolicy());
+        UUID mine = start(own, "mine").id();
+        start(sibling, "sibling");
+
+        JsonNode list = body(perform(get("/api/admin/operations").param("tenantId", tenant.toString())
+                .param("integrationId", own.toString()).header("Authorization", bearer(admin)), 200));
+
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).get("id").asString()).isEqualTo(mine.toString());
+    }
+
+    @Test
     void should_count_operations_per_hour_and_status_with_empty_buckets() {
         UUID integration = createIntegration(fastPolicy());
         Instant now = Instant.now();

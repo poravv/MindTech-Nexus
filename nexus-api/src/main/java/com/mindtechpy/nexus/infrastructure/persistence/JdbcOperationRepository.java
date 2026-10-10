@@ -90,6 +90,10 @@ class JdbcOperationRepository implements OperationRepository {
             sql.append(" AND tenant_id = :tenantId");
             params.put("tenantId", id.value());
         });
+        if (filter.integrationId() != null) {
+            sql.append(" AND integration_id = :integrationId");
+            params.put("integrationId", filter.integrationId());
+        }
         if (filter.flow() != null) {
             sql.append(" AND flow = :flow");
             params.put("flow", filter.flow().name());
