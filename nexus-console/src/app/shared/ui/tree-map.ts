@@ -22,8 +22,8 @@ import { layoutTree, MapAction, MapNode, NODE_HEIGHT, NODE_WIDTH } from './tree-
 
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 2;
-/** Below this the 20 px node titles drop under 17 px. */
-const MIN_READABLE = 0.85;
+/** The first view never shrinks below this, so node titles stay readable. */
+const MIN_FIRST_VIEW = 0.6;
 /** Room on the left for the root's circle, which overhangs its card. */
 const ROOT_OVERHANG = 64;
 const MARGIN = 24;
@@ -81,7 +81,7 @@ export class TreeMap {
     media.addEventListener('change', sync);
     inject(DestroyRef).onDestroy(() => media.removeEventListener('change', sync));
 
-    // Frame the root whenever a new tree shows up (a new tenant scope) or the tree grows before the user touched it.
+    // Fit the tree whenever a new one shows up (a new tenant scope) or it grows before the user touched it.
     afterRenderEffect(() => {
       const id = this.root().id;
       this.layout();
@@ -93,7 +93,7 @@ export class TreeMap {
         this.touched = false;
       }
       if (!this.touched) {
-        untracked(() => this.frame());
+        untracked(() => this.frame(MIN_FIRST_VIEW));
       }
     });
   }
@@ -155,41 +155,32 @@ export class TreeMap {
   /** 100 %, root centered vertically (as Argo CD opens a tree). */
   protected center(): void {
     this.touched = true;
-    this.frame(1);
-  }
-
-  /**
-   * Frames the tree: the scale fits its width while text stays readable (≥ 85 %), so the first screen shows every
-   * column when it can.
-   */
-  private frame(scale?: number): void {
     const box = this.viewportBox();
     if (!box) {
       return;
     }
-    const { width, height, nodes } = this.layout();
-    const k = scale ?? clamp((box.width - 1.5 * MARGIN) / (width + ROOT_OVERHANG), MIN_READABLE, 1);
-    const rootBottom = ((nodes[0]?.y ?? 0) + NODE_HEIGHT) * k;
-    const x = (width + ROOT_OVERHANG) * k + 2 * MARGIN <= box.width ? (box.width - width * k + ROOT_OVERHANG * k) / 2 : ROOT_OVERHANG * k + MARGIN / 2;
-    // Short trees are centered; tall ones start at the top unless that hides the root, then the root is centered.
-    const y =
-      height * k + 2 * MARGIN <= box.height
-        ? (box.height - height * k) / 2
-        : rootBottom + 2 * MARGIN <= box.height
-          ? MARGIN
-          : Math.max(box.height / 2 - rootBottom + (NODE_HEIGHT * k) / 2, box.height - height * k - MARGIN);
-    this.view.set({ x, y, k });
+    const { width, nodes } = this.layout();
+    const x = width + ROOT_OVERHANG + 2 * MARGIN <= box.width ? (box.width - width + ROOT_OVERHANG) / 2 : ROOT_OVERHANG + MARGIN / 2;
+    this.view.set({ x, y: box.height / 2 - (nodes[0]?.y ?? 0) - NODE_HEIGHT / 2, k: 1 });
   }
 
   protected fit(): void {
     this.touched = true;
+    this.frame(MIN_ZOOM);
+  }
+
+  /** Scales the whole tree into the canvas (never above 100 % nor below `minZoom`); what still overflows starts at the top left. */
+  private frame(minZoom: number): void {
     const box = this.viewportBox();
     if (!box) {
       return;
     }
     const { width, height } = this.layout();
-    const k = clamp(Math.min((box.width - 2 * MARGIN) / (width + ROOT_OVERHANG), (box.height - 2 * MARGIN) / height), MIN_ZOOM, 1);
-    this.view.set({ x: (box.width - width * k + ROOT_OVERHANG * k) / 2, y: (box.height - height * k) / 2, k });
+    const fullWidth = width + ROOT_OVERHANG;
+    const k = clamp(Math.min((box.width - 2 * MARGIN) / fullWidth, (box.height - 2 * MARGIN) / height), minZoom, 1);
+    const x = fullWidth * k + 2 * MARGIN <= box.width ? (box.width - fullWidth * k) / 2 + ROOT_OVERHANG * k : ROOT_OVERHANG * k + MARGIN;
+    const y = height * k + 2 * MARGIN <= box.height ? (box.height - height * k) / 2 : MARGIN;
+    this.view.set({ x, y, k });
   }
 
   protected zoomBy(factor: number, at?: { x: number; y: number }): void {
