@@ -39,7 +39,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: nexus-api
-          image: ghcr.io/poravv/mindtech-nexus-api:sha-1b15637
+          image: ghcr.io/poravv/mindtech-nexus-api:sha-723d6b3
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
