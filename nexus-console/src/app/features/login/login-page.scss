@@ -1,73 +1,48 @@
-.auth {
-  min-height: 100dvh;
+// Shared by the login and change-password screens.
+
+.intro {
   display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: var(--space-6);
-  padding: var(--space-5) var(--space-4);
+  gap: var(--space-1);
 }
 
-.brand {
-  display: grid;
-  justify-items: center;
-  gap: var(--space-2);
-  text-align: center;
-}
-
-.mark {
-  display: grid;
-  place-items: center;
-  width: 3rem;
-  height: 3rem;
-  border-radius: var(--radius-md);
-  background: var(--color-accent);
-  color: var(--color-text-inverse);
+h1 {
   font-size: var(--text-xl);
-  font-weight: var(--weight-bold);
 }
 
-.name {
-  font-size: var(--text-lg);
-  font-weight: var(--weight-bold);
-}
-
-.tag {
-  max-width: 22rem;
-  color: var(--color-text-muted);
+.intro p {
   font-size: var(--text-sm);
 }
 
-.card {
-  display: grid;
-  gap: var(--space-5);
-  width: min(100%, 24rem);
-  padding: var(--space-5);
+.password {
+  position: relative;
 }
 
-@media (min-width: 60rem) {
-  .auth {
-    grid-template-columns: 1fr 1fr;
-    align-content: stretch;
-    align-items: center;
-    justify-items: stretch;
-    padding: 0;
-  }
+.password .input {
+  padding-right: 2.75rem;
+}
 
-  .card {
-    justify-self: center;
-  }
+.reveal {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  border: 0;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
 
-  .brand {
-    align-self: stretch;
-    align-content: center;
-    justify-items: start;
-    padding: var(--space-7);
-    text-align: left;
-    background: var(--color-surface-sunken);
-    border-right: var(--border-width) solid var(--color-border);
-  }
+.reveal:hover {
+  color: var(--color-text);
+}
 
-  .name {
-    font-size: var(--text-2xl);
-  }
+.submit {
+  min-height: 2.625rem;
+  font-size: var(--text-md);
+}
+
+.secondary {
+  justify-self: center;
 }

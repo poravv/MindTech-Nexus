@@ -4,11 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { problemMessage } from '../../core/problem';
+import { Icon } from '../../shared/ui/icon';
+import { AuthFrame } from './auth-frame';
 
 @Component({
   selector: 'app-login-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule],
+  imports: [FormsModule, AuthFrame, Icon],
   templateUrl: './login-page.html',
   styleUrl: './login-page.scss',
 })
@@ -20,6 +22,7 @@ export default class LoginPage {
 
   protected readonly email = signal('');
   protected readonly password = signal('');
+  protected readonly showPassword = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
 

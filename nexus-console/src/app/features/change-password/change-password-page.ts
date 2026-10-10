@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { problemMessage } from '../../core/problem';
+import { AuthFrame } from '../login/auth-frame';
 
 const MIN_LENGTH = 12;
 
@@ -10,7 +11,7 @@ const MIN_LENGTH = 12;
 @Component({
   selector: 'app-change-password-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule],
+  imports: [FormsModule, AuthFrame],
   templateUrl: './change-password-page.html',
   styleUrl: '../login/login-page.scss',
 })
@@ -23,6 +24,7 @@ export default class ChangePasswordPage {
   protected readonly current = signal('');
   protected readonly next = signal('');
   protected readonly confirmation = signal('');
+  protected readonly showPasswords = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly mismatch = computed(() => this.confirmation() !== '' && this.confirmation() !== this.next());
