@@ -118,6 +118,14 @@ public abstract class AbstractPostgresIT {
         }
     }
 
+    protected static String content(MvcResult result) {
+        try {
+            return result.getResponse().getContentAsString();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     protected JsonNode body(MvcResult result) {
         try {
             return json.readTree(result.getResponse().getContentAsString());

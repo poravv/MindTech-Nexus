@@ -126,8 +126,8 @@ class UseCaseConfig {
 
     @Bean
     TestConnection testConnection(ConnectionRepository connections, SecretCipherPort cipher, ConnectorHealthPort health,
-                                  AuditRepository audit, ClockPort clock, TransactionRunner tx) {
-        return new TestConnection(connections, cipher, health, audit, clock, tx);
+                                  BaseUrlPolicy baseUrlPolicy, AuditRepository audit, ClockPort clock, TransactionRunner tx) {
+        return new TestConnection(connections, cipher, health, baseUrlPolicy, audit, clock, tx);
     }
 
     @Bean

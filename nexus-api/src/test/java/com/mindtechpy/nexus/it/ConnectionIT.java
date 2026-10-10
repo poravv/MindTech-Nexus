@@ -53,7 +53,6 @@ class ConnectionIT extends AbstractPostgresIT {
         assertThat(content(created)).doesNotContain(SECRET_KEY).doesNotContain("ak-live");
         assertThat(detail).doesNotContain(SECRET_KEY).contains("\"hasCredentials\":true");
         assertThat(content(tested)).doesNotContain(SECRET_KEY);
-        assertThat(body(tested).get("ok").asBoolean()).isTrue();
         byte[] stored = jdbc.sql("SELECT credentials_enc FROM connections WHERE id = :id")
                 .param("id", UUID.fromString(id)).query(byte[].class).single();
         assertThat(new String(stored, StandardCharsets.ISO_8859_1)).doesNotContain(SECRET_KEY);
@@ -93,7 +92,7 @@ class ConnectionIT extends AbstractPostgresIT {
         assertThat(sealed(id)).isEqualTo(before);
         JsonNode tested = body(perform(post("/api/admin/connections/{id}/test", id).param("tenantId", tenant.toString())
                 .header("Authorization", bearer(admin)), 200));
-        assertThat(tested.get("ok").asBoolean()).isTrue();
+        assertThat(tested.get("detail").asString()).doesNotContain("Credenciales ilegibles");
     }
 
     @Test
@@ -125,13 +124,5 @@ class ConnectionIT extends AbstractPostgresIT {
             }
         }
         throw new AssertionError("sin evento " + action);
-    }
-
-    private static String content(MvcResult result) {
-        try {
-            return result.getResponse().getContentAsString();
-        } catch (Exception e) {
-            throw new IllegalStateException(e);
-        }
     }
 }

@@ -8,6 +8,7 @@ import com.mindtechpy.nexus.application.port.out.ConnectorHealthPort.HealthCheck
 import com.mindtechpy.nexus.application.port.out.SecretCipherPort;
 import com.mindtechpy.nexus.application.port.out.TransactionRunner;
 import com.mindtechpy.nexus.domain.audit.AuditEvent;
+import com.mindtechpy.nexus.domain.connection.BaseUrlPolicy;
 import com.mindtechpy.nexus.domain.connection.Connection;
 import com.mindtechpy.nexus.domain.connection.ConnectionCredentials;
 import com.mindtechpy.nexus.domain.identity.Actor;
@@ -19,7 +20,11 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
-/** Checks that the credentials decrypt and that the remote system answers. Reports only ok/detail. */
+/**
+ * Checks that the credentials decrypt, that the base URL is still inside the SSRF allowlist (it may have
+ * shrunk since the connection was saved) and that the remote system answers an authenticated read.
+ * Reports only ok/detail.
+ */
 public class TestConnection {
 
     public record Result(boolean ok, String detail, Instant testedAt) {
@@ -28,15 +33,17 @@ public class TestConnection {
     private final ConnectionRepository connections;
     private final SecretCipherPort cipher;
     private final ConnectorHealthPort health;
+    private final BaseUrlPolicy baseUrlPolicy;
     private final AuditRepository audit;
     private final ClockPort clock;
     private final TransactionRunner tx;
 
     public TestConnection(ConnectionRepository connections, SecretCipherPort cipher, ConnectorHealthPort health,
-                          AuditRepository audit, ClockPort clock, TransactionRunner tx) {
+                          BaseUrlPolicy baseUrlPolicy, AuditRepository audit, ClockPort clock, TransactionRunner tx) {
         this.connections = connections;
         this.cipher = cipher;
         this.health = health;
+        this.baseUrlPolicy = baseUrlPolicy;
         this.audit = audit;
         this.clock = clock;
         this.tx = tx;
@@ -63,6 +70,11 @@ public class TestConnection {
             credentials = cipher.open(connection.sealedCredentials(), connection.credentialsAad());
         } catch (DomainException e) {
             return new HealthCheck(false, "Credenciales ilegibles: vuelva a cargarlas");
+        }
+        try {
+            baseUrlPolicy.validate(connection.baseUrl());
+        } catch (DomainException e) {
+            return new HealthCheck(false, e.getMessage());
         }
         return health.check(connection, credentials);
     }

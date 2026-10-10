@@ -66,6 +66,7 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/admin/tenants
 - `POST /oauth/token` — `client_credentials` con HTTP Basic.
 - `/api/admin/auth/{login,refresh,logout,me,password}`.
 - `/api/admin/tenants`, `/api/admin/users`, `/api/admin/api-clients` (`/{id}/rotate`, `/{id}/revoke`), `/api/admin/connections` (`/{id}`, `/{id}/test`), `/api/admin/audit`.
+- `POST /api/admin/connections/{id}/test` hace una lectura autenticada y sin efectos (POS `GET /api/integration/catalog?page=1&limit=1`, GiftHub `GET /api/integrations/v1/products?limit=1`, SIFEN `GET /api/v1/facturas?page=0&size=1` firmado con HMAC), revalidando antes la base URL contra la allowlist; responde solo `ok`/`detail`, nunca credenciales ni el cuerpo remoto.
 - `/api/admin/integrations` (`GET`, `POST`, `GET/PUT /{id}`, `POST /{id}/state {state, reason}`): sin `DELETE`, `DISABLED` retira una integración conservando su historial. `EMERGENCY_STOP` (entrar y salir) solo `platform_admin`; `DISABLED` requiere `tenant_admin`; `operator` alterna `ENABLED/PAUSED/DRAINING`.
 - `/api/admin/operations?flow&status&from&to&q&page&size`, `/summary?from` (por estado/flujo + tamaño de la DLQ), `/{id}` (con `steps`), `POST /{id}/replay` (solo `DEAD`, auditado).
 - `GET /api/v1/operations/{id}` — runtime m2m, scope `operations:read`, solo operaciones del tenant del token.
