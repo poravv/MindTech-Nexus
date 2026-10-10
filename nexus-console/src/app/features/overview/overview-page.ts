@@ -1,15 +1,12 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { map } from 'rxjs';
 import { Flow } from '../../api/integrations.api';
-import { OperationsApi, OperationStatus, TimeseriesPoint } from '../../api/operations.api';
+import { OperationsApi, OperationStatus } from '../../api/operations.api';
 import { AuthService } from '../../core/auth/auth.service';
 import { problemMessage } from '../../core/problem';
 import { SECTION_ROLES } from '../../core/roles';
-import { tenantFanOut } from '../../core/tenant-fan-out';
 import { TenantScope } from '../../core/tenant-scope.service';
 import { BarItem, BarList } from '../../shared/ui/bar-list';
 import { DonutChart, DonutSegment } from '../../shared/ui/donut-chart';
@@ -41,19 +38,15 @@ export default class OverviewPage {
   private readonly operationsApi = inject(OperationsApi);
   private readonly auth = inject(AuthService);
   protected readonly scope = inject(TenantScope);
-  private readonly fanOut = tenantFanOut();
 
   protected readonly summary = rxResource({
     params: () => ({ tenantId: this.scope.tenantId() }),
     stream: () => this.operationsApi.summary(new Date(Date.now() - DAY_MS).toISOString()),
   });
-  /** Hourly series; on "Todos los tenants" one call per tenant, summed bucket by bucket. */
+  /** Hourly series; without a tenant the API already adds up every tenant. */
   protected readonly series = rxResource({
     params: () => ({ tenantId: this.scope.tenantId() }),
-    stream: () => {
-      const from = new Date(Date.now() - DAY_MS).toISOString();
-      return this.fanOut((tenantId) => this.operationsApi.timeseries(from, 'PT1H', tenantId)).pipe(map(({ parts }) => sumSeries(parts)));
-    },
+    stream: () => this.operationsApi.timeseries(new Date(Date.now() - DAY_MS).toISOString()),
   });
   /** Viewers only see the dashboard and operations (spec §5.2), so they skip the integrations call. */
   protected readonly showIntegrations = computed(() => {
@@ -154,25 +147,7 @@ export default class OverviewPage {
     return `${hour}: ${column.total} operaciones${column.stack.length ? ', ' + column.stack.map((s) => `${s.value} ${s.label.toLowerCase()}`).join(', ') : ''}`;
   }
 
-  protected isMissing(error: unknown): boolean {
-    return error instanceof HttpErrorResponse && error.status === 404;
-  }
-
   protected unavailable(error: unknown): string {
-    return this.isMissing(error) ? 'Todavía no disponible en esta versión de la API.' : problemMessage(error, 'No se pudo cargar.');
+    return problemMessage(error, 'No se pudo cargar.');
   }
-}
-
-/** Adds per-tenant series that share the same buckets (same from and bucket size). */
-function sumSeries(parts: TimeseriesPoint[][]): TimeseriesPoint[] {
-  const [first = [], ...rest] = parts;
-  return first.map((point, index) => {
-    const byStatus = { ...point.byStatus };
-    for (const part of rest) {
-      for (const [status, value] of Object.entries(part[index]?.byStatus ?? {}) as [OperationStatus, number][]) {
-        byStatus[status] = (byStatus[status] ?? 0) + value;
-      }
-    }
-    return { t: point.t, byStatus };
-  });
 }

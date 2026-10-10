@@ -54,7 +54,7 @@
       @if (series.error(); as error) {
         <div class="chart-empty">
           <app-icon name="chart-pie" />
-          <p>{{ isMissing(error) ? 'La actividad por hora llega con la próxima versión de la API (serie temporal de operaciones).' : unavailable(error) }}</p>
+          <p>{{ unavailable(error) }}</p>
         </div>
       } @else if (series.hasValue() && activity().empty) {
         <div class="chart-empty"><app-icon name="activity" /><p>Sin operaciones en las últimas 24 horas.</p></div>

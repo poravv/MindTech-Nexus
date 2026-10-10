@@ -96,7 +96,7 @@ export class OperationsApi {
   }
 
   /** Dense series (empty buckets included) from the bucket containing `from` up to now; at most 500 points. */
-  timeseries(from: string, bucket: TimeseriesBucket = 'PT1H', tenantId = this.scope.tenantId()): Observable<TimeseriesPoint[]> {
-    return this.http.get<TimeseriesPoint[]>(`${this.url}/timeseries`, { params: this.scope.params({ from, bucket }, tenantId) });
+  timeseries(from: string, bucket: TimeseriesBucket = 'PT1H'): Observable<TimeseriesPoint[]> {
+    return this.http.get<TimeseriesPoint[]>(`${this.url}/timeseries`, { params: this.scope.params({ from, bucket }) });
   }
 }
