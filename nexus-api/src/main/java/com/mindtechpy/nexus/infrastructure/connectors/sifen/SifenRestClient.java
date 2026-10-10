@@ -156,11 +156,13 @@ class SifenRestClient implements SifenPort {
 
     /**
      * Spec §7.4 for SIFEN: {@code EMISION_EN_CURSO} waits, {@code IDEMPOTENCY_CONFLICT} needs a human, other
-     * 4xx are business refusals ({@code BUSINESS_RULE} is a 409, plan limits 402, unknown branch/point 404).
+     * 4xx are business refusals ({@code BUSINESS_RULE} is a 409, unknown branch/point 404). A 402 (plan limit,
+     * suspended workspace) is not a refusal of the document: it waits DEAD for a replay once the plan is fixed.
      */
     static ErrorKind classify(int status, String code, boolean isWrite) {
         return switch (status) {
             case 401, 403 -> ErrorKind.AUTH;
+            case 402 -> ErrorKind.PLAN_LIMIT;
             case 429 -> ErrorKind.RATE_LIMITED;
             case 409 -> switch (code) {
                 case "EMISION_EN_CURSO" -> ErrorKind.IN_PROGRESS;

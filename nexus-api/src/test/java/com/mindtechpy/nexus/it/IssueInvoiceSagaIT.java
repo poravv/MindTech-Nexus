@@ -176,6 +176,23 @@ class IssueInvoiceSagaIT extends AbstractFiscalIT {
         assertThat(dead.lastError().kind()).isEqualTo(ErrorKind.AUTH);
     }
 
+    @Test
+    void should_end_dead_for_replay_when_the_sifen_plan_limit_is_exceeded() {
+        String ref = newSourceRef();
+        stubSubmit(ref, sifenError(402, "PLAN_LIMIT_EXCEEDED", "Limite mensual del plan alcanzado"));
+        Operation op = issue(ref);
+
+        drain();
+
+        Operation dead = reload(op.id());
+        assertThat(dead.status()).isEqualTo(OperationStatus.DEAD);
+        assertThat(dead.deadReason()).isEqualTo("plan-limit");
+        assertThat(dead.lastError().kind()).isEqualTo(ErrorKind.PLAN_LIMIT);
+        assertThat(dead.lastError().code()).isEqualTo("PLAN_LIMIT_EXCEEDED");
+        assertThat(invoiceState(ref).get("status").asString()).isEqualTo("DEAD");
+        assertThat(count(submitsOf(ref))).isEqualTo(1);
+    }
+
     @ParameterizedTest
     @CsvSource({"400, VALIDATION_ERROR", "409, BUSINESS_RULE", "422, UNPROCESSABLE"})
     void should_fail_without_retry_and_expose_sifen_detail_when_sifen_refuses_the_request(int status, String code) {

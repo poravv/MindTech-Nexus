@@ -166,6 +166,7 @@ public class SagaRunner {
             case REJECTED -> endWithFailure(saga, context, claimed, op.failed(error, now), error, step);
             case CONFLICT -> endWithFailure(saga, context, claimed, op.dead("idempotency-conflict", error, now), error, step);
             case AUTH -> endWithFailure(saga, context, claimed, op.dead("credentials", error, now), error, step);
+            case PLAN_LIMIT -> endWithFailure(saga, context, claimed, op.dead("plan-limit", error, now), error, step);
             case IN_PROGRESS -> persist(claimed, op.retrying(error,
                     now.plus(error.retryAfter() != null ? error.retryAfter() : IN_PROGRESS_DELAY), false), step);
             case TRANSIENT, RATE_LIMITED, UNCERTAIN -> {

@@ -18,5 +18,7 @@ public enum ErrorKind {
     /** Remote still processing the same request: retry later without counting an attempt. */
     IN_PROGRESS,
     /** 401/403: DEAD until credentials are fixed. */
-    AUTH
+    AUTH,
+    /** 402: the remote plan is exhausted; DEAD until the plan is fixed, then replayed. */
+    PLAN_LIMIT
 }
