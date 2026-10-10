@@ -36,10 +36,13 @@ export default class OperationDetailPage {
   private readonly scope = inject(TenantScope);
 
   readonly id = input.required<string>();
+  /** Matrix param set by links from "Todos los tenants", where the scope alone can't tell the API whose operation it is. */
+  readonly tenantId = input<string>();
 
+  private readonly tenant = computed(() => this.tenantId() ?? this.scope.tenantId());
   protected readonly operation = rxResource({
-    params: () => ({ id: this.id(), tenantId: this.scope.tenantId() }),
-    stream: ({ params }) => this.api.get(params.id),
+    params: () => ({ id: this.id(), tenantId: this.tenant() }),
+    stream: ({ params }) => this.api.get(params.id, params.tenantId),
   });
   protected readonly canReplay = computed(() => {
     const role = this.auth.role();
@@ -63,7 +66,7 @@ export default class OperationDetailPage {
 
   protected replay(): void {
     this.busy.set(true);
-    this.api.replay(this.id()).subscribe({
+    this.api.replay(this.id(), this.tenant()).subscribe({
       next: () => {
         this.busy.set(false);
         this.confirming.set(false);

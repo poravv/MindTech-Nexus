@@ -123,7 +123,7 @@
                     </span>
                   </span>
                   @if (row.insight?.lastFailure; as failure) {
-                    <a class="btn btn-sm" [routerLink]="['/operaciones', failure.operationId]">Revisar</a>
+                    <a class="btn btn-sm" [routerLink]="['/operaciones', failure.operationId, { tenantId: row.integration.tenantId }]">Revisar</a>
                   }
                 </li>
               }

@@ -81,13 +81,13 @@ export class OperationsApi {
     return this.http.get<Operation[]>(this.url, { params: this.scope.params({ ...filter }, tenantId) });
   }
 
-  get(id: string): Observable<OperationDetail> {
-    return this.http.get<OperationDetail>(`${this.url}/${id}`, { params: this.scope.params() });
+  get(id: string, tenantId = this.scope.tenantId()): Observable<OperationDetail> {
+    return this.http.get<OperationDetail>(`${this.url}/${id}`, { params: this.scope.params({}, tenantId) });
   }
 
   /** Only DEAD operations; same idempotency key, attempts reset. */
-  replay(id: string): Observable<Operation> {
-    return this.http.post<Operation>(`${this.url}/${id}/replay`, {}, { params: this.scope.params() });
+  replay(id: string, tenantId = this.scope.tenantId()): Observable<Operation> {
+    return this.http.post<Operation>(`${this.url}/${id}/replay`, {}, { params: this.scope.params({}, tenantId) });
   }
 
   summary(from: string): Observable<OperationSummary> {

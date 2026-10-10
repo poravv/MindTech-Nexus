@@ -58,13 +58,13 @@
             En <span class="mono">{{ failure.step ?? '—' }}</span>{{ failure.errorCode ? ' · ' + failure.errorCode : '' }}
             · {{ failure.at | date: 'dd/MM HH:mm' }}
           </p>
-          <a class="block-link" [routerLink]="['/operaciones', failure.operationId]">Ver detalle y reintentar<app-icon name="chevron-right" /></a>
+          <a class="block-link" [routerLink]="['/operaciones', failure.operationId, { tenantId: integration.tenantId }]">Ver detalle y reintentar<app-icon name="chevron-right" /></a>
         } @else {
           <h2 id="b-last" class="eyebrow">Última operación</h2>
           @if (recent.value()[0]; as last) {
             <p class="block-value"><app-status-badge [status]="last.status" [large]="true" /></p>
             <p class="block-note"><span class="mono">{{ last.kind }}</span> · {{ last.createdAt | date: 'dd/MM HH:mm' }}</p>
-            <a class="block-link" [routerLink]="['/operaciones', last.id]">Ver operación<app-icon name="chevron-right" /></a>
+            <a class="block-link" [routerLink]="['/operaciones', last.id, { tenantId: integration.tenantId }]">Ver operación<app-icon name="chevron-right" /></a>
           } @else if (row.insight?.lastOperationAt; as at) {
             <p class="block-value plain">{{ at | date: 'dd/MM HH:mm' }}</p>
             <p class="block-note">Última operación registrada</p>

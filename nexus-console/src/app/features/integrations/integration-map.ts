@@ -69,7 +69,7 @@ export function operationNode(op: Operation): MapNode {
     icon: 'activity',
     kind: 'operación',
     title: op.kind,
-    link: ['/operaciones', op.id],
+    link: ['/operaciones', op.id, { tenantId: op.tenantId }],
     signals: [statusSignal(op.status)],
     note: `${op.currentStep ?? 'sin paso'} · intento ${op.attempts}/${op.maxAttempts}`,
     since: op.createdAt,

@@ -160,7 +160,7 @@
                     <p class="tile-tenant"><app-icon name="building" />{{ row.tenant?.name ?? '—' }}</p>
                   }
                   @if (row.insight?.lastFailure; as failure) {
-                    <a class="tile-failure" [routerLink]="['/operaciones', failure.operationId]">
+                    <a class="tile-failure" [routerLink]="['/operaciones', failure.operationId, { tenantId: row.integration.tenantId }]">
                       {{ row.insight.dead ? row.insight.dead + ' en DLQ' : 'Operación fallida' }} en
                       <span class="mono">{{ failure.step ?? '—' }}</span>{{ failure.errorCode ? ' · ' + failure.errorCode : '' }}
                     </a>
