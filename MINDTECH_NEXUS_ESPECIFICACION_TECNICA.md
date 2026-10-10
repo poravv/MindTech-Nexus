@@ -208,6 +208,7 @@ Backoff `min(maxDelay, base * 2^(attempt-1))` ± 20 % jitter. Clasificación com
 | `IN_PROGRESS` | 409 `EMISION_EN_CURSO` | `RETRY` a 30 s, no cuenta intento |
 | `AUTH` | 401/403 | `DEAD(credentials)` + alerta |
 | `PLAN_LIMIT` | 402 `PLAN_LIMIT_EXCEEDED` / `WORKSPACE_SUSPENDED` (SIFEN) | `DEAD(plan-limit)`; replay tras regularizar el plan |
+| `EXPIRED` | TRACK sigue pendiente tras 72 h | `DEAD(tracking-expired)` sin reintentos; un webhook de SIFEN la revive |
 
 ### 7.5 API de operaciones
 `GET /api/v1/operations/{id}` (m2m, mismo tenant) y `/api/admin/operations?tenantId&flow&status&from&to&q` + `/{id}` (con steps) + `POST /{id}/replay` (solo `DEAD`, audit obligatorio).

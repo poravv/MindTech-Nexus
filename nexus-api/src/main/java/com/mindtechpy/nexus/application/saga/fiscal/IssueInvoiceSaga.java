@@ -24,7 +24,8 @@ import static java.lang.System.Logger.Level.INFO;
 /**
  * {@code ISSUE_INVOICE} (spec §9): {@code SUBMIT} sends the canonical request to SIFEN; a document SIFEN
  * has not decided yet goes to {@code TRACK}, which polls at 1 m, 5 m, 15 m, 1 h and then every 6 h for at
- * most 72 h (a SIFEN webhook makes the next poll run at once). Any resend is preceded by a VERIFY read:
+ * most 72 h (a SIFEN webhook makes the next poll run at once); still pending after that, it ends
+ * DEAD({@value #TRACKING_EXPIRED}) at once instead of burning retries. Any resend is preceded by a VERIFY read:
  * a failed send may still have consumed numbering in SIFEN, so the transaction is looked up first and
  * adopted when it exists; only a 404 (or a reservation without CDC, which SIFEN resolves itself) sends
  * again, always with the same {@code transactionId}.
@@ -36,6 +37,8 @@ public class IssueInvoiceSaga implements Saga {
     static final List<Duration> TRACK_SCHEDULE = List.of(Duration.ofMinutes(1), Duration.ofMinutes(5),
             Duration.ofMinutes(15), Duration.ofHours(1), Duration.ofHours(6));
     static final Duration TRACK_LIMIT = Duration.ofHours(72);
+    /** Dead reason of a document still pending after {@link #TRACK_LIMIT}; a SIFEN webhook revives it. */
+    public static final String TRACKING_EXPIRED = "tracking-expired";
 
     private static final System.Logger log = System.getLogger(IssueInvoiceSaga.class.getName());
 
@@ -155,8 +158,8 @@ public class IssueInvoiceSaga implements Saga {
     private StepResult scheduleNextPoll(Operation op, SifenDocument doc) {
         Instant since = Instant.parse((String) op.result().get("trackingSince"));
         if (!clock.now().isBefore(since.plus(TRACK_LIMIT))) {
-            log(op, "TRACK → estado=" + doc.estado() + " tras " + TRACK_LIMIT.toHours() + " h: se agotan los reintentos");
-            return new StepResult.Failed(ConnectorError.of(ErrorKind.TRANSIENT, "tracking-expired",
+            log(op, "TRACK → estado=" + doc.estado() + " tras " + TRACK_LIMIT.toHours() + " h: DEAD hasta que SIFEN avise el estado final");
+            return new StepResult.Failed(ConnectorError.of(ErrorKind.EXPIRED, TRACKING_EXPIRED,
                     "SIFEN sigue en " + doc.estado() + " tras " + TRACK_LIMIT.toHours() + " h"));
         }
         int polls = ((Number) op.result().get("trackPolls")).intValue() + 1;

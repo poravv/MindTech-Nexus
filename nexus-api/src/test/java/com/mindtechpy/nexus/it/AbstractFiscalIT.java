@@ -12,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.JsonNode;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
@@ -121,6 +122,11 @@ abstract class AbstractFiscalIT extends AbstractOperationIT {
     protected Instant nextRunAt(UUID operationId) {
         return jdbc.sql("SELECT next_run_at FROM operations WHERE id = :id").param("id", operationId)
                 .query(OffsetDateTime.class).single().toInstant();
+    }
+
+    protected void trackingStartedHoursAgo(UUID operationId, int hours) {
+        jdbc.sql("UPDATE operations SET result = jsonb_set(result, '{trackingSince}', to_jsonb(CAST(:since AS text))) WHERE id = :id")
+                .param("since", Instant.now().minus(Duration.ofHours(hours)).toString()).param("id", operationId).update();
     }
 
     protected static void stubSubmit(String sourceRef, ResponseDefinitionBuilder response) {

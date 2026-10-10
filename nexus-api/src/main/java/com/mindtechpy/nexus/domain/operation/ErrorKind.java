@@ -20,5 +20,7 @@ public enum ErrorKind {
     /** 401/403: DEAD until credentials are fixed. */
     AUTH,
     /** 402: the remote plan is exhausted; DEAD until the plan is fixed, then replayed. */
-    PLAN_LIMIT
+    PLAN_LIMIT,
+    /** The remote never reached a final state in time: DEAD with the code as reason, no retries left to burn. */
+    EXPIRED
 }

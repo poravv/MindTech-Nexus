@@ -85,6 +85,25 @@ class IssueInvoiceSagaIT extends AbstractFiscalIT {
     }
 
     @Test
+    void should_end_dead_without_retrying_when_tracking_expires_with_sifen_still_pending() {
+        String ref = newSourceRef();
+        stubSubmit(ref, document(ref, "PENDIENTE_ENVIO"));
+        Operation op = issue(ref);
+        drain();
+        trackingStartedHoursAgo(op.id(), 73);
+        stubFind(ref, document(ref, "EN_PROCESO"));
+        makeDue(op.id());
+
+        drain();
+
+        Operation dead = reload(op.id());
+        assertThat(dead.status()).isEqualTo(OperationStatus.DEAD);
+        assertThat(dead.deadReason()).isEqualTo("tracking-expired");
+        assertThat(dead.lastError().kind()).isEqualTo(ErrorKind.EXPIRED);
+        assertThat(count(findsOf(ref))).isEqualTo(1);
+    }
+
+    @Test
     void should_adopt_without_resending_when_submit_times_out_and_verify_finds_the_document() {
         String ref = newSourceRef();
         stubSubmit(ref, document(ref, "APROBADO").withFixedDelay(READ_TIMEOUT_MS * 2));
