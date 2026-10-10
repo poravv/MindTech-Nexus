@@ -17,6 +17,10 @@ Fuente de verdad: `MINDTECH_NEXUS_ESPECIFICACION_TECNICA.md`, `docs/adr/`, `docs
 ## Sagas (flujos que cruzan sistemas)
 Compensación explícita por paso, validar el efecto real, punto único de compensación, idempotencia con clave estable (duplicado remoto = éxito), fail-fast de credenciales, prefijo de log estable (`[NEXUS-FISCAL]`, `[NEXUS-ORDER]`), tests por ramas de compensación.
 
+## Diseño de UI (regla del usuario)
+- Prohibido borde/barra de color a la izquierda en cards, navegación, alerts o filas. Activo/destacado = fondo suave, peso tipográfico, ícono o pill.
+- Interfaz amigable y moderna, alineada al lenguaje visual de punto-venta y sifen-dashboard.
+
 ## Seguridad
 Nunca secretos en Git, logs ni respuestas. `.env` y `.env.local-stack` son locales (gitignored). `tenant_id` en toda query.
 
