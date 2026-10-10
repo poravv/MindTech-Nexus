@@ -33,10 +33,12 @@ import static java.lang.System.Logger.Level.INFO;
  * compensation: an upsert leaves nothing to undo.
  * <p>
  * Every page marks its POS codes as seen by the run (its start time). After the last page,
- * {@code ARCHIVE_MISSING} takes off sale in GiftHub the mapped products neither this run nor a newer one saw
- * (the POS stopped listing them) and forgets their mappings, so the next run that sees them again puts them
- * back on sale. A run whose POS catalog came back
- * empty archives nothing: an empty catalog is far likelier a POS fault than a shop with nothing to sell.
+ * {@code ARCHIVE_MISSING} records a miss on the mapped products this run did not see, and takes off sale in
+ * GiftHub (forgetting their mappings) only those the previous complete run had missed too, so the next run that
+ * sees them again puts them back on sale. Two misses in a row are required because the POS only pages by offset
+ * ({@code page}/{@code limit} ordered by code, no keyset cursor): a product created or retired while a run pages
+ * shifts the rest, and one run can skip a product it still sells. A run whose POS catalog came back empty
+ * archives nothing: an empty catalog is far likelier a POS fault than a shop with nothing to sell.
  */
 public class CatalogSyncSaga implements Saga {
 
@@ -117,13 +119,14 @@ public class CatalogSyncSaga implements Saga {
      * Archives one chunk of {@value #PAGE_SIZE} per step, so a step makes one GiftHub call and stays well inside
      * the lease; it moves on while more remain. A chunk forgets the mappings GiftHub archived; the rows it did not
      * archive keep their mapping, count in {@code archiveErrors} and are marked seen by this run, so the next
-     * chunk does not pick them again (the next run retries them).
+     * chunk does not pick them again (they start over: two more complete runs must miss them).
      */
     private StepResult archiveMissing(StepContext context, Map<String, Object> result) {
         Operation op = context.operation();
         UUID giftHubId = context.target().connection().id();
         Duration readTimeout = Duration.ofMillis(context.integration().policy().readTimeoutMs());
-        List<String> missing = mappings.findNotSeenSince(op.tenantId(), giftHubId, EntityType.PRODUCT, op.createdAt());
+        mappings.markMissed(op.tenantId(), giftHubId, EntityType.PRODUCT, op.createdAt());
+        List<String> missing = mappings.findMissedTwice(op.tenantId(), giftHubId, EntityType.PRODUCT, op.createdAt());
         List<String> chunk = missing.subList(0, Math.min(PAGE_SIZE, missing.size()));
         if (!chunk.isEmpty()) {
             try {

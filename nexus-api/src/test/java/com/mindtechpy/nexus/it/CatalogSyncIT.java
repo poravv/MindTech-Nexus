@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.JsonNode;
 
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.IntStream;
 
@@ -106,7 +108,7 @@ class CatalogSyncIT extends AbstractConnectorIT {
     void should_archive_in_gifthub_the_mapped_products_the_pos_no_longer_lists() {
         UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
         insertProductMapping("P-0001");
-        insertProductMapping("P-RETIRADO");
+        insertMissedProductMapping("P-RETIRADO");
         stubPos(get(urlPathEqualTo(pos("/api/integration/catalog"))).willReturn(okJson(catalogPage(1, 1, 1))));
         stubGiftHub(put(urlPathEqualTo(gh("/products/bulk"))).willReturn(okJson(bulkResponse()).withTransformers("response-template")));
 
@@ -129,7 +131,7 @@ class CatalogSyncIT extends AbstractConnectorIT {
     void should_archive_one_chunk_per_step_until_every_missing_product_is_off_sale() {
         UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
         insertProductMapping("P-0001");
-        IntStream.rangeClosed(1, 501).forEach(n -> insertProductMapping("P-RETIRADO-%03d".formatted(n)));
+        IntStream.rangeClosed(1, 501).forEach(n -> insertMissedProductMapping("P-RETIRADO-%03d".formatted(n)));
         stubPos(get(urlPathEqualTo(pos("/api/integration/catalog"))).willReturn(okJson(catalogPage(1, 1, 1))));
         stubGiftHub(put(urlPathEqualTo(gh("/products/bulk"))).willReturn(okJson(bulkResponse()).withTransformers("response-template")));
 
@@ -149,7 +151,7 @@ class CatalogSyncIT extends AbstractConnectorIT {
     @Test
     void should_keep_mapping_and_report_error_when_gifthub_rejects_the_archive_of_a_product() {
         UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
-        insertProductMapping("P-BORRADO-EN-GIFTHUB");
+        insertMissedProductMapping("P-BORRADO-EN-GIFTHUB");
         stubPos(get(urlPathEqualTo(pos("/api/integration/catalog"))).willReturn(okJson(catalogPage(1, 1, 1))));
         stubGiftHub(put(urlPathEqualTo(gh("/products/bulk"))).withRequestBody(notContaining("\"archived\""))
                 .willReturn(okJson(bulkResponse()).withTransformers("response-template")));
@@ -164,6 +166,46 @@ class CatalogSyncIT extends AbstractConnectorIT {
         assertThat(done.status()).isEqualTo(OperationStatus.SUCCEEDED);
         assertThat(done.result()).containsEntry("archived", 0).containsEntry("archiveErrors", 1);
         assertThat(productMappings()).contains("P-BORRADO-EN-GIFTHUB");
+    }
+
+    @Test
+    void should_archive_a_product_only_when_two_complete_runs_in_a_row_miss_it() {
+        UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+        insertProductMapping("P-0001");
+        insertProductMapping("P-SALTEADO");
+        stubPos(get(urlPathEqualTo(pos("/api/integration/catalog"))).willReturn(okJson(catalogPage(1, 1, 1))));
+        stubGiftHub(put(urlPathEqualTo(gh("/products/bulk"))).willReturn(okJson(bulkResponse()).withTransformers("response-template")));
+
+        Operation first = runNow(integration);
+        drain();
+
+        assertThat(reload(first.id()).result()).containsEntry("archived", 0);
+        assertThat(giftHubRequests("PUT", "/products/bulk")).hasSize(1);
+        assertThat(missedAt("P-SALTEADO")).isPresent();
+        assertThat(missedAt("P-0001")).isEmpty();
+
+        runCatalogSync.scheduleDue();
+        drain();
+
+        var bulks = giftHubRequests("PUT", "/products/bulk");
+        assertThat(bulks).hasSize(3);
+        assertThat(jsonOf(bulks.get(2)).get("products").get(0).get("external_id").asString()).isEqualTo("P-SALTEADO");
+        assertThat(productMappings()).containsExactly("P-0001");
+    }
+
+    @Test
+    void should_forget_a_previous_miss_when_the_pos_lists_the_product_again() {
+        UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+        insertMissedProductMapping("P-0001");
+        stubPos(get(urlPathEqualTo(pos("/api/integration/catalog"))).willReturn(okJson(catalogPage(1, 1, 1))));
+        stubGiftHub(put(urlPathEqualTo(gh("/products/bulk"))).willReturn(okJson(bulkResponse()).withTransformers("response-template")));
+
+        Operation op = runNow(integration);
+        drain();
+
+        assertThat(reload(op.id()).result()).containsEntry("archived", 0);
+        assertThat(giftHubRequests("PUT", "/products/bulk")).hasSize(1);
+        assertThat(missedAt("P-0001")).isEmpty();
     }
 
     @Test
@@ -279,6 +321,19 @@ class CatalogSyncIT extends AbstractConnectorIT {
                 INSERT INTO entity_mappings (id, tenant_id, connection_id, entity_type, internal_id, external_id)
                 VALUES (gen_random_uuid(), :t, :c, 'PRODUCT', :code, :gh)""")
                 .param("t", tenant).param("c", giftHubConnection).param("code", code).param("gh", "gh-" + code).update();
+    }
+
+    /** A mapping an earlier complete run (an hour ago) already missed. */
+    private void insertMissedProductMapping(String code) {
+        insertProductMapping(code);
+        jdbc.sql("UPDATE entity_mappings SET missed_at = :at WHERE tenant_id = :t AND internal_id = :code")
+                .param("at", Instant.now().minus(Duration.ofHours(1)).atOffset(ZoneOffset.UTC))
+                .param("t", tenant).param("code", code).update();
+    }
+
+    private Optional<Timestamp> missedAt(String code) {
+        return jdbc.sql("SELECT missed_at FROM entity_mappings WHERE tenant_id = :t AND internal_id = :code")
+                .param("t", tenant).param("code", code).query((rs, n) -> Optional.ofNullable(rs.getTimestamp(1))).single();
     }
 
     private List<String> productMappings() {

@@ -50,7 +50,8 @@ class JdbcEntityMappingRepository implements EntityMappingRepository {
             return;
         }
         jdbc.sql("""
-                        UPDATE entity_mappings SET last_seen_at = GREATEST(last_seen_at, :runStartedAt)
+                        UPDATE entity_mappings SET last_seen_at = GREATEST(last_seen_at, :runStartedAt),
+                               missed_at = CASE WHEN missed_at <= :runStartedAt THEN NULL ELSE missed_at END
                         WHERE tenant_id = :tenantId AND connection_id = :connectionId AND entity_type = :type
                           AND internal_id = ANY (CAST(:ids AS text[]))""")
                 .param("runStartedAt", JdbcValues.timestamp(runStartedAt))
@@ -62,11 +63,24 @@ class JdbcEntityMappingRepository implements EntityMappingRepository {
     }
 
     @Override
-    public List<String> findNotSeenSince(TenantId tenantId, UUID connectionId, EntityType type, Instant runStartedAt) {
+    public void markMissed(TenantId tenantId, UUID connectionId, EntityType type, Instant runStartedAt) {
+        jdbc.sql("""
+                        UPDATE entity_mappings SET missed_at = :runStartedAt
+                        WHERE tenant_id = :tenantId AND connection_id = :connectionId AND entity_type = :type
+                          AND (last_seen_at IS NULL OR last_seen_at < :runStartedAt) AND missed_at IS NULL""")
+                .param("tenantId", tenantId.value())
+                .param("connectionId", connectionId)
+                .param("type", type.name())
+                .param("runStartedAt", JdbcValues.timestamp(runStartedAt))
+                .update();
+    }
+
+    @Override
+    public List<String> findMissedTwice(TenantId tenantId, UUID connectionId, EntityType type, Instant runStartedAt) {
         return jdbc.sql("""
                         SELECT internal_id FROM entity_mappings
                         WHERE tenant_id = :tenantId AND connection_id = :connectionId AND entity_type = :type
-                          AND (last_seen_at IS NULL OR last_seen_at < :runStartedAt)
+                          AND (last_seen_at IS NULL OR last_seen_at < :runStartedAt) AND missed_at < :runStartedAt
                         ORDER BY internal_id""")
                 .param("tenantId", tenantId.value())
                 .param("connectionId", connectionId)
