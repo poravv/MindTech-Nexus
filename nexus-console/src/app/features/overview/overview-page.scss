@@ -31,7 +31,7 @@ a.kpi:hover .kpi-value {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  font-size: clamp(2rem, 7vw, var(--text-kpi));
+  font-size: var(--text-kpi);
   font-weight: var(--weight-light);
   line-height: 1;
   white-space: nowrap;
@@ -39,7 +39,7 @@ a.kpi:hover .kpi-value {
 }
 
 .kpi-icon {
-  --icon-size: 2rem;
+  --icon-size: var(--icon-size-status);
   color: var(--color-text-muted);
 }
 

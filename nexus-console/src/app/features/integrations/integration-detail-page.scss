@@ -10,12 +10,12 @@
 }
 
 .title-icon {
-  --icon-size: 2rem;
+  --icon-size: 1.5rem;
   display: grid;
   flex: none;
   place-items: center;
-  width: 4rem;
-  height: 4rem;
+  width: var(--entity-avatar);
+  height: var(--entity-avatar);
   border-radius: 50%;
   background: var(--color-root);
   color: var(--color-text-inverse);
@@ -31,7 +31,7 @@
   align-items: center;
   gap: 0 var(--space-1);
   margin-top: var(--space-1);
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
   color: var(--color-text-muted);
 }
 
@@ -114,7 +114,7 @@
 }
 
 .block-value {
-  min-height: 2.75rem;
+  min-height: var(--control-height-sm);
   display: flex;
   align-items: center;
 }
