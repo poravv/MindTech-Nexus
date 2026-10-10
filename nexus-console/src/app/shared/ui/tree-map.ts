@@ -1,4 +1,4 @@
-import { NgTemplateOutlet } from '@angular/common';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import {
   afterRenderEffect,
   ChangeDetectionStrategy,
@@ -39,7 +39,7 @@ let nextId = 0;
 @Component({
   selector: 'app-tree-map',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet, RouterLink, Icon, Logo],
+  imports: [DatePipe, NgTemplateOutlet, RouterLink, Icon, Logo],
   templateUrl: './tree-map.html',
   styleUrl: './tree-map.scss',
   host: {

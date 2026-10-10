@@ -55,8 +55,8 @@
     </button>
   }
 
-  @if (node.since) {
-    <span class="age" [attr.title]="node.since">{{ age(node.since) }}</span>
+  @if (node.since; as since) {
+    <span class="age" [attr.title]="since.label + ': ' + (since.at | date: 'dd/MM/yyyy HH:mm')">{{ age(since.at) }}</span>
   }
 </ng-template>
 

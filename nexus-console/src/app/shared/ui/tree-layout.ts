@@ -26,8 +26,8 @@ export interface MapNode {
   signals: MapSignal[];
   /** Second line under the signals ("3 integraciones · 1 con fallas"). */
   note?: string;
-  /** ISO date for the age pill (last activity or last change). */
-  since?: string | null;
+  /** Age pill: an ISO date and what it marks ("Última operación", "Alta"…), which the tooltip spells out. */
+  since?: { at: string; label: string } | null;
   actions?: MapAction[];
   children?: MapNode[];
 }

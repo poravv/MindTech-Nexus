@@ -169,8 +169,9 @@
                     </a>
                   }
                 </div>
-                <span class="age" [attr.title]="row.insight?.lastOperationAt ?? integration.updatedAt">
-                  {{ age(row.insight?.lastOperationAt ?? integration.updatedAt) }}
+                @let last = row.insight?.lastOperationAt;
+                <span class="age" [attr.title]="(last ? 'Última operación: ' : 'Modificada: ') + ((last ?? integration.updatedAt) | date: 'dd/MM/yyyy HH:mm')">
+                  {{ age(last ?? integration.updatedAt) }}
                 </span>
               </li>
             }

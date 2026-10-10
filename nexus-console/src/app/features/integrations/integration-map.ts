@@ -40,7 +40,7 @@ export function connectionNode(id: string, connection: Connection | undefined, r
     link: '/conexiones',
     signals: connectionSignals(connection),
     note: role,
-    since: connection.lastTestAt,
+    since: connection.lastTestAt ? { at: connection.lastTestAt, label: 'Última prueba' } : null,
   };
 }
 
@@ -55,7 +55,9 @@ export function integrationNode(row: IntegrationRow, actions: MapAction[], withC
     link: ['/integraciones', integration.id],
     signals: [healthSignal(row.health), statusSignal(integration.state)],
     note: dead ? `${dead} en DLQ` : FLOW_META[integration.flow].route,
-    since: insight?.lastOperationAt ?? integration.updatedAt,
+    since: insight?.lastOperationAt
+      ? { at: insight.lastOperationAt, label: 'Última operación' }
+      : { at: integration.updatedAt, label: 'Modificada' },
     actions,
     children: withConnections
       ? [connectionNode(`${integration.id}:source`, row.source, 'origen'), connectionNode(`${integration.id}:target`, row.target, 'destino')]
@@ -72,7 +74,7 @@ export function operationNode(op: Operation): MapNode {
     link: ['/operaciones', op.id, { tenantId: op.tenantId }],
     signals: [statusSignal(op.status)],
     note: `${op.currentStep ?? 'sin paso'} · intento ${op.attempts}/${op.maxAttempts}`,
-    since: op.createdAt,
+    since: { at: op.createdAt, label: 'Creada' },
   };
 }
 
@@ -90,7 +92,7 @@ export function tenantNode(tenant: Tenant, rows: IntegrationRow[], children: Map
     title: tenant.name,
     signals: [healthSignal(worstHealth(rows.map((row) => row.health))), statusSignal(tenant.status)],
     note: countNote(rows),
-    since: tenant.createdAt,
+    since: { at: tenant.createdAt, label: 'Alta' },
     actions,
     children,
   };

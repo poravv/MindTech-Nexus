@@ -75,7 +75,7 @@ export default class IntegrationDetailPage {
       title: integration.code,
       signals: [healthSignal(row.health), statusSignal(integration.state)],
       note: `${FLOW_META[integration.flow].route} · v${integration.version}`,
-      since: integration.updatedAt,
+      since: { at: integration.updatedAt, label: 'Modificada' },
       children: [
         connectionNode(`${integration.id}:source`, row.source, 'origen'),
         connectionNode(`${integration.id}:target`, row.target, 'destino'),
