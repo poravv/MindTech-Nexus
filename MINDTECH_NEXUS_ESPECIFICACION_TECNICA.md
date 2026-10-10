@@ -10,7 +10,7 @@
 | Deployables | `nexus-api` + `nexus-worker` + `nexus-web` | **Un solo Spring Boot `nexus-api`** (API runtime + admin API + worker, worker activable por `nexus.worker.enabled`) + `nexus-console` (Angular, nginx) |
 | Infraestructura | Postgres + Redis + RabbitMQ + Keycloak | **Solo PostgreSQL.** Cola/outbox con `FOR UPDATE SKIP LOCKED`; rate limit y concurrencia en memoria (1 réplica); auth propia. Puertos definidos para migrar después |
 | Stack | Java 25 / Spring Boot 4.1 "a confirmar" | **Java 21 LTS + Spring Boot 4.1.1** (verificado en Maven Central, ago-2026; la línea 3.5 cerró en jun-2026). sifen-backend usa Java 21 / Boot 3.5.16, misma imagen base `eclipse-temurin:21-jre`. **Angular 22.2** |
-| Ingress | ingress-nginx, cert-manager, MetalLB | **Traefik v3 + Gateway API (`HTTPRoute` → `public-gateway/traefik`) + cloudflared.** TLS lo termina Cloudflare. Las demás apps viven en `*.mindtechpy.net`; la consola usa **`nexus.mindtechpy.com`** (DNS ya creado por el usuario hacia el túnel) |
+| Ingress | ingress-nginx, cert-manager, MetalLB | **Traefik v3 + Gateway API (`HTTPRoute` → `public-gateway/traefik`) + cloudflared.** TLS lo termina Cloudflare. Las demás apps viven en `*.mindtechpy.net`; la consola usa **`nexus.mindtechpy.net`** (DNS ya creado por el usuario hacia el túnel) |
 | Postgres | compartido | **Uno por app** (Deployment + PVC Longhorn). Nexus lleva el suyo en el namespace `nexus` |
 | Secretos | External Secrets / Vault | **Secret de K8s creado por CI** (`kubectl create secret --dry-run \| apply`). Credenciales de conexiones por tenant **cifradas AES-256-GCM en DB** con master key del Secret |
 | Contrato SIFEN | asumido asíncrono, lotes, "Idempotency-Key" | **Síncrono** `POST /api/v1/facturas` (hasta ~150 s). Idempotencia por `transactionId` + hash de payload (200 repetido / 409 conflicto / 409 `EMISION_EN_CURSO`). Auth `X-Access-Key`+`X-Secret-Key` + **HMAC obligatorio en producción**. Numeración y timbrado los pone SIFEN. Webhooks firmados existen pero solo los registra un SUPER_ADMIN de SIFEN |
@@ -42,7 +42,7 @@ Detalle con archivo:línea en `docs/discovery.md`.
 | **punto-venta** | NestJS 10, TypeORM, PG16, Redis/BullMQ, pnpm, Node 22 | `punto-venta` / `http://backend.punto-venta.svc.cluster.local:3000/api` | Solo JWT humano (15 min). **No hay API keys** | API key m2m, `/api/integration/*`, canal+ref externa en `sales`, teléfono E.164 en `customers`, listener hacia Nexus |
 | **electronico-sifen-backend** | Spring Boot 3.5.16, Java 21, PG15, Redis, Liquibase | `sifen` / `http://backend.sifen.svc.cluster.local:8081` (actuator `:8082`) | `X-Access-Key`/`X-Secret-Key` + HMAC (`X-Timestamp`,`X-Nonce`,`X-Signature`), scopes por emisor | Nada en código. Operativo: crear emisor/credencial para el tenant piloto, registrar webhook (SUPER_ADMIN) |
 | **gift-hub** | Fastify 5, Prisma 6, PG16, Node 22, React 19 | `comercio-central` / `http://api.comercio-central.svc.cluster.local:3000` | `Authorization: Bearer gh_live_…` por tenant; webhooks HMAC `X-GiftHub-Timestamp` + `X-GiftHub-Delivery` | Guardar `externalOrderId` en `Order` (opcional pero recomendado); nada más en v1 |
-| **k8s-platforms** | Argo CD app-of-apps, Traefik GW API, cloudflared, Longhorn, kube-prometheus-stack, Loki/Promtail | — | — | `argocd/apps/nexus.yaml`; abrir NetworkPolicies de POS y SIFEN; CNAME `nexus.mindtechpy.com` |
+| **k8s-platforms** | Argo CD app-of-apps, Traefik GW API, cloudflared, Longhorn, kube-prometheus-stack, Loki/Promtail | — | — | `argocd/apps/nexus.yaml`; abrir NetworkPolicies de POS y SIFEN; CNAME `nexus.mindtechpy.net` |
 
 ## 3. Arquitectura
 
@@ -100,11 +100,11 @@ MindTech-Nexus/
   - `nexus-api` ClusterIP `8080` (http) y `8081` (management, `/actuator/health/{liveness,readiness}`, `/actuator/prometheus`). `replicas: 1`, sin HPA (el worker es único por diseño en v1).
   - `nexus-console` ClusterIP `8080` (nginx unprivileged, uid 101, `readOnlyRootFilesystem`), `replicas: 1`.
   - `postgres` ClusterIP `5432`, `postgres:16-alpine` pineado a minor, PVC 5Gi `longhorn`, `PGDATA=/var/lib/postgresql/data/pgdata`.
-- **Exposición pública**: solo `nexus-console` vía `HTTPRoute nexus.mindtechpy.com` → `nexus-console:8080` (`parentRefs: public-gateway` ns `traefik`). nginx hace proxy **únicamente** de `/api/admin/` y `/api/v1/webhooks/` a `nexus-api:8080`. El runtime m2m (`/api/v1/*` resto) no tiene ruta pública. DNS: el CNAME `nexus.mindtechpy.com` → túnel ya existe (lo creó el usuario). La regla wildcard del túnel solo cubre `*.mindtechpy.net`: en S7 se verifica que el túnel tenga la regla pública `nexus.mindtechpy.com → http://traefik.traefik:80` (Zero Trust → Tunnels → Public hostnames).
+- **Exposición pública**: solo `nexus-console` vía `HTTPRoute nexus.mindtechpy.net` → `nexus-console:8080` (`parentRefs: public-gateway` ns `traefik`). nginx hace proxy **únicamente** de `/api/admin/` y `/api/v1/webhooks/` a `nexus-api:8080`. El runtime m2m (`/api/v1/*` resto) no tiene ruta pública. DNS: el CNAME `nexus.mindtechpy.net` → túnel ya existe (lo creó el usuario). La regla wildcard del túnel (`*.mindtechpy.net → http://traefik.traefik:80`) ya lo cubre: no hace falta public hostname nuevo, solo el `HTTPRoute`.
 - **URLs que usa Nexus** (desde `connections.base_url`, allowlist por defecto `*.svc.cluster.local`):
   - POS: `http://backend.punto-venta.svc.cluster.local:3000/api`
   - SIFEN: `http://backend.sifen.svc.cluster.local:8081`
-  - GiftHub: `http://api.comercio-central.svc.cluster.local:3000` (verificado en `gift-hub/k8s/api.yaml:142-152`). En sentido inverso, el transporte de webhooks de GiftHub **exige `https://` y bloquea IPs privadas** (`https-webhook-transport.ts:26-29`): la URL registrada en GiftHub es la pública `https://nexus.mindtechpy.com/api/v1/webhooks/gifthub/{connectionId}`.
+  - GiftHub: `http://api.comercio-central.svc.cluster.local:3000` (verificado en `gift-hub/k8s/api.yaml:142-152`). En sentido inverso, el transporte de webhooks de GiftHub **exige `https://` y bloquea IPs privadas** (`https-webhook-transport.ts:26-29`): la URL registrada en GiftHub es la pública `https://nexus.mindtechpy.net/api/v1/webhooks/gifthub/{connectionId}`.
 - **NetworkPolicies** (slice S7): `nexus` default-deny con egress a kube-dns (53), `punto-venta`, `sifen`, `comercio-central`, `postgres` propio, y 443 para el CronJob de backup; ingress desde `traefik` (solo console) y desde `comercio-central` (webhooks) y `punto-venta` (runtime). En los repos de POS y SIFEN se agrega `namespaceSelector: kubernetes.io/metadata.name: nexus` a sus NetworkPolicies de ingress al `backend`.
 - **Observabilidad**: `ServiceMonitor` sobre el puerto `management` `/actuator/prometheus` (Prometheus levanta cualquier ServiceMonitor del cluster); logs JSON a stdout (Promtail → Loki). No hay collector OTel en el cluster: traces fuera de v1.
 - **Backups**: CronJob copiado de `punto-venta/k8s/backup-cronjobs.yaml` (pg_dump `-Fc`, verificación de tamaño > 10 KB, rclone crypt a R2 bajo prefijo `nexus`); agregar `nexus` a `BACKUP_NAMESPACES` en `platforms-deploy.yml`.
@@ -141,7 +141,7 @@ MindTech-Nexus/
 ### 5.4 SSRF y entrada
 - `base_url` de conexión: scheme `http|https`, host en allowlist configurable `nexus.connectors.allowed-hosts` (default: `*.svc.cluster.local`, `localhost` solo en perfil `local`), sin IPs literales, sin credenciales en URL, redirects deshabilitados en `RestClient`.
 - Webhooks entrantes: verificación HMAC con tolerancia ±300 s, dedupe por id de entrega (`inbound_events`), body máximo 256 KB, rate limit por `connectionId`.
-- Errores: `application/problem+json` (RFC 9457) con `type` estable `https://nexus.mindtechpy.com/problems/<code>`, `code`, `correlationId`.
+- Errores: `application/problem+json` (RFC 9457) con `type` estable `https://nexus.mindtechpy.net/problems/<code>`, `code`, `correlationId`.
 
 ## 6. Modelo de datos (PostgreSQL, Flyway)
 
@@ -340,7 +340,7 @@ Micrometer → `/actuator/prometheus`: `nexus_operations_total{flow,kind,status}
 - `ci.yml` (PR, `ubuntu-latest`): `mvn -B verify` (Testcontainers con Docker del runner) y `npm ci && npm test && npm run build` en console.
 - `deploy.yml` (push a `main`, `runs-on: self-hosted`, `permissions: contents: write`): build & push `ghcr.io/poravv/mindtech-nexus/api:sha-<7>` y `/console:sha-<7>` (paquetes públicos); `kubectl create secret generic nexus-api-secrets --from-file=… --dry-run=client -o yaml | kubectl apply -n nexus -f -`; `sed` del tag en `k8s/api-deployment.yaml` y `k8s/console-deployment.yaml`; commit `chore(deploy): nexus sha-<7> [skip ci]` como `github-actions[bot]` con reintento `fetch`+`reset --hard`; espera `rollout status` hasta 10 min; smoke `wget` a `/actuator/health` desde el pod de console.
 - Flyway corre al arrancar `nexus-api` (migraciones aditivas; expand/contract para cambios destructivos). Backup previo a migración: Job hook de Argo `PreSync` copiado de accenova (Evolución si no entra en S7).
-- Pasos manuales de infraestructura (una vez): CNAME en Cloudflare; PR en `k8s-platforms` (`argocd/apps/nexus.yaml`, `BACKUP_NAMESPACES`); PRs en `punto-venta/k8s/network-policy.yaml` y `electronico-sifen-backend/k8s/network-policy.yaml`; en SIFEN crear emisor + API key del tenant piloto y registrar el webhook `https://nexus.mindtechpy.com/api/v1/webhooks/sifen/{connectionId}` (SUPER_ADMIN); en GiftHub crear integración + API key + webhook `…/webhooks/gifthub/{connectionId}` con `includeCustomer` activo.
+- Pasos manuales de infraestructura (una vez): CNAME en Cloudflare; PR en `k8s-platforms` (`argocd/apps/nexus.yaml`, `BACKUP_NAMESPACES`); PRs en `punto-venta/k8s/network-policy.yaml` y `electronico-sifen-backend/k8s/network-policy.yaml`; en SIFEN crear emisor + API key del tenant piloto y registrar el webhook `https://nexus.mindtechpy.net/api/v1/webhooks/sifen/{connectionId}` (SUPER_ADMIN); en GiftHub crear integración + API key + webhook `…/webhooks/gifthub/{connectionId}` con `includeCustomer` activo.
 
 ## 16. Evolución (fuera del MVP, en orden probable)
 1. `RateLimiterPort` en Postgres o Redis y `JobQueuePort` en RabbitMQ cuando haya >1 réplica de worker o >50 ops/s.
@@ -355,7 +355,7 @@ Micrometer → `/actuator/prometheus`: `nexus_operations_total{flow,kind,status}
 | Riesgo / pregunta | Default adoptado |
 |---|---|
 | SIFEN nunca emitió contra sifen-test real (`PLAN_FASES.md:163-175`) | Nexus se prueba contra WireMock con fixtures de `examples/`; la primera emisión real en sifen-test se hace con el tenant piloto y `ambiente=2` antes de cualquier producción |
-| GiftHub exige `https` y bloquea IPs privadas al enviar webhooks (verificado) | La URL registrada es la pública `https://nexus.mindtechpy.com/api/v1/webhooks/gifthub/{connectionId}` (firma HMAC + dedupe + rate limit) |
+| GiftHub exige `https` y bloquea IPs privadas al enviar webhooks (verificado) | La URL registrada es la pública `https://nexus.mindtechpy.net/api/v1/webhooks/gifthub/{connectionId}` (firma HMAC + dedupe + rate limit) |
 | El POS no reserva stock | Aceptado en v1; el POS rechaza al crear si no hay stock; GiftHub recibe `CANCELLED` con motivo |
 | Cliente sin teléfono/`includeCustomer` desactivado | La conexión POS tiene `settings.defaultCustomerId` ("Consumidor final"); se usa si el evento no trae cliente |
 | Sucursal/depósito/caja para pedidos de canal | `settings.branchRef`/`warehouseRef` en la conexión POS; la venta `PENDING` no necesita caja abierta; el cobro lo hace un operador humano en el POS |
