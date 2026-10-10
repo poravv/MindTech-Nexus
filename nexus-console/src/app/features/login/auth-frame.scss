@@ -55,16 +55,16 @@
   }
 
   .headline {
-    font-size: var(--text-2xl);
-    font-weight: var(--weight-semibold);
-    letter-spacing: -0.025em;
+    font-size: 2.25rem;
+    font-weight: var(--weight-medium);
+    letter-spacing: -0.02em;
     line-height: 1.15;
     color: var(--color-rail-text-active);
     text-wrap: balance;
   }
 
   .sub {
-    font-size: var(--text-md);
+    font-size: var(--text-lg);
     color: var(--color-rail-text-muted);
     max-width: 52ch;
   }
@@ -77,7 +77,7 @@
   }
 
   .foot {
-    font-size: var(--text-xs);
+    font-size: var(--text-sm);
     color: var(--color-rail-text-muted);
   }
 
@@ -107,7 +107,7 @@
   stroke: oklch(78% 0.14 290);
   stroke-linecap: round;
   stroke-dasharray: 2 18;
-  animation: travel 2.4s linear infinite;
+  animation: travel 2.4s linear 3;
 }
 
 @keyframes travel {

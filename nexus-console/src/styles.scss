@@ -1,24 +1,24 @@
 @use "styles/tokens";
 
-// Inter self-hosted (same files as the POS): CSP is font-src 'self' and the console must not call Google Fonts.
+// Heebo self-hosted (OFL, variable 300–700): CSP is font-src 'self' and the console must not call Google Fonts.
 @font-face {
-  font-family: "Inter";
+  font-family: "Heebo";
   font-style: normal;
-  font-weight: 400 700;
+  font-weight: 300 700;
   font-display: swap;
-  src: url("/fonts/inter-latin-var.woff2") format("woff2");
+  src: url("/fonts/heebo-latin-var.woff2") format("woff2");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
     U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 @font-face {
-  font-family: "Inter";
+  font-family: "Heebo";
   font-style: normal;
-  font-weight: 400 700;
+  font-weight: 300 700;
   font-display: swap;
-  src: url("/fonts/inter-latin-ext-var.woff2") format("woff2");
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+2020, U+20A0-20AB,
-    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+  src: url("/fonts/heebo-latin-ext-var.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
+    U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
 *,
@@ -37,7 +37,6 @@ body {
   font-family: var(--font-sans);
   font-size: var(--text-md);
   line-height: var(--leading);
-  font-feature-settings: "cv11", "ss01";
   color: var(--color-text);
   background: var(--color-bg);
   -webkit-font-smoothing: antialiased;
@@ -58,15 +57,17 @@ h3 {
 }
 
 h1 {
-  font-size: var(--text-xl);
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-medium);
 }
 
 h2 {
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-medium);
 }
 
 h3 {
-  font-size: var(--text-md);
+  font-size: var(--text-lg);
 }
 
 p {
@@ -125,13 +126,13 @@ pre,
   justify-content: center;
   gap: var(--space-2);
   min-height: var(--control-height);
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-4);
   border: var(--border-width) solid var(--color-border-strong);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   font-weight: var(--weight-medium);
   line-height: 1;
   cursor: pointer;
@@ -360,7 +361,7 @@ legend {
   margin-top: var(--space-1);
   max-width: 70ch;
   color: var(--color-text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
 }
 
 .page-actions {
@@ -392,7 +393,7 @@ legend {
 }
 
 .panel-head h2 {
-  font-size: var(--text-md);
+  font-size: var(--text-lg);
 }
 
 .alert {
@@ -403,7 +404,7 @@ legend {
   border-radius: var(--radius-md);
   background: var(--color-danger-soft);
   color: var(--color-text);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
 }
 
 .alert::before {
@@ -436,7 +437,7 @@ legend {
   padding: var(--space-6) var(--space-4);
   text-align: center;
   color: var(--color-text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
 }
 
 .toolbar {
@@ -505,7 +506,7 @@ pre.json {
   background: transparent;
   color: var(--color-text-muted);
   font: inherit;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   cursor: pointer;
 }
@@ -518,7 +519,7 @@ pre.json {
 
 // Icon + text status for values that are not entity states (credentials, connection tests).
 .inline-status {
-  --icon-size: 0.875rem;
+  --icon-size: 1.125rem;
   display: inline-flex;
   align-items: center;
   gap: 0.3125rem;
@@ -546,21 +547,21 @@ pre.json {
 table.data {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
 }
 
 table.data th,
 table.data td {
   padding: var(--space-2) var(--space-4);
-  height: 2.75rem;
+  height: 3.25rem;
   text-align: left;
   vertical-align: middle;
   border-bottom: var(--border-width) solid var(--color-border);
 }
 
 table.data th {
-  height: 2.25rem;
-  font-size: var(--text-2xs);
+  height: 2.5rem;
+  font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
   text-transform: uppercase;
   letter-spacing: var(--tracking-caps);
@@ -621,4 +622,14 @@ table.data a {
 
 h1 .mono {
   font-size: 0.9em;
+}
+
+// Uppercase section label (status blocks, facets, chart titles), as in Argo CD.
+.eyebrow {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
 }
