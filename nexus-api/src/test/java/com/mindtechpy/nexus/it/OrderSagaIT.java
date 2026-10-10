@@ -85,6 +85,19 @@ class OrderSagaIT extends AbstractConnectorIT {
     }
 
     @Test
+    void should_create_the_sale_without_payment_method_when_the_order_has_none() {
+        stubPos(post(urlPathEqualTo(pos("/api/integration/orders"))).willReturn(jsonResponse(SALE, 201)));
+        String delivery = UUID.randomUUID().toString();
+        String body = orderCreated(delivery, orderId, maria()).replace("\"payment_method\":\"TRANSFER\",", "");
+        JsonNode received = sendSigned(delivery, body, 200);
+
+        drain();
+
+        assertThat(reload(UUID.fromString(received.get("operationId").asString())).status()).isEqualTo(OperationStatus.SUCCEEDED);
+        assertThat(jsonOf(posRequests("POST", "/api/integration/orders").getFirst()).has("paymentMethod")).isFalse();
+    }
+
+    @Test
     void should_cancel_in_gifthub_with_reason_and_fail_when_pos_rejects_for_stock() {
         stubPos(post(urlPathEqualTo(pos("/api/integration/orders"))).willReturn(jsonResponse(
                 "{\"code\":\"insufficient-stock\",\"message\":\"Stock insuficiente para SKU-1001\"}", 422)));

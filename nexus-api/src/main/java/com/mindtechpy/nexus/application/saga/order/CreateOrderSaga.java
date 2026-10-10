@@ -211,7 +211,7 @@ public class CreateOrderSaga implements Saga {
                         order.customer() == null ? null : truncate(order.customer().name(), 150),
                         order.customer() == null ? null : truncate(order.customer().phone(), 50),
                         truncate(order.delivery().reference(), 500));
-        String paymentMethod = POS_PAYMENT_METHODS.contains(order.paymentMethod()) ? order.paymentMethod() : null;
+        String paymentMethod = order.paymentMethod() != null && POS_PAYMENT_METHODS.contains(order.paymentMethod()) ? order.paymentMethod() : null;
         return new PosPort.NewOrder(CHANNEL, order.orderId(), (String) context.operation().result().get("customerId"),
                 setting(settings, "branchId"), setting(settings, "warehouseId"), items, delivery, paymentMethod, notes(order));
     }
