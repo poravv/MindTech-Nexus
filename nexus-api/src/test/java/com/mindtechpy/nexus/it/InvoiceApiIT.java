@@ -153,17 +153,19 @@ class InvoiceApiIT extends AbstractFiscalIT {
     }
 
     @Test
-    void should_expose_the_sifen_message_on_the_operation_when_sifen_refuses_the_cancellation() {
+    void should_fail_with_cancel_window_expired_and_the_sifen_message_when_sifen_refuses_a_late_cancellation() {
         String ref = approvedInvoice();
+        String message = "Plazo de cancelacion excedido. Limite: 48h, transcurrido: 50h desde aprobacion";
         SIFEN.stubFor(WireMock.post(urlEqualTo("/api/v1/facturas/" + ref + "/cancelar"))
-                .willReturn(sifenError(409, "BUSINESS_RULE", "Plazo de cancelacion vencido")));
+                .willReturn(sifenError(409, "BUSINESS_RULE", message)));
 
         JsonNode accepted = body(cancel(ref, "Fuera de plazo", 202));
         drain();
 
         JsonNode operation = operation(accepted.get("operationId").asString());
         assertThat(operation.get("status").asString()).isEqualTo("FAILED");
-        assertThat(operation.get("lastError").get("message").asString()).isEqualTo("Plazo de cancelacion vencido");
+        assertThat(operation.get("lastError").get("code").asString()).isEqualTo("cancel-window-expired");
+        assertThat(operation.get("lastError").get("message").asString()).isEqualTo(message);
         assertThat(operation.get("deadReason").isNull()).isTrue();
         assertThat(invoiceState(ref).get("status").asString()).isEqualTo("APPROVED");
     }
