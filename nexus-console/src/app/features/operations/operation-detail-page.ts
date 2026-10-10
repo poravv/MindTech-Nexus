@@ -19,7 +19,7 @@ interface SafeError {
   kind?: string;
   code?: string;
   httpStatus?: number;
-  message?: string;
+  detail?: string;
 }
 
 @Component({
@@ -53,13 +53,18 @@ export default class OperationDetailPage {
     if (!raw || typeof raw !== 'object') {
       return null;
     }
-    const { kind, code, httpStatus, message } = raw as Record<string, unknown>;
+    const { kind, code, httpStatus, detail } = raw as Record<string, unknown>;
     return {
       kind: typeof kind === 'string' ? kind : undefined,
       code: typeof code === 'string' ? code : undefined,
       httpStatus: typeof httpStatus === 'number' ? httpStatus : undefined,
-      message: typeof message === 'string' ? message : undefined,
+      detail: typeof detail === 'string' ? detail : undefined,
     };
+  });
+  /** nextRunAt stays on the row after the operation ends; it only means something while the operation waits. */
+  protected readonly nextRun = computed(() => {
+    const op = this.operation.hasValue() ? this.operation.value() : null;
+    return op && (op.status === 'PENDING' || op.status === 'RETRY') ? op.nextRunAt : null;
   });
   protected readonly confirming = signal(false);
   protected readonly busy = signal(false);
