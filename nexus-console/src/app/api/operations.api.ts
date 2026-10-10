@@ -45,6 +45,7 @@ export interface OperationDetail extends Operation {
 }
 
 export interface OperationFilter {
+  integrationId?: string;
   flow?: string;
   status?: string;
   from?: string;

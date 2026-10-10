@@ -29,7 +29,7 @@
         }
         <button type="button" class="action" (click)="openState(integration)"><app-icon name="arrow-right-left" />Cambiar estado</button>
       }
-      <a class="action" routerLink="/operaciones" [queryParams]="{ flow: integration.flow }"><app-icon name="history" />Operaciones</a>
+      <a class="action" routerLink="/operaciones" [queryParams]="{ integrationId: integration.id }"><app-icon name="history" />Operaciones</a>
       @if (canManage()) {
         <button type="button" class="action" (click)="formTarget.set(integration)"><app-icon name="pencil" />Editar</button>
       }
@@ -70,7 +70,7 @@
             <p class="block-note">Última operación registrada</p>
           } @else {
             <p class="block-value plain muted">Ninguna</p>
-            <p class="block-note">Sin operaciones en las últimas 24 h</p>
+            <p class="block-note">Todavía no tiene operaciones</p>
           }
         }
       </section>

@@ -202,7 +202,7 @@ export default class IntegrationsPage implements OnDestroy {
         this.formTarget.set(integration);
         break;
       case 'ops':
-        void this.router.navigate(['/operaciones'], { queryParams: { flow: integration.flow } });
+        void this.router.navigate(['/operaciones'], { queryParams: { integrationId: integration.id } });
         break;
     }
   }

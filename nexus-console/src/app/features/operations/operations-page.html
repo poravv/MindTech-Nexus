@@ -44,6 +44,13 @@
     </div>
   </form>
 
+  @if (integrationId()) {
+    <p class="alert alert-info" role="status">
+      <span>Solo las operaciones de <a [routerLink]="['/integraciones', integrationId()]">esta integración</a>.</span>
+      <button type="button" class="btn btn-sm" (click)="clearIntegration()">Ver todas</button>
+    </p>
+  }
+
   @if (operations.error(); as error) {
     <p class="alert" role="alert">{{ errorOf(error) }}</p>
   }

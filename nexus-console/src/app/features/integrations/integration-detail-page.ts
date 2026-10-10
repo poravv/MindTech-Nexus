@@ -2,7 +2,7 @@ import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { catchError, map, of } from 'rxjs';
+import { catchError, of } from 'rxjs';
 import { Integration, IntegrationsApi } from '../../api/integrations.api';
 import { Operation, OperationsApi } from '../../api/operations.api';
 import { AuthService } from '../../core/auth/auth.service';
@@ -20,9 +20,6 @@ import { IntegrationFormDialog, POLICY_FIELDS } from './integration-form-dialog'
 import { connectionNode, connectionSignals, healthSignal, operationNode, statusSignal } from './integration-map';
 import { IntegrationStateDialog } from './state-dialog';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-/** Largest page the admin API returns (OperationQueries.MAX_PAGE_SIZE). */
-const OPERATION_SAMPLE = 200;
 const RECENT_NODES = 4;
 
 /** One integration in the style of an Argo CD application: big status header, actions, and its resource tree. */
@@ -51,19 +48,16 @@ export default class IntegrationDetailPage {
     this.data.hasValue() ? toRows(this.data.value()).find((row) => row.integration.id === this.id()) : undefined,
   );
 
-  /** The admin API cannot filter by integration: take the flow's last 24 h and keep this integration's. */
+  /** Its latest operations, newest first. */
   protected readonly recent = rxResource({
     params: () => {
       const integration = this.row()?.integration;
-      return integration ? { id: integration.id, flow: integration.flow, tenantId: integration.tenantId } : undefined;
+      return integration ? { id: integration.id, tenantId: integration.tenantId } : undefined;
     },
     stream: ({ params }) =>
       this.operationsApi
-        .list({ flow: params.flow, from: new Date(Date.now() - DAY_MS).toISOString(), page: 0, size: OPERATION_SAMPLE }, params.tenantId)
-        .pipe(
-          map((ops) => ops.filter((op) => op.integrationId === params.id)),
-          catchError(() => of([] as Operation[])),
-        ),
+        .list({ integrationId: params.id, page: 0, size: RECENT_NODES }, params.tenantId)
+        .pipe(catchError(() => of([] as Operation[]))),
     defaultValue: [],
   });
 
@@ -73,7 +67,7 @@ export default class IntegrationDetailPage {
       return null;
     }
     const { integration } = row;
-    const operations = this.recent.value().slice(0, RECENT_NODES);
+    const operations = this.recent.value();
     return {
       id: integration.id,
       icon: FLOW_META[integration.flow].icon,
