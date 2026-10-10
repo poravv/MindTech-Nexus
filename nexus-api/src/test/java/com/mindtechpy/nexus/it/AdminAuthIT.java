@@ -128,4 +128,10 @@ class AdminAuthIT extends AbstractPostgresIT {
         assertThat(cookie).isNotNull();
         return cookie;
     }
+
+    @Test
+    void should_not_publish_openapi_outside_the_local_profile() {
+        perform(get("/v3/api-docs"), 404);
+        perform(get("/swagger-ui/index.html"), 404);
+    }
 }

@@ -29,6 +29,13 @@ management:
         readiness:
           include: readinessState,db
 
+# OpenAPI y Swagger UI solo en el perfil local: en producción no se publica el contrato de la admin API.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
 nexus:
   security:
     jwt-secret: ${NEXUS_JWT_SIGNING_KEY:}

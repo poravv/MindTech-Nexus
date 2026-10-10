@@ -2,3 +2,9 @@
 nexus:
   connectors:
     allowed-hosts: ${NEXUS_CONNECTORS_ALLOWED_HOSTS:*.svc.cluster.local,localhost,host.docker.internal}
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
