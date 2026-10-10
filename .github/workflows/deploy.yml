@@ -298,10 +298,17 @@ jobs:
             fi
           done
 
-      # Ruta pública viva: sin token la admin API responde 401 a través de túnel → Traefik → nginx → API.
+      # Ruta pública viva: el webhook es la única ruta con Bypass en Cloudflare Access (la admin responde 302
+      # al login de Access). Una conexión inexistente debe dar el 404 problem+json de Nexus a través de
+      # túnel → Traefik → nginx → API; una página de Cloudflare o de nginx no es application/problem+json.
       - name: Smoke check post-deploy
         run: |
           if ! kubectl -n argocd get application nexus >/dev/null 2>&1; then exit 0; fi
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 https://nexus.mindtechpy.net/api/admin/auth/me)
-          echo "GET /api/admin/auth/me → ${code}"
-          [ "$code" = "401" ]
+          out=$(curl -s -o /dev/null -w '%{http_code} %{content_type}' --max-time 15 -X POST \
+            -H 'Content-Type: application/json' -d '{}' \
+            https://nexus.mindtechpy.net/api/v1/webhooks/gifthub/00000000-0000-0000-0000-000000000000)
+          echo "POST /api/v1/webhooks/gifthub/<uuid-cero> → ${out}"
+          case "$out" in
+            "404 application/problem+json"*) ;;
+            *) echo "::error::El webhook público no llegó a Nexus"; exit 1 ;;
+          esac
