@@ -73,7 +73,7 @@ export function statusMeta(status: string, health = false): StatusMeta {
     }
     .plain { padding: 0; background: none !important; color: inherit !important; }
     .plain app-icon { color: var(--tone); }
-    .large { --icon-size: 2rem; gap: var(--space-3); font-size: var(--text-status); font-weight: var(--weight-medium); line-height: 1.1; letter-spacing: var(--tracking-tight); }
+    .large { --icon-size: var(--icon-size-status); gap: var(--space-3); font-size: var(--text-status); font-weight: var(--weight-medium); line-height: 1.1; letter-spacing: var(--tracking-tight); }
     .tone-ok { --tone: var(--color-ok); color: var(--tone); background: var(--color-ok-soft); }
     .tone-warn { --tone: var(--color-warn); color: var(--tone); background: var(--color-warn-soft); }
     .tone-serious { --tone: var(--color-serious); color: var(--tone); background: var(--color-serious-soft); }
