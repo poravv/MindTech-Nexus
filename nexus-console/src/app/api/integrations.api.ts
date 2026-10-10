@@ -3,6 +3,7 @@ import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { IntegrationState } from '../core/roles';
 import { TenantScope } from '../core/tenant-scope.service';
+import { OperationStatus } from './operations.api';
 
 export type Flow = 'FISCAL' | 'ORDER' | 'CATALOG';
 
@@ -39,6 +40,27 @@ export interface IntegrationDraft {
   policy: IntegrationPolicy;
 }
 
+export type IntegrationHealthStatus = 'HEALTHY' | 'PROGRESSING' | 'DEGRADED' | 'SUSPENDED' | 'NO_ACTIVITY';
+
+/**
+ * GET /api/admin/integrations/health, one per integration, over the operations created since `from`.
+ * `dead` is the integration's whole current DLQ, regardless of age.
+ */
+export interface IntegrationHealth {
+  integrationId: string;
+  health: IntegrationHealthStatus;
+  byStatus: Partial<Record<OperationStatus, number>>;
+  dead: number;
+  lastOperationAt: string | null;
+  lastFailure: {
+    operationId: string;
+    status: 'FAILED' | 'DEAD';
+    step: string | null;
+    errorCode: string | null;
+    at: string;
+  } | null;
+}
+
 /** /api/admin/integrations (slice S2). */
 @Injectable({ providedIn: 'root' })
 export class IntegrationsApi {
@@ -48,6 +70,11 @@ export class IntegrationsApi {
 
   list(): Observable<Integration[]> {
     return this.http.get<Integration[]>(this.url, { params: this.scope.params() });
+  }
+
+  /** `from` defaults to the last 24 h on the server. */
+  health(from?: string): Observable<IntegrationHealth[]> {
+    return this.http.get<IntegrationHealth[]>(`${this.url}/health`, { params: this.scope.params(from ? { from } : {}) });
   }
 
   create(draft: IntegrationDraft): Observable<Integration> {

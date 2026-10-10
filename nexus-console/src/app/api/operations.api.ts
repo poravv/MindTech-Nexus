@@ -62,6 +62,14 @@ export interface OperationSummary {
   dead: number;
 }
 
+export type TimeseriesBucket = 'PT5M' | 'PT15M' | 'PT1H' | 'P1D';
+
+/** Operations created in the bucket starting at `t` (UTC, epoch-aligned); absent statuses mean zero. */
+export interface TimeseriesPoint {
+  t: string;
+  byStatus: Partial<Record<OperationStatus, number>>;
+}
+
 /** /api/admin/operations (slice S2). */
 @Injectable({ providedIn: 'root' })
 export class OperationsApi {
@@ -84,5 +92,10 @@ export class OperationsApi {
 
   summary(from: string): Observable<OperationSummary> {
     return this.http.get<OperationSummary>(`${this.url}/summary`, { params: this.scope.params({ from }) });
+  }
+
+  /** Dense series (empty buckets included) from the bucket containing `from` up to now; at most 500 points. */
+  timeseries(from: string, bucket: TimeseriesBucket = 'PT1H'): Observable<TimeseriesPoint[]> {
+    return this.http.get<TimeseriesPoint[]>(`${this.url}/timeseries`, { params: this.scope.params({ from, bucket }) });
   }
 }
