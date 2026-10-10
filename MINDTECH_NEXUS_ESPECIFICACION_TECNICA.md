@@ -135,7 +135,7 @@ MindTech-Nexus/
 
 ### 5.3 Secretos y credenciales de conexión
 - Secret K8s `nexus-secrets` (creado por CI desde GitHub Secrets, mismos nombres que el `.env` local gitignored): `NEXUS_DB_NAME`, `NEXUS_DB_USER`, `NEXUS_DB_PASSWORD`, `NEXUS_MASTER_KEY` (32 bytes base64), `NEXUS_JWT_SIGNING_KEY`, `NEXUS_BOOTSTRAP_ADMIN_EMAIL`, `NEXUS_BOOTSTRAP_ADMIN_PASSWORD`. El Deployment de Postgres toma `POSTGRES_DB/USER/PASSWORD` del mismo Secret.
-- `connections.credentials_enc`: JSON de credenciales (`accessKey`+`secretKey` SIFEN; `apiKey` GiftHub; `apiKey` POS) cifrado **AES-256-GCM** con `NEXUS_MASTER_KEY`, nonce de 12 bytes aleatorio por registro, AAD = `tenant_id:connection_id`. La consola nunca devuelve el valor; "probar conexión" ejecuta un `GET` inocuo del conector. Rotación: editar credencial = nuevo cifrado + audit.
+- `connections.credentials_enc`: JSON de credenciales (`accessKey`+`secretKey` SIFEN; `apiKey` GiftHub; `apiKey` POS) cifrado **AES-256-GCM** con `NEXUS_MASTER_KEY`, nonce de 12 bytes aleatorio por registro, AAD = `tenant_id:connection_id`. La consola nunca devuelve el valor; "probar conexión" ejecuta un `GET` inocuo del conector. Rotación: editar credencial = nuevo cifrado + audit. Rotación de la master key: `NEXUS_MASTER_KEY_PREVIOUS` opcional y recifrado al arrancar (ADR-006).
 - Logging con masking (`Authorization`, `X-Secret-Key`, `X-Signature`, `apiKey`, `secret`) vía `MaskingJsonLayout`; nunca se loguean cuerpos de credenciales ni PII completa (teléfono se trunca a los últimos 4 dígitos).
 
 ### 5.4 SSRF y entrada
@@ -175,6 +175,7 @@ PENDING ──claim──► RUNNING ──ok──► SUCCEEDED
                                             FAILED  (resultado definitivo de negocio, p.ej. RECHAZADO)
                                             DEAD    (requiere humano: credenciales, conflicto idempotente, agotado)
 DEAD ──replay (consola, mismo idempotency_key, attempts=0)──► PENDING
+DEAD ──discard (consola, auditado)──► DISCARDED  (terminal: sale de la DLQ sin reprocesar)
 ```
 
 ### 7.2 Claim (worker, cada 500 ms, `nexus.worker.batch-size=10`)
@@ -311,7 +312,7 @@ Precio y stock los decide el POS: Nexus envía `code` y `quantity`; el POS valid
 **Estados de vuelta (POS → GiftHub)**: el POS, en `sale.completed` / `sale.cancelled` de ventas con `channel='GIFTHUB'`, llama `POST /api/v1/orders/GIFTHUB/{externalRef}/status`; Nexus crea `ORDER_STATUS` (key `{externalRef}:{status}`) con pasos `MARK_PAID` (`POST /orders/{id}/paid {reference: saleNumber, method}`) → `SET_STATUS` (`DELIVERED` o `CANCELLED`). Ambos idempotentes del lado GiftHub.
 
 ### 10.2 `[NEXUS-CATALOG]` POS → GiftHub
-Operación `CATALOG_SYNC` creada por el scheduler (cada `scheduleEverySeconds`, key `{integrationId}:{yyyyMMddHHmm}`) o por `run` manual; `maxInFlight=1`. Pasos: `FETCH_POS` (paginado `GET /api/integration/catalog?warehouseRef&page&limit=500`, acumula en `payload`) → `PUSH_GIFTHUB` (`PUT /api/integrations/v1/products/bulk` en lotes de ≤500, `dry_run` configurable en la conexión para pruebas). Mapeo: `external_id=code`, `name`, `price_pyg=price`, `available = active && sellable && (stock>0 || !tracked)`, `stock_qty`, `category`, `image_url`. Sin compensación (upsert idempotente); fallo → retry; resultado con conteos en `result`. Catálogo completo en cada corrida (el POS no actualiza `updatedAt` al mover stock); techo práctico ~5 000 productos por tenant.
+Operación `CATALOG_SYNC` creada por el scheduler (cada `scheduleEverySeconds`, key `{integrationId}:{yyyyMMddHHmm}`) o por `run` manual; `maxInFlight=1`. Pasos: `FETCH_POS` (paginado `GET /api/integration/catalog?warehouseRef&page&limit=500`, acumula en `payload`) → `PUSH_GIFTHUB` (`PUT /api/integrations/v1/products/bulk` en lotes de ≤500, `dry_run` configurable en la conexión para pruebas). Mapeo: `external_id=code`, `name`, `price_pyg=price`, `available = active && sellable && (stock>0 || !tracked)`, `stock_qty`, `category`, `image_url`. Sin compensación (upsert idempotente); fallo → retry; resultado con conteos en `result`. Catálogo completo en cada corrida (el POS no actualiza `updatedAt` al mover stock); techo práctico ~5 000 productos por tenant. Archivado: un producto mapeado se archiva en GiftHub solo si dos corridas completas seguidas no lo vieron (`entity_mappings.missed_at`); el POS no ofrece paginación keyset y el offset puede saltear un producto si el catálogo cambia durante la corrida. Backoff: tras `n` corridas seguidas `DEAD`/`DISCARDED`, la siguiente espera `scheduleEverySeconds · 2^n` (tope 24 h) desde que terminó la última; cualquier otro resultado lo resetea.
 
 ## 11. Cambios en los sistemas integrados
 
@@ -330,7 +331,7 @@ Nuevo, para pedidos y catálogo: tabla `integration_api_keys` + `IntegrationApiK
 Angular 22.2, standalone components, signals, `provideHttpClient` con interceptor Bearer + refresh, `@angular/router` con guards por rol, Angular Material o CDK mínimo (decisión del slice; sin librería de UI pesada). Pantallas: Login · Overview (operaciones por estado/flujo 24 h, DLQ, integraciones por estado) · Tenants (platform_admin) · Usuarios · Clientes m2m (crear, ver secreto una vez, rotar, revocar) · Conexiones (crear/editar/probar; credenciales write-only) · Integraciones (crear, política, cambiar estado con confirmación y motivo) · Operaciones (lista filtrable, detalle con steps y error sanitizado, replay) · Auditoría. Build en nginx-unprivileged 8080, proxy `/api/admin/` y `/api/v1/webhooks/` → `nexus-api:8080`.
 
 ## 13. Observabilidad
-Micrometer → `/actuator/prometheus`: `nexus_operations_total{flow,kind,status}`, `nexus_operation_duration_seconds{flow,kind}`, `nexus_step_duration_seconds{flow,step}`, `nexus_connector_latency_seconds{connector,operation,outcome}`, `nexus_queue_depth{status}`, `nexus_dead_letters_total{flow}`, `nexus_rate_limited_total{flow}`. Sin `tenant_id` como label. Logs JSON (logback + `logstash-logback-encoder`) con `correlationId`, `tenantId`, `operationId`, `step`, prefijo de flujo. Alertas (PrometheusRule en `k8s/`): DLQ > 0 por 15 min, operaciones `SUBMITTED` > 24 h, errores `AUTH`, readiness caída.
+Micrometer → `/actuator/prometheus`: `nexus_operations_total{flow,kind,status}`, `nexus_operation_duration_seconds{flow,kind}`, `nexus_step_duration_seconds{flow,step}`, `nexus_connector_latency_seconds{connector,operation,outcome}`, `nexus_queue_depth{status}`, `nexus_dead_letters_total{flow}`, `nexus_rate_limited_total{flow}`. Sin `tenant_id` como label. Logs JSON (logback + `logstash-logback-encoder`) con `correlationId`, `tenantId`, `operationId`, `step`, prefijo de flujo. `nexus_queue_lag_seconds` (espera de la operación vencida más antigua) y `nexus_operation_oldest_unfinished_age_seconds{flow}`. Alertas (`k8s/prometheusrule.yaml`): DLQ > 0 por 15 min y DLQ creciendo, operación sin terminar > 24 h, cola atrasada > 5 min, tasa de error por conector > 20 %, errores `AUTH`, readiness caída.
 
 ## 14. Pruebas
 - **ArchUnit**: reglas de capas (falla el build).

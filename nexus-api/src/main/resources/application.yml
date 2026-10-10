@@ -40,6 +40,7 @@ nexus:
   security:
     jwt-secret: ${NEXUS_JWT_SIGNING_KEY:}
     master-key: ${NEXUS_MASTER_KEY:}
+    master-key-previous: ${NEXUS_MASTER_KEY_PREVIOUS:}
   connectors:
     allowed-hosts: ${NEXUS_CONNECTORS_ALLOWED_HOSTS:*.svc.cluster.local}
   bootstrap:

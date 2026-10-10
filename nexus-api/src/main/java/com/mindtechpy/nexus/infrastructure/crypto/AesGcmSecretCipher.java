@@ -13,12 +13,16 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * AES-256-GCM with {@code NEXUS_MASTER_KEY} (ADR-006). Layout: {@code nonce(12) || ciphertext || tag(16)}.
  * The AAD ({@code tenant:connection}) is authenticated, so a row copied to another connection fails to open.
+ * During a key rotation {@code NEXUS_MASTER_KEY_PREVIOUS} also opens what was sealed before it; sealing always
+ * uses the current key.
  */
 public class AesGcmSecretCipher implements SecretCipherPort {
 
@@ -28,16 +32,18 @@ public class AesGcmSecretCipher implements SecretCipherPort {
     };
 
     private final SecretKeySpec key;
+    private final SecretKeySpec previousKey;
     private final JsonMapper json;
     private final SecureRandom random = new SecureRandom();
 
-    /** @param base64Key 32 bytes encoded in base64. */
-    public AesGcmSecretCipher(String base64Key, JsonMapper json) {
-        byte[] raw = decodeKey(base64Key);
-        if (raw.length != 32) {
-            throw new IllegalArgumentException("NEXUS_MASTER_KEY debe ser de 32 bytes en base64");
-        }
-        this.key = new SecretKeySpec(raw, "AES");
+    /**
+     * @param base64Key         32 bytes encoded in base64
+     * @param base64PreviousKey the key being rotated out, same format; null or blank when there is none
+     */
+    public AesGcmSecretCipher(String base64Key, String base64PreviousKey, JsonMapper json) {
+        this.key = aesKey(base64Key, "NEXUS_MASTER_KEY");
+        this.previousKey = base64PreviousKey == null || base64PreviousKey.isBlank() ? null
+                : aesKey(base64PreviousKey, "NEXUS_MASTER_KEY_PREVIOUS");
         this.json = json;
     }
 
@@ -46,7 +52,7 @@ public class AesGcmSecretCipher implements SecretCipherPort {
         byte[] nonce = new byte[NONCE_BYTES];
         random.nextBytes(nonce);
         try {
-            Cipher cipher = cipher(Cipher.ENCRYPT_MODE, nonce, aad);
+            Cipher cipher = cipher(Cipher.ENCRYPT_MODE, key, nonce, aad);
             byte[] encrypted = cipher.doFinal(json.writeValueAsBytes(credentials.values()));
             return ByteBuffer.allocate(NONCE_BYTES + encrypted.length).put(nonce).put(encrypted).array();
         } catch (GeneralSecurityException e) {
@@ -56,35 +62,55 @@ public class AesGcmSecretCipher implements SecretCipherPort {
 
     @Override
     public ConnectionCredentials open(byte[] sealed, String aad) {
-        if (sealed == null || sealed.length <= NONCE_BYTES) {
+        byte[] plain = decrypt(sealed, aad, key);
+        if (plain == null && previousKey != null) {
+            plain = decrypt(sealed, aad, previousKey);
+        }
+        if (plain == null) {
             throw unreadable();
         }
+        return new ConnectionCredentials(json.readValue(plain, CREDENTIALS));
+    }
+
+    @Override
+    public Optional<byte[]> resealWithCurrentKey(byte[] sealed, String aad) {
+        if (decrypt(sealed, aad, key) != null) {
+            return Optional.empty();
+        }
+        return Optional.of(seal(open(sealed, aad), aad));
+    }
+
+    /** Plain bytes, or null when {@code sealed} does not open with {@code with} and {@code aad}. */
+    private static byte[] decrypt(byte[] sealed, String aad, SecretKeySpec with) {
+        if (sealed == null || sealed.length <= NONCE_BYTES) {
+            return null;
+        }
         try {
-            ByteBuffer buffer = ByteBuffer.wrap(sealed);
-            byte[] nonce = new byte[NONCE_BYTES];
-            buffer.get(nonce);
-            byte[] encrypted = new byte[buffer.remaining()];
-            buffer.get(encrypted);
-            byte[] plain = cipher(Cipher.DECRYPT_MODE, nonce, aad).doFinal(encrypted);
-            return new ConnectionCredentials(json.readValue(plain, CREDENTIALS));
+            return cipher(Cipher.DECRYPT_MODE, with, Arrays.copyOf(sealed, NONCE_BYTES), aad)
+                    .doFinal(sealed, NONCE_BYTES, sealed.length - NONCE_BYTES);
         } catch (GeneralSecurityException e) {
-            throw unreadable();
+            return null;
         }
     }
 
-    private Cipher cipher(int mode, byte[] nonce, String aad) throws GeneralSecurityException {
+    private static Cipher cipher(int mode, SecretKeySpec with, byte[] nonce, String aad) throws GeneralSecurityException {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(mode, key, new GCMParameterSpec(TAG_BITS, nonce));
+        cipher.init(mode, with, new GCMParameterSpec(TAG_BITS, nonce));
         cipher.updateAAD(aad.getBytes(StandardCharsets.UTF_8));
         return cipher;
     }
 
-    private static byte[] decodeKey(String base64Key) {
+    private static SecretKeySpec aesKey(String base64Key, String name) {
+        byte[] raw;
         try {
-            return Base64.getDecoder().decode(base64Key == null ? "" : base64Key.strip());
+            raw = Base64.getDecoder().decode(base64Key == null ? "" : base64Key.strip());
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("NEXUS_MASTER_KEY no es base64 válido");
+            throw new IllegalArgumentException(name + " no es base64 válido");
         }
+        if (raw.length != 32) {
+            throw new IllegalArgumentException(name + " debe ser de 32 bytes en base64");
+        }
+        return new SecretKeySpec(raw, "AES");
     }
 
     private static DomainException unreadable() {

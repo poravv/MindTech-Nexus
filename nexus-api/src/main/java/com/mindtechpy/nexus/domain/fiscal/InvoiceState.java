@@ -39,7 +39,7 @@ public record InvoiceState(String sourceRef, UUID operationId, InvoiceStatus sta
     private static InvoiceStatus status(Operation issue, String providerStatus) {
         return switch (issue.status()) {
             case SUCCEEDED -> ProviderStatus.parse(providerStatus).orElseThrow().invoiceStatus();
-            case FAILED -> InvoiceStatus.FAILED;
+            case FAILED, DISCARDED -> InvoiceStatus.FAILED;
             case DEAD -> InvoiceStatus.DEAD;
             case PENDING, RUNNING, RETRY -> providerStatus == null ? InvoiceStatus.PENDING : InvoiceStatus.SUBMITTED;
         };

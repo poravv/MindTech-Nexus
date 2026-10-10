@@ -9,23 +9,24 @@ public enum IntegrationHealth {
     HEALTHY, PROGRESSING, DEGRADED, SUSPENDED, NO_ACTIVITY;
 
     /**
-     * Derived from the state and the operations created in the window, checked in this order:
-     * a stopped integration ({@code PAUSED}, {@code DISABLED}, {@code EMERGENCY_STOP}) is suspended whatever its
-     * history; any {@code FAILED} or {@code DEAD} → degraded; draining or any operation not yet {@code SUCCEEDED}
-     * → progressing; only successes → healthy; no operations → no activity.
+     * Checked in this order: a stopped integration ({@code PAUSED}, {@code DISABLED}, {@code EMERGENCY_STOP}) is
+     * suspended whatever its history; an unresolved DLQ ({@code dead} &gt; 0, of any age, until each operation is
+     * replayed or discarded) → degraded; draining or any operation of the window still in the queue → progressing;
+     * any finished operation in the window → healthy; none → no activity. {@code FAILED} is a business rejection
+     * the integration handled correctly, so it is counted in {@code recent} but never degrades.
      */
-    public static IntegrationHealth of(IntegrationState state, Map<OperationStatus, Long> recent) {
+    public static IntegrationHealth of(IntegrationState state, Map<OperationStatus, Long> recent, long dead) {
         if (state == IntegrationState.PAUSED || state == IntegrationState.DISABLED || state == IntegrationState.EMERGENCY_STOP) {
             return SUSPENDED;
         }
-        long total = recent.values().stream().mapToLong(Long::longValue).sum();
-        long succeeded = recent.getOrDefault(OperationStatus.SUCCEEDED, 0L);
-        if (recent.getOrDefault(OperationStatus.FAILED, 0L) + recent.getOrDefault(OperationStatus.DEAD, 0L) > 0) {
+        if (dead > 0) {
             return DEGRADED;
         }
-        if (state == IntegrationState.DRAINING || total > succeeded) {
+        long queued = recent.entrySet().stream().filter(entry -> !entry.getKey().isFinished())
+                .mapToLong(Map.Entry::getValue).sum();
+        if (state == IntegrationState.DRAINING || queued > 0) {
             return PROGRESSING;
         }
-        return total > 0 ? HEALTHY : NO_ACTIVITY;
+        return recent.isEmpty() ? NO_ACTIVITY : HEALTHY;
     }
 }

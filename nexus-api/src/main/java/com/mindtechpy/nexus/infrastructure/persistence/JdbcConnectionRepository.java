@@ -92,6 +92,23 @@ class JdbcConnectionRepository implements ConnectionRepository {
     }
 
     @Override
+    public List<Connection> findAllTenants() {
+        return jdbc.sql("SELECT * FROM connections ORDER BY tenant_id, id").query(row).list();
+    }
+
+    @Override
+    public boolean replaceCredentials(TenantId tenantId, UUID id, byte[] expected, byte[] next) {
+        return jdbc.sql("""
+                        UPDATE connections SET credentials_enc = :next, updated_at = now()
+                        WHERE tenant_id = :tenantId AND id = :id AND credentials_enc = :expected""")
+                .param("next", next)
+                .param("tenantId", tenantId.value())
+                .param("id", id)
+                .param("expected", expected)
+                .update() == 1;
+    }
+
+    @Override
     public void recordTest(TenantId tenantId, UUID id, Instant testedAt, boolean ok) {
         jdbc.sql("UPDATE connections SET last_test_at = :testedAt, last_test_ok = :ok, updated_at = now() WHERE tenant_id = :tenantId AND id = :id")
                 .param("tenantId", tenantId.value())

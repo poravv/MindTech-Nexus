@@ -1,0 +1,21 @@
+# Prometheus (kube-prometheus-stack en monitoring, serviceMonitorSelector vacío: toma todo ServiceMonitor del cluster)
+# scrapea el puerto management de la API. La NetworkPolicy nexus-api-metrics le abre 8081.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nexus-api
+  namespace: nexus
+  labels:
+    app: nexus-api
+spec:
+  selector:
+    matchLabels:
+      app: nexus-api
+  namespaceSelector:
+    matchNames:
+      - nexus
+  endpoints:
+    - port: management
+      path: /actuator/prometheus
+      interval: 30s
+      scrapeTimeout: 10s

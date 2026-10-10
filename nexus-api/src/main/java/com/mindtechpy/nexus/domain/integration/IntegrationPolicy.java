@@ -14,6 +14,8 @@ public record IntegrationPolicy(Double ratePerSecond, Integer burst, Integer max
                                 Integer scheduleEverySeconds) {
 
     private static final double JITTER = 0.2;
+    private static final int DEFAULT_CATALOG_EVERY_SECONDS = 300;
+    private static final Duration MAX_CATALOG_INTERVAL = Duration.ofHours(24);
     /**
      * A step makes at most two remote calls (VERIFY + SUBMIT, catalog read + push): two reads at this cap still
      * end inside the 10 min lease of a claimed operation.
@@ -62,6 +64,19 @@ public record IntegrationPolicy(Double ratePerSecond, Integer burst, Integer max
         double capped = Math.min(maxDelaySeconds, exponential);
         double jittered = capped * (1 - JITTER + 2 * JITTER * jitterSample);
         return Duration.ofMillis(Math.round(jittered * 1000));
+    }
+
+    /**
+     * Time between scheduled catalog runs: {@code scheduleEverySeconds} (default {@value #DEFAULT_CATALOG_EVERY_SECONDS})
+     * doubled for each run in a row that ended DEAD, capped at 24 h, so an unreachable POS or GiftHub is not hit
+     * every window.
+     */
+    public Duration catalogInterval(int deadRunsInARow) {
+        Duration interval = Duration.ofSeconds(scheduleEverySeconds == null ? DEFAULT_CATALOG_EVERY_SECONDS : scheduleEverySeconds);
+        for (int i = 0; i < deadRunsInARow && interval.compareTo(MAX_CATALOG_INTERVAL) < 0; i++) {
+            interval = interval.multipliedBy(2);
+        }
+        return interval.compareTo(MAX_CATALOG_INTERVAL) < 0 ? interval : MAX_CATALOG_INTERVAL;
     }
 
     private static void require(boolean condition, String message) {

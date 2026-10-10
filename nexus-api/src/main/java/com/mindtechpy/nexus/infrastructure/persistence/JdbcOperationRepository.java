@@ -213,6 +213,20 @@ class JdbcOperationRepository implements OperationRepository {
     }
 
     @Override
+    public List<FinishedRun> latestFinished(TenantId tenantId, UUID integrationId, OperationKind kind, int limit) {
+        return jdbc.sql("""
+                        SELECT status, finished_at FROM operations
+                        WHERE integration_id = :integrationId AND tenant_id = :tenantId AND kind = :kind AND finished_at IS NOT NULL
+                        ORDER BY finished_at DESC LIMIT :limit""")
+                .param("integrationId", integrationId)
+                .param("tenantId", tenantId.value())
+                .param("kind", kind.name())
+                .param("limit", limit)
+                .query((rs, n) -> new FinishedRun(OperationStatus.valueOf(rs.getString("status")), instant(rs, "finished_at")))
+                .list();
+    }
+
+    @Override
     public boolean update(Operation expected, Operation next) {
         return jdbc.sql("""
                         UPDATE operations SET status = :status, current_step = :step, attempts = :attempts,

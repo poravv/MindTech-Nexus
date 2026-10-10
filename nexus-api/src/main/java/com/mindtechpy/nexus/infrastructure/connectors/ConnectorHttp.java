@@ -4,6 +4,8 @@ import com.mindtechpy.nexus.application.port.out.ConnectorException;
 import com.mindtechpy.nexus.domain.connection.ConnectionCredentials;
 import com.mindtechpy.nexus.domain.operation.ConnectorError;
 import com.mindtechpy.nexus.domain.operation.ErrorKind;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -25,6 +27,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * Plain JSON over HTTP for the POS and GiftHub connectors: connect timeout {@value #CONNECT_SECONDS} s, read
@@ -50,9 +53,30 @@ public class ConnectorHttp {
             .followRedirects(HttpClient.Redirect.NEVER)
             .build();
     private final JsonMapper json;
+    private final MeterRegistry meters;
 
-    public ConnectorHttp(JsonMapper json) {
+    public ConnectorHttp(JsonMapper json, MeterRegistry meters) {
         this.json = json;
+        this.meters = meters;
+    }
+
+    /**
+     * Runs one connector operation (its calls and the classification of the answer) and records
+     * {@code nexus_connector_latency_seconds{connector,operation,outcome}}: {@code ok}, or the kind of the
+     * {@link ConnectorException} it threw, as SIFEN does.
+     */
+    public <T> T timed(String connector, String operation, Supplier<T> call) {
+        long started = System.nanoTime();
+        String outcome = "ok";
+        try {
+            return call.get();
+        } catch (ConnectorException e) {
+            outcome = e.error().kind().name().toLowerCase();
+            throw e;
+        } finally {
+            Timer.builder("nexus.connector.latency").tag("connector", connector).tag("operation", operation)
+                    .tag("outcome", outcome).register(meters).record(Duration.ofNanos(System.nanoTime() - started));
+        }
     }
 
     public Response call(String baseUrl, Duration readTimeout, HttpMethod method, String path, Consumer<HttpHeaders> headers,

@@ -8,15 +8,21 @@ import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationStatus;
 import com.mindtechpy.nexus.domain.operation.OperationStep;
 import com.mindtechpy.nexus.domain.shared.TenantId;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.JsonNode;
 
+import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.IntStream;
 
@@ -30,6 +36,8 @@ class CatalogSyncIT extends AbstractConnectorIT {
 
     @Autowired
     private RunCatalogSync runCatalogSync;
+    @Autowired
+    private MeterRegistry meters;
 
     @Test
     void should_push_every_pos_page_as_one_gifthub_bulk_and_record_product_mappings() {
@@ -58,6 +66,10 @@ class CatalogSyncIT extends AbstractConnectorIT {
                 .containsExactly("1", "2", "3");
         assertThat(jdbc.sql("SELECT count(*) FROM entity_mappings WHERE tenant_id = :t AND entity_type = 'PRODUCT'")
                 .param("t", tenant).query(Long.class).single()).isEqualTo(1001);
+        assertThat(meters.find("nexus.connector.latency").tags("connector", "POS", "operation", "fetch_catalog", "outcome", "ok")
+                .timer().count()).isGreaterThanOrEqualTo(3);
+        assertThat(meters.find("nexus.connector.latency").tags("connector", "GIFTHUB", "operation", "upsert_products", "outcome", "ok")
+                .timer().count()).isGreaterThanOrEqualTo(3);
     }
 
     @Test
@@ -74,6 +86,8 @@ class CatalogSyncIT extends AbstractConnectorIT {
         Operation op = runNow(integration);
         drain();
         assertThat(reload(op.id()).status()).isEqualTo(OperationStatus.RETRY);
+        assertThat(meters.find("nexus.connector.latency").tags("connector", "GIFTHUB", "operation", "upsert_products",
+                "outcome", "transient").timer()).isNotNull();
         makeDue(op.id());
         drain();
 
@@ -103,7 +117,7 @@ class CatalogSyncIT extends AbstractConnectorIT {
     void should_archive_in_gifthub_the_mapped_products_the_pos_no_longer_lists() {
         UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
         insertProductMapping("P-0001");
-        insertProductMapping("P-RETIRADO");
+        insertMissedProductMapping("P-RETIRADO");
         stubPos(get(urlPathEqualTo(pos("/api/integration/catalog"))).willReturn(okJson(catalogPage(1, 1, 1))));
         stubGiftHub(put(urlPathEqualTo(gh("/products/bulk"))).willReturn(okJson(bulkResponse()).withTransformers("response-template")));
 
@@ -126,7 +140,7 @@ class CatalogSyncIT extends AbstractConnectorIT {
     void should_archive_one_chunk_per_step_until_every_missing_product_is_off_sale() {
         UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
         insertProductMapping("P-0001");
-        IntStream.rangeClosed(1, 501).forEach(n -> insertProductMapping("P-RETIRADO-%03d".formatted(n)));
+        IntStream.rangeClosed(1, 501).forEach(n -> insertMissedProductMapping("P-RETIRADO-%03d".formatted(n)));
         stubPos(get(urlPathEqualTo(pos("/api/integration/catalog"))).willReturn(okJson(catalogPage(1, 1, 1))));
         stubGiftHub(put(urlPathEqualTo(gh("/products/bulk"))).willReturn(okJson(bulkResponse()).withTransformers("response-template")));
 
@@ -146,7 +160,7 @@ class CatalogSyncIT extends AbstractConnectorIT {
     @Test
     void should_keep_mapping_and_report_error_when_gifthub_rejects_the_archive_of_a_product() {
         UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
-        insertProductMapping("P-BORRADO-EN-GIFTHUB");
+        insertMissedProductMapping("P-BORRADO-EN-GIFTHUB");
         stubPos(get(urlPathEqualTo(pos("/api/integration/catalog"))).willReturn(okJson(catalogPage(1, 1, 1))));
         stubGiftHub(put(urlPathEqualTo(gh("/products/bulk"))).withRequestBody(notContaining("\"archived\""))
                 .willReturn(okJson(bulkResponse()).withTransformers("response-template")));
@@ -161,6 +175,46 @@ class CatalogSyncIT extends AbstractConnectorIT {
         assertThat(done.status()).isEqualTo(OperationStatus.SUCCEEDED);
         assertThat(done.result()).containsEntry("archived", 0).containsEntry("archiveErrors", 1);
         assertThat(productMappings()).contains("P-BORRADO-EN-GIFTHUB");
+    }
+
+    @Test
+    void should_archive_a_product_only_when_two_complete_runs_in_a_row_miss_it() {
+        UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+        insertProductMapping("P-0001");
+        insertProductMapping("P-SALTEADO");
+        stubPos(get(urlPathEqualTo(pos("/api/integration/catalog"))).willReturn(okJson(catalogPage(1, 1, 1))));
+        stubGiftHub(put(urlPathEqualTo(gh("/products/bulk"))).willReturn(okJson(bulkResponse()).withTransformers("response-template")));
+
+        Operation first = runNow(integration);
+        drain();
+
+        assertThat(reload(first.id()).result()).containsEntry("archived", 0);
+        assertThat(giftHubRequests("PUT", "/products/bulk")).hasSize(1);
+        assertThat(missedAt("P-SALTEADO")).isPresent();
+        assertThat(missedAt("P-0001")).isEmpty();
+
+        runCatalogSync.scheduleDue();
+        drain();
+
+        var bulks = giftHubRequests("PUT", "/products/bulk");
+        assertThat(bulks).hasSize(3);
+        assertThat(jsonOf(bulks.get(2)).get("products").get(0).get("external_id").asString()).isEqualTo("P-SALTEADO");
+        assertThat(productMappings()).containsExactly("P-0001");
+    }
+
+    @Test
+    void should_forget_a_previous_miss_when_the_pos_lists_the_product_again() {
+        UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+        insertMissedProductMapping("P-0001");
+        stubPos(get(urlPathEqualTo(pos("/api/integration/catalog"))).willReturn(okJson(catalogPage(1, 1, 1))));
+        stubGiftHub(put(urlPathEqualTo(gh("/products/bulk"))).willReturn(okJson(bulkResponse()).withTransformers("response-template")));
+
+        Operation op = runNow(integration);
+        drain();
+
+        assertThat(reload(op.id()).result()).containsEntry("archived", 0);
+        assertThat(giftHubRequests("PUT", "/products/bulk")).hasSize(1);
+        assertThat(missedAt("P-0001")).isEmpty();
     }
 
     @Test
@@ -187,6 +241,34 @@ class CatalogSyncIT extends AbstractConnectorIT {
 
         assertThat(jdbc.sql("SELECT count(*) FROM operations WHERE integration_id = :i AND idempotency_key LIKE :key")
                 .param("i", integration).param("key", integration + ":2%").query(Long.class).single()).isEqualTo(1);
+    }
+
+    @Test
+    void should_double_the_wait_after_dead_runs_and_go_back_to_normal_after_a_success() {
+        UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+        Instant now = Instant.now();
+        finishedRun(integration, "DEAD", now.minus(Duration.ofMinutes(6)));
+        finishedRun(integration, "DEAD", now.minus(Duration.ofMinutes(5)));
+
+        runCatalogSync.scheduleDue();
+        assertThat(scheduledRuns(integration)).as("two DEAD in a row: 4 × 5 min since the last one").isZero();
+
+        jdbc.sql("UPDATE operations SET finished_at = finished_at - interval '16 minutes' WHERE integration_id = :i")
+                .param("i", integration).update();
+        runCatalogSync.scheduleDue();
+        assertThat(scheduledRuns(integration)).isEqualTo(1);
+    }
+
+    @Test
+    void should_schedule_normally_when_the_last_run_succeeded_after_dead_ones() {
+        UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+        Instant now = Instant.now();
+        finishedRun(integration, "DEAD", now.minus(Duration.ofMinutes(3)));
+        finishedRun(integration, "SUCCEEDED", now.minus(Duration.ofMinutes(2)));
+
+        runCatalogSync.scheduleDue();
+
+        assertThat(scheduledRuns(integration)).isEqualTo(1);
     }
 
     @Test
@@ -228,11 +310,39 @@ class CatalogSyncIT extends AbstractConnectorIT {
         return reload(UUID.fromString(started.get("operationId").asString()));
     }
 
+    /** A finished manual run of the integration, inserted directly with the given outcome. */
+    private void finishedRun(UUID integration, String status, Instant finishedAt) {
+        jdbc.sql("""
+                INSERT INTO operations (id, tenant_id, integration_id, flow, kind, idempotency_key, request_hash, status,
+                                        attempts, max_attempts, next_run_at, payload, created_at, updated_at, finished_at)
+                VALUES (gen_random_uuid(), :t, :i, 'CATALOG', 'CATALOG_SYNC', :key, 'h', :status, 1, 5, :at, '{}', :at, :at, :at)""")
+                .param("t", tenant).param("i", integration).param("key", integration + ":manual:" + UUID.randomUUID())
+                .param("status", status).param("at", finishedAt.atOffset(ZoneOffset.UTC)).update();
+    }
+
+    private long scheduledRuns(UUID integration) {
+        return jdbc.sql("SELECT count(*) FROM operations WHERE integration_id = :i AND idempotency_key LIKE :key")
+                .param("i", integration).param("key", integration + ":2%").query(Long.class).single();
+    }
+
     private void insertProductMapping(String code) {
         jdbc.sql("""
                 INSERT INTO entity_mappings (id, tenant_id, connection_id, entity_type, internal_id, external_id)
                 VALUES (gen_random_uuid(), :t, :c, 'PRODUCT', :code, :gh)""")
                 .param("t", tenant).param("c", giftHubConnection).param("code", code).param("gh", "gh-" + code).update();
+    }
+
+    /** A mapping an earlier complete run (an hour ago) already missed. */
+    private void insertMissedProductMapping(String code) {
+        insertProductMapping(code);
+        jdbc.sql("UPDATE entity_mappings SET missed_at = :at WHERE tenant_id = :t AND internal_id = :code")
+                .param("at", Instant.now().minus(Duration.ofHours(1)).atOffset(ZoneOffset.UTC))
+                .param("t", tenant).param("code", code).update();
+    }
+
+    private Optional<Timestamp> missedAt(String code) {
+        return jdbc.sql("SELECT missed_at FROM entity_mappings WHERE tenant_id = :t AND internal_id = :code")
+                .param("t", tenant).param("code", code).query((rs, n) -> Optional.ofNullable(rs.getTimestamp(1))).single();
     }
 
     private List<String> productMappings() {

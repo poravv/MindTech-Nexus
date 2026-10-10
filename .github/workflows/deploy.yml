@@ -220,6 +220,8 @@ jobs:
           NEXUS_MASTER_KEY: ${{ secrets.NEXUS_MASTER_KEY }}
           NEXUS_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.NEXUS_BOOTSTRAP_ADMIN_EMAIL }}
           NEXUS_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.NEXUS_BOOTSTRAP_ADMIN_PASSWORD }}
+          # Opcional: solo durante una rotación de la master key (ADR-006). Sin él, la clave no va al Secret.
+          NEXUS_MASTER_KEY_PREVIOUS: ${{ secrets.NEXUS_MASTER_KEY_PREVIOUS }}
         run: |
           set -euo pipefail
           KEYS=(NEXUS_DB_NAME NEXUS_DB_USER NEXUS_DB_PASSWORD NEXUS_JWT_SIGNING_KEY NEXUS_MASTER_KEY
@@ -235,6 +237,7 @@ jobs:
           workdir=$(mktemp -d)
           trap 'rm -rf "$workdir"' EXIT
           args=()
+          [ -n "${NEXUS_MASTER_KEY_PREVIOUS:-}" ] && KEYS+=(NEXUS_MASTER_KEY_PREVIOUS)
           for key in "${KEYS[@]}"; do
             printf '%s' "${!key}" > "$workdir/$key"
             args+=("--from-file=${key}=${workdir}/${key}")

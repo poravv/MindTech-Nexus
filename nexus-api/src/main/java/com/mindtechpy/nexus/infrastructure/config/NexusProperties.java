@@ -21,8 +21,12 @@ public record NexusProperties(@Valid @NotNull Security security, @Valid @NotNull
                               @Valid @NotNull Bootstrap bootstrap, @Valid @NotNull Worker worker,
                               @Valid @NotNull Queue queue) {
 
-    /** @param jwtSecret base64, ≥ 256 bits. @param masterKey base64, exactly 32 bytes (AES-256). */
-    public record Security(@NotBlank String jwtSecret, @NotBlank String masterKey) {
+    /**
+     * @param jwtSecret         base64, ≥ 256 bits
+     * @param masterKey         base64, exactly 32 bytes (AES-256)
+     * @param masterKeyPrevious the master key being rotated out, same format; blank outside a rotation (ADR-006)
+     */
+    public record Security(@NotBlank String jwtSecret, @NotBlank String masterKey, String masterKeyPrevious) {
         @Override
         public String toString() {
             return "Security[***]";

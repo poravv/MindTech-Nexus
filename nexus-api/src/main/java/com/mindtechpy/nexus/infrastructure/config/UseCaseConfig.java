@@ -18,7 +18,13 @@ class UseCaseConfig {
 
     @Bean
     SecretCipherPort secretCipher(NexusProperties properties, JsonMapper json) {
-        return new AesGcmSecretCipher(properties.security().masterKey(), json);
+        return new AesGcmSecretCipher(properties.security().masterKey(), properties.security().masterKeyPrevious(), json);
+    }
+
+    @Bean
+    RecryptCredentials recryptCredentials(ConnectionRepository connections, SecretCipherPort cipher, AuditRepository audit,
+                                          ClockPort clock) {
+        return new RecryptCredentials(connections, cipher, audit, clock);
     }
 
     @Bean
@@ -160,6 +166,11 @@ class UseCaseConfig {
     @Bean
     ReplayOperation replayOperation(OperationRepository operations, AuditRepository audit, ClockPort clock, TransactionRunner tx) {
         return new ReplayOperation(operations, audit, clock, tx);
+    }
+
+    @Bean
+    DiscardOperation discardOperation(OperationRepository operations, AuditRepository audit, ClockPort clock, TransactionRunner tx) {
+        return new DiscardOperation(operations, audit, clock, tx);
     }
 
     @Bean

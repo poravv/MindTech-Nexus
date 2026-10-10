@@ -44,52 +44,62 @@ class GiftHubRestClient implements GiftHubPort {
 
     @Override
     public Optional<Order> findOrder(Endpoint giftHub, Duration readTimeout, String orderId) {
-        Response response = http.call(giftHub.connection().baseUrl(), readTimeout, HttpMethod.GET, BASE + "/orders/" + orderId,
-                bearer(giftHub, null), null);
-        return response.status() == 404 ? Optional.empty() : Optional.of(order(requireSuccess(response)));
+        return http.timed("GIFTHUB", "find_order", () -> {
+            Response response = http.call(giftHub.connection().baseUrl(), readTimeout, HttpMethod.GET, BASE + "/orders/" + orderId,
+                    bearer(giftHub, null), null);
+            return response.status() == 404 ? Optional.empty() : Optional.of(order(requireSuccess(response)));
+        });
     }
 
     @Override
     public Order setStatus(Endpoint giftHub, Duration readTimeout, String idempotencyKey, String orderId, StatusChange change) {
-        Response response = http.call(giftHub.connection().baseUrl(), readTimeout, HttpMethod.POST,
-                BASE + "/orders/" + orderId + "/status", bearer(giftHub, idempotencyKey),
-                object("status", change.status(), "note", change.note(), "external_ref", change.externalRef(),
-                        "external_number", change.externalNumber()));
-        return order(requireSuccess(response));
+        return http.timed("GIFTHUB", "set_status", () -> {
+            Response response = http.call(giftHub.connection().baseUrl(), readTimeout, HttpMethod.POST,
+                    BASE + "/orders/" + orderId + "/status", bearer(giftHub, idempotencyKey),
+                    object("status", change.status(), "note", change.note(), "external_ref", change.externalRef(),
+                            "external_number", change.externalNumber()));
+            return order(requireSuccess(response));
+        });
     }
 
     @Override
     public Order markPaid(Endpoint giftHub, Duration readTimeout, String idempotencyKey, String orderId, String reference,
                           String method) {
-        Response response = http.call(giftHub.connection().baseUrl(), readTimeout, HttpMethod.POST,
-                BASE + "/orders/" + orderId + "/paid", bearer(giftHub, idempotencyKey),
-                object("reference", reference, "method", method));
-        return order(requireSuccess(response));
+        return http.timed("GIFTHUB", "mark_paid", () -> {
+            Response response = http.call(giftHub.connection().baseUrl(), readTimeout, HttpMethod.POST,
+                    BASE + "/orders/" + orderId + "/paid", bearer(giftHub, idempotencyKey),
+                    object("reference", reference, "method", method));
+            return order(requireSuccess(response));
+        });
     }
 
     /** {@code stock_qty} always travels ({@code null} turns stock control off); {@code image_url} only when set. */
     @Override
     public BulkResult upsertProducts(Endpoint giftHub, Duration readTimeout, List<Product> products, boolean dryRun) {
-        List<Object> rows = new ArrayList<>();
-        for (Product product : products) {
-            Map<String, Object> row = new LinkedHashMap<>(object("external_id", product.externalId(), "name", product.name(),
-                    "category", product.category(), "price_pyg", product.pricePyg(), "available", product.available(),
-                    "image_url", product.imageUrl()));
-            row.put("stock_qty", product.stockQty());
-            rows.add(row);
-        }
-        Response response = http.call(giftHub.connection().baseUrl(), readTimeout, HttpMethod.PUT,
-                BASE + "/products/bulk" + (dryRun ? "?dry_run=1" : ""), bearer(giftHub, null), Map.of("products", rows));
-        JsonNode body = requireSuccess(response);
-        return dryRun ? dryRunResult(body) : bulkResult(body);
+        return http.timed("GIFTHUB", "upsert_products", () -> {
+            List<Object> rows = new ArrayList<>();
+            for (Product product : products) {
+                Map<String, Object> row = new LinkedHashMap<>(object("external_id", product.externalId(), "name", product.name(),
+                        "category", product.category(), "price_pyg", product.pricePyg(), "available", product.available(),
+                        "image_url", product.imageUrl()));
+                row.put("stock_qty", product.stockQty());
+                rows.add(row);
+            }
+            Response response = http.call(giftHub.connection().baseUrl(), readTimeout, HttpMethod.PUT,
+                    BASE + "/products/bulk" + (dryRun ? "?dry_run=1" : ""), bearer(giftHub, null), Map.of("products", rows));
+            JsonNode body = requireSuccess(response);
+            return dryRun ? dryRunResult(body) : bulkResult(body);
+        });
     }
 
     @Override
     public BulkResult archiveProducts(Endpoint giftHub, Duration readTimeout, List<String> externalIds) {
-        List<Object> rows = externalIds.stream().<Object>map(id -> object("external_id", id, "archived", true)).toList();
-        Response response = http.call(giftHub.connection().baseUrl(), readTimeout, HttpMethod.PUT, BASE + "/products/bulk",
-                bearer(giftHub, null), Map.of("products", rows));
-        return bulkResult(requireSuccess(response));
+        return http.timed("GIFTHUB", "archive_products", () -> {
+            List<Object> rows = externalIds.stream().<Object>map(id -> object("external_id", id, "archived", true)).toList();
+            Response response = http.call(giftHub.connection().baseUrl(), readTimeout, HttpMethod.PUT, BASE + "/products/bulk",
+                    bearer(giftHub, null), Map.of("products", rows));
+            return bulkResult(requireSuccess(response));
+        });
     }
 
     private static BulkResult bulkResult(JsonNode body) {

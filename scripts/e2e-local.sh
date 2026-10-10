@@ -438,9 +438,12 @@ phase_catalog() {
 
   pos PUT "/products/$archived_id" '{"active":false}'; expect 200 "desactivar E2E-ARCH en el POS"
   run_integration "$INT_CATALOG"
+  gifthub_product E2E-ARCH && [ "$(jq -r .available <<< "$GH_PRODUCT")" = true ] \
+    || die "E2E-ARCH se archivó con una sola corrida que no lo vio (se esperan dos seguidas)"
+  run_integration "$INT_CATALOG"
   gifthub_product E2E-ARCH || die "E2E-ARCH desapareció de GiftHub"
   [ "$(jq -r .available <<< "$GH_PRODUCT")" = false ] || die "E2E-ARCH sigue disponible en GiftHub"
-  ok "desactivado en el POS → archivado en GiftHub (available=false; $(jq -c .result <<< "$OP"))"
+  ok "desactivado en el POS → archivado en GiftHub tras dos corridas sin verlo (available=false; $(jq -c .result <<< "$OP"))"
 }
 
 # ---------------------------------------------------------------- 4. pedidos
