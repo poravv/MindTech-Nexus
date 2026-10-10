@@ -48,6 +48,7 @@ const ICONS = {
   'circle-x': [C10, 'm15 9-6 6', 'm9 9 6 6'],
   'circle-pause': [C10, 'M10 15V9', 'M14 15V9'],
   'circle-minus': [C10, 'M8 12h8'],
+  'circle-play': [C10, 'M10 8.5v7l5.5-3.5z'],
   'circle-help': [C10, 'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3', 'M12 17h.01'],
   info: [C10, 'M12 16v-4', 'M12 8h.01'],
   clock: ['M12 6v6l4 2', C10],

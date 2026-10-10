@@ -15,7 +15,7 @@ export const STATUS_META: Record<string, StatusMeta> = {
   ENABLED: { label: 'Habilitada', tone: 'ok', icon: 'circle-check' },
   SUCCEEDED: { label: 'Exitosa', tone: 'ok', icon: 'circle-check' },
   PENDING: { label: 'Pendiente', tone: 'neutral', icon: 'clock' },
-  RUNNING: { label: 'En curso', tone: 'info', icon: 'loader' },
+  RUNNING: { label: 'En curso', tone: 'info', icon: 'circle-play' },
   RETRY: { label: 'Reintento', tone: 'warn', icon: 'rotate-cw' },
   PAUSED: { label: 'Pausada', tone: 'warn', icon: 'circle-pause' },
   DRAINING: { label: 'Drenando', tone: 'warn', icon: 'arrow-down-to-line' },
@@ -29,11 +29,11 @@ export const STATUS_META: Record<string, StatusMeta> = {
 
 /**
  * Integration health (GET /integrations/health). Its own map because SUSPENDED means something else for a tenant.
- * Progress is a still, half-drawn ring: a status that never ends must not spin forever.
+ * Progress is a still play glyph, never a loader: a status that may last for hours must not look like it is loading.
  */
 export const HEALTH_META: Record<string, StatusMeta> = {
   HEALTHY: { label: 'Saludable', tone: 'ok', icon: 'heart' },
-  PROGRESSING: { label: 'En progreso', tone: 'info', icon: 'loader' },
+  PROGRESSING: { label: 'En progreso', tone: 'info', icon: 'circle-play' },
   DEGRADED: { label: 'Degradada', tone: 'danger', icon: 'heart-crack' },
   SUSPENDED: { label: 'Suspendida', tone: 'neutral', icon: 'circle-pause' },
   NO_ACTIVITY: { label: 'Sin actividad', tone: 'neutral', icon: 'circle-help' },
