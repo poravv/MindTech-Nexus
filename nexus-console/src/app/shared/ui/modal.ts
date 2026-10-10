@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, effect, ElementRef, input, output, viewChild } from '@angular/core';
+import { Icon } from './icon';
 
 let nextId = 0;
 
@@ -8,12 +9,15 @@ let nextId = 0;
  */
 @Component({
   selector: 'app-modal',
+  imports: [Icon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <dialog #dialog class="modal" [attr.aria-labelledby]="headingId" (close)="closed.emit()">
       <header class="modal-head">
         <h2 [id]="headingId">{{ heading() }}</h2>
-        <button type="button" class="btn btn-ghost btn-sm" (click)="dialog.close()" aria-label="Cerrar">✕</button>
+        <button type="button" class="btn btn-ghost btn-sm btn-icon" (click)="dialog.close()" aria-label="Cerrar">
+          <app-icon name="x" />
+        </button>
       </header>
       <div class="modal-body"><ng-content /></div>
     </dialog>
@@ -29,15 +33,21 @@ let nextId = 0;
       color: var(--color-text);
       box-shadow: var(--shadow-lg);
     }
+    .modal[open] {
+      transition: opacity var(--duration) ease, transform var(--duration) var(--ease-out);
+      @starting-style { opacity: 0; transform: scale(0.97); }
+    }
     .modal::backdrop { background: var(--backdrop); }
     .modal-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: var(--space-3);
-      padding: var(--space-4) var(--space-4) 0;
+      padding: var(--space-4) var(--space-4) var(--space-3) var(--space-5);
+      border-bottom: var(--border-width) solid var(--color-border);
     }
-    .modal-body { padding: var(--space-4); }
+    .modal-head h2 { font-size: var(--text-lg); }
+    .modal-body { padding: var(--space-5); }
   `,
 })
 export class Modal {

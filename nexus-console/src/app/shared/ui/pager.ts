@@ -17,7 +17,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
       align-items: center;
       justify-content: flex-end;
       gap: var(--space-3);
-      padding: var(--space-3) var(--space-4);
+      padding: var(--space-2) var(--space-4);
       font-size: var(--text-sm);
       border-top: var(--border-width) solid var(--color-border);
     }

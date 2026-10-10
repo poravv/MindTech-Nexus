@@ -1,22 +1,28 @@
 // Design tokens. Every color, space, radius and type size used by the console comes from here.
 // Light is the default; dark applies with the OS preference or when the user forces it (data-theme).
+// Visual language: an operations console with Argo CD-style visual affordances (facets, health, trees) but
+// Nexus' own identity: MindTechPy violet as the single accent, a deep ink-violet rail, status as icon + label.
 
 :root {
   color-scheme: light;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 
+  --text-2xs: 0.6875rem;
   --text-xs: 0.75rem;
   --text-sm: 0.8125rem;
-  --text-md: 0.9375rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.5rem;
-  --text-2xl: 2rem;
+  --text-md: 0.875rem;
+  --text-lg: 1rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.75rem;
   --weight-regular: 400;
-  --weight-medium: 550;
-  --weight-bold: 680;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 650;
   --leading: 1.5;
+  --tracking-tight: -0.015em;
+  --tracking-caps: 0.06em;
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -27,79 +33,136 @@
   --space-7: 3rem;
 
   --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
   --radius-pill: 999px;
 
   --border-width: 1px;
-  --focus-width: 3px;
-  --control-height: 2.5rem;
-  --sidebar-width: 15rem;
-  --content-max: 80rem;
+  --focus-width: 2px;
+  --control-height: 2.25rem;
+  --control-height-sm: 1.875rem;
+  --topbar-height: 3.5rem;
+  --rail-width: 14.5rem;
+  --rail-width-collapsed: 4rem;
+  --filters-width: 15rem;
+  --content-max: 96rem;
   --dialog-width: 34rem;
-  --duration: 160ms;
+  --icon-size: 1rem;
+  --tile-min: 19rem;
 
-  --color-bg: oklch(97.5% 0.004 250);
+  --duration-fast: 120ms;
+  --duration: 180ms;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  --color-bg: oklch(97% 0.006 250);
   --color-surface: oklch(100% 0 0);
-  --color-surface-sunken: oklch(95.5% 0.006 250);
-  --color-border: oklch(89% 0.008 250);
-  --color-border-strong: oklch(78% 0.012 250);
-  --color-text: oklch(22% 0.02 255);
-  --color-text-muted: oklch(45% 0.02 255);
-  --color-text-inverse: oklch(98% 0.004 250);
+  --color-surface-sunken: oklch(96.5% 0.006 250);
+  --color-surface-hover: oklch(97.5% 0.008 250);
+  --color-border: oklch(91% 0.008 250);
+  --color-border-strong: oklch(82% 0.012 250);
+  --color-text: oklch(24% 0.02 255);
+  --color-text-muted: oklch(47% 0.02 255);
+  --color-text-faint: oklch(56% 0.016 255);
+  --color-text-inverse: oklch(99% 0 0);
 
-  --color-accent: oklch(48% 0.11 195);
-  --color-accent-hover: oklch(42% 0.11 195);
-  --color-accent-soft: oklch(94% 0.035 195);
-  --color-focus: oklch(55% 0.15 250);
+  --color-accent: oklch(51% 0.21 288);
+  --color-accent-hover: oklch(45% 0.21 288);
+  --color-accent-soft: oklch(95.5% 0.03 290);
+  --color-accent-ink: oklch(46% 0.2 288);
+  --color-focus: oklch(55% 0.21 288);
+  --color-selection: oklch(90% 0.06 290);
 
-  --color-ok: oklch(45% 0.12 150);
-  --color-ok-soft: oklch(94% 0.05 150);
-  --color-warn: oklch(48% 0.11 75);
-  --color-warn-soft: oklch(95% 0.06 85);
-  --color-danger: oklch(50% 0.17 25);
-  --color-danger-soft: oklch(95% 0.03 25);
-  --color-info: oklch(48% 0.13 255);
-  --color-info-soft: oklch(95% 0.03 255);
-  --color-neutral: oklch(45% 0.015 255);
-  --color-neutral-soft: oklch(94% 0.006 255);
+  // Navigation rail: dark in both themes.
+  --color-rail: oklch(21% 0.04 285);
+  --color-rail-border: oklch(29% 0.045 285);
+  --color-rail-hover: oklch(27% 0.05 285);
+  --color-rail-active: oklch(33% 0.09 288);
+  --color-rail-text: oklch(86% 0.02 285);
+  --color-rail-text-muted: oklch(70% 0.03 285);
+  --color-rail-text-active: oklch(99% 0 0);
 
-  --shadow-sm: 0 1px 2px oklch(20% 0.02 255 / 0.06);
-  --shadow-lg: 0 12px 40px oklch(20% 0.02 255 / 0.18);
-  --backdrop: oklch(20% 0.02 255 / 0.45);
+  // Status ink (text/icons on soft fills, AA on white) and soft fills.
+  --color-ok: oklch(48% 0.12 160);
+  --color-ok-soft: oklch(95.5% 0.04 160);
+  --color-info: oklch(50% 0.15 250);
+  --color-info-soft: oklch(95.5% 0.03 250);
+  --color-warn: oklch(50% 0.11 70);
+  --color-warn-soft: oklch(95.5% 0.06 85);
+  --color-serious: oklch(50% 0.18 345);
+  --color-serious-soft: oklch(95.5% 0.03 345);
+  --color-danger: oklch(51% 0.18 25);
+  --color-danger-soft: oklch(95.5% 0.03 25);
+  --color-neutral: oklch(47% 0.02 255);
+  --color-neutral-soft: oklch(95% 0.006 255);
+
+  // Chart fills for operation status (validated with the dataviz checker; identity also carried by icon + label).
+  --chart-ok: #1f9d6b;
+  --chart-info: #2f7dd1;
+  --chart-warn: #d08c00;
+  --chart-neutral: #9aa3b2;
+  --chart-serious: #c23a8f;
+  --chart-danger: #d4402a;
+  --chart-bar: #7c4dea;
+  --chart-track: oklch(94% 0.008 250);
+
+  --shadow-sm: 0 1px 2px oklch(25% 0.02 255 / 0.06);
+  --shadow-md: 0 2px 4px oklch(25% 0.02 255 / 0.05), 0 6px 16px oklch(25% 0.02 255 / 0.07);
+  --shadow-lg: 0 12px 40px oklch(20% 0.02 255 / 0.2);
+  --backdrop: oklch(20% 0.02 255 / 0.5);
 }
 
 @mixin dark-palette {
   color-scheme: dark;
 
-  --color-bg: oklch(17% 0.012 255);
-  --color-surface: oklch(21% 0.014 255);
-  --color-surface-sunken: oklch(15% 0.012 255);
-  --color-border: oklch(30% 0.016 255);
-  --color-border-strong: oklch(42% 0.02 255);
+  --color-bg: oklch(17% 0.014 258);
+  --color-surface: oklch(21% 0.016 258);
+  --color-surface-sunken: oklch(19% 0.015 258);
+  --color-surface-hover: oklch(24% 0.018 258);
+  --color-border: oklch(29% 0.018 258);
+  --color-border-strong: oklch(38% 0.022 258);
   --color-text: oklch(93% 0.006 255);
-  --color-text-muted: oklch(72% 0.014 255);
-  --color-text-inverse: oklch(17% 0.012 255);
+  --color-text-muted: oklch(73% 0.014 255);
+  --color-text-faint: oklch(64% 0.014 255);
+  --color-text-inverse: oklch(16% 0.014 258);
 
-  --color-accent: oklch(76% 0.11 195);
-  --color-accent-hover: oklch(82% 0.1 195);
-  --color-accent-soft: oklch(30% 0.05 195);
-  --color-focus: oklch(75% 0.14 250);
+  --color-accent: oklch(72% 0.15 290);
+  --color-accent-hover: oklch(78% 0.13 290);
+  --color-accent-soft: oklch(29% 0.07 290);
+  --color-accent-ink: oklch(81% 0.11 290);
+  --color-focus: oklch(76% 0.15 290);
+  --color-selection: oklch(36% 0.09 290);
 
-  --color-ok: oklch(80% 0.13 150);
-  --color-ok-soft: oklch(29% 0.05 150);
-  --color-warn: oklch(83% 0.12 85);
-  --color-warn-soft: oklch(30% 0.05 80);
+  --color-rail: oklch(14% 0.025 285);
+  --color-rail-border: oklch(23% 0.03 285);
+  --color-rail-hover: oklch(21% 0.035 285);
+  --color-rail-active: oklch(29% 0.08 288);
+
+  --color-ok: oklch(79% 0.13 160);
+  --color-ok-soft: oklch(28% 0.05 160);
+  --color-info: oklch(78% 0.11 250);
+  --color-info-soft: oklch(28% 0.05 250);
+  --color-warn: oklch(83% 0.12 80);
+  --color-warn-soft: oklch(29% 0.05 75);
+  --color-serious: oklch(78% 0.13 345);
+  --color-serious-soft: oklch(28% 0.06 345);
   --color-danger: oklch(76% 0.13 25);
-  --color-danger-soft: oklch(30% 0.06 25);
-  --color-info: oklch(78% 0.1 255);
-  --color-info-soft: oklch(29% 0.05 255);
-  --color-neutral: oklch(78% 0.012 255);
-  --color-neutral-soft: oklch(28% 0.012 255);
+  --color-danger-soft: oklch(29% 0.06 25);
+  --color-neutral: oklch(76% 0.014 255);
+  --color-neutral-soft: oklch(27% 0.014 255);
 
-  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.4);
+  --chart-ok: #2fae7c;
+  --chart-info: #4f97e3;
+  --chart-warn: #d29b25;
+  --chart-neutral: #8a94a5;
+  --chart-serious: #e06fae;
+  --chart-danger: #ec5e4a;
+  --chart-bar: #a58af0;
+  --chart-track: oklch(26% 0.016 258);
+
+  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.35);
+  --shadow-md: 0 2px 4px oklch(0% 0 0 / 0.3), 0 8px 20px oklch(0% 0 0 / 0.35);
   --shadow-lg: 0 16px 48px oklch(0% 0 0 / 0.55);
-  --backdrop: oklch(5% 0 0 / 0.6);
+  --backdrop: oklch(5% 0 0 / 0.65);
 }
 
 @media (prefers-color-scheme: dark) {
