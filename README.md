@@ -109,7 +109,7 @@ Errores en `application/problem+json` con `type` `https://nexus.mindtechpy.net/p
 
 ## E2E local (POS + SIFEN + GiftHub reales)
 
-`scripts/e2e-local.sh [setup] [fiscal] [discounts] [nc_rejected] [catalog] [order] [delivery] [ops] [revive]` (sin argumentos, todas) recorre los escenarios contra los stacks locales y sale ≠ 0 en el primero que falla: emisión, NC y anulación; descuento de línea (total del DE de SIFEN = total de la venta); NC rechazada por SIFEN (la factura sigue ISSUED); catálogo; pedidos; delivery con topping (total POS = total GiftHub) y topping sin código (GiftHub CANCELLED con motivo); pausa/DEAD/replay; y el webhook de SIFEN que revive una emisión DEAD. Tarda ~10-20 min: SIFEN en modo mock a veces deja el DE en `PENDIENTE_ENVIO` y lo reenvía cada 5 min.
+`scripts/e2e-local.sh [setup] [fiscal] [discounts] [nc_rejected] [catalog] [order] [delivery] [coupon] [ops] [revive]` (sin argumentos, todas) recorre los escenarios contra los stacks locales y sale ≠ 0 en el primero que falla: emisión, NC y anulación; descuentos de línea (incluida qty 3 − 1000, que Nexus parte en dos ítems) y general de la venta (total del DE de SIFEN = total de la venta); NC rechazada por SIFEN (la factura sigue ISSUED); catálogo; pedidos; delivery con topping (total POS = total GiftHub) y topping sin código (GiftHub CANCELLED con motivo); delivery con cupón (total POS = total GiftHub = total SIFEN); pausa/DEAD/replay; y el webhook de SIFEN que revive una emisión DEAD. Tarda ~10-20 min: SIFEN en modo mock a veces deja el DE en `PENDIENTE_ENVIO` y lo reenvía cada 5 min.
 
 | Stack | Cómo levantarlo | URL |
 |---|---|---|

@@ -5,7 +5,7 @@
 #   ./scripts/e2e-local.sh                       # todas las fases
 #   ./scripts/e2e-local.sh setup fiscal          # solo esas (setup corre siempre: es idempotente)
 #
-# Fases: fiscal discounts nc_rejected catalog order delivery ops revive
+# Fases: fiscal discounts nc_rejected catalog order delivery coupon ops revive
 #
 # Credenciales: de .env.local-stack (gitignored). Las que el script crea (cliente m2m de Nexus, API key del POS,
 # integración de GiftHub) se agregan ahí la primera vez; nunca se imprimen.
@@ -32,7 +32,7 @@ SIFEN_POINT=default
 
 [ -f "$ENV_FILE" ] || { echo "Falta $ENV_FILE"; exit 1; }
 set -a; . "./$ENV_FILE"; set +a
-PHASES=${*:-fiscal discounts nc_rejected catalog order delivery ops revive}
+PHASES=${*:-fiscal discounts nc_rejected catalog order delivery coupon ops revive}
 
 step() { printf '\n== %s\n' "$*"; }
 ok() { printf '  ✅ %s\n' "$*"; }
@@ -336,10 +336,11 @@ phase_fiscal() {
   ok "SIFEN volvió → APROBADO, 1 DE en SIFEN"
 }
 
-# ---------------------------------------------------------------- 2b. descuentos por línea
-# Nexus manda a SIFEN el descuento de la línea por unidad: el total del DE tiene que ser el de la venta.
+# ---------------------------------------------------------------- 2b. descuentos
+# Nexus manda a SIFEN el descuento de la línea por unidad y el POS prorratea el general entre las líneas: el total
+# del DE tiene que ser el de la venta.
 phase_discounts() {
-  step "2b. Fiscal con descuento de línea: total SIFEN = total POS"
+  step "2b. Fiscal con descuentos de línea y general: total SIFEN = total POS"
   ensure_cash_session
   ensure_product E2E-HAMB "Hamburguesa Nexus E2E" 25000 500
   local hamb=$PRODUCT
@@ -350,26 +351,31 @@ phase_discounts() {
   [ "$pos_total" = "$sifen" ] || die "qty 2 − 3000: total POS $pos_total ≠ total SIFEN $sifen"
   ok "qty 2 − 3000 → APROBADO, total POS $pos_total = total SIFEN $sifen"
 
-  # 1000 entre 3 unidades: SIFEN lo expresa por unidad (333 × 3 = 999), fuera de su tolerancia de 0,8.
+  # 1000 entre 3 unidades no da guaraníes enteros por unidad: Nexus parte la línea en 2 × 333 + 1 × 334.
   pos_sale "[{\"productId\":\"$hamb\",\"quantity\":3,\"discountAmount\":1000}]" '[{"method":"CASH","amount":74000}]'
   local odd=$SALE
-  wait_for "venta qty 3 con descuento no divisible APROBADO o RECHAZADO" 300 sale_invoice_in "$odd" APROBADO RECHAZADO
-  pos_total=$(pos_sale_total "$odd")
-  if [ "$(jq -r .externalEstado <<< "$INVOICE")" = APROBADO ]; then
-    sifen=$(sifen_total "$odd")
-    [ "$pos_total" = "$sifen" ] || die "qty 3 − 1000: total POS $pos_total ≠ total SIFEN $sifen"
-    ok "qty 3 − 1000 → APROBADO, total POS $pos_total = total SIFEN $sifen"
-  else
-    [ "$(sifen_documents "$odd")" = 0 ] || die "RECHAZADO pero SIFEN tiene $(sifen_documents "$odd") DE para $odd"
-    grep -q "discount-not-divisible\|no se reparte" <<< "$INVOICE" || die "RECHAZADO sin el motivo discount-not-divisible: $(jq -c '{externalEstado, externalError, externalMessage}' <<< "$INVOICE")"
-    ok "qty 3 − 1000 → RECHAZADO por discount-not-divisible (total POS $pos_total, sin DE en SIFEN): no se emite un total distinto"
-  fi
+  wait_for "venta qty 3 con descuento no divisible APROBADO" 720 sale_invoice_is "$odd" APROBADO
+  pos_total=$(pos_sale_total "$odd"); sifen=$(sifen_total "$odd")
+  [ "$pos_total" = "$sifen" ] || die "qty 3 − 1000: total POS $pos_total ≠ total SIFEN $sifen"
+  [ "$(sifen_items "$odd")" = 2 ] || die "qty 3 − 1000: SIFEN tiene $(sifen_items "$odd") ítems, se esperaban 2 (línea partida)"
+  ok "qty 3 − 1000 → APROBADO con la línea partida en 2 ítems, total POS $pos_total = total SIFEN $sifen"
+
+  # Descuento general de la venta: el POS lo prorratea entre las líneas como descuento de línea.
+  ensure_product E2E-CHED "Extra cheddar E2E" 5000 500
+  local cheddar=$PRODUCT
+  ensure_product E2E-PAPA "Papas Nexus E2E" 12000 500
+  local papas=$PRODUCT
+  pos_sale "[{\"productId\":\"$hamb\",\"quantity\":2},{\"productId\":\"$cheddar\",\"quantity\":3},{\"productId\":\"$papas\",\"quantity\":1,\"discountAmount\":1000}]" \
+    '[{"method":"CASH","amount":80000}]' ',"discountAmount":5000'
+  local general=$SALE
+  wait_for "venta con descuento general APROBADO" 720 sale_invoice_is "$general" APROBADO
+  pos_total=$(pos_sale_total "$general"); sifen=$(sifen_total "$general")
+  [ "$pos_total" = "$sifen" ] || die "descuento general: total POS $pos_total ≠ total SIFEN $sifen"
+  ok "3 líneas − 1000 de línea − 5000 general → APROBADO, total POS $pos_total = total SIFEN $sifen"
 }
 
-sale_invoice_in() {  # venta estado1 estado2 → true si la factura está en alguno (queda en INVOICE)
-  INVOICE=
-  sale_invoice_is "$1" "$2" && return 0
-  [ -n "$INVOICE" ] && [ "$(jq -r .externalEstado <<< "$INVOICE")" = "$3" ]
+sifen_items() {  # ítems (gCamItem) del DE de la venta
+  sifen_sql "SELECT (length(xml_original) - length(replace(xml_original, '<gCamItem>', ''))) / length('<gCamItem>') FROM documentos_electronicos WHERE transaction_id = '$1'"
 }
 
 # ---------------------------------------------------------------- 2c. NC rechazada
@@ -559,6 +565,66 @@ phase_delivery() {
   grep -q "Topping sin código E2E" <<< "$reason" || die "GiftHub canceló sin nombrar el topping: «$reason»"
   pos_channel_sale "$rejected" && die "el POS tiene una venta para un pedido rechazado"
   ok "topping sin código → GiftHub CANCELLED con motivo «$reason», sin venta en el POS"
+}
+
+# ---------------------------------------------------------------- 4c. delivery con cupón
+# GiftHub congela el order.created al crear el pedido y desde el panel el cupón se canjea después: solo el checkout de
+# WhatsApp crea el pedido con el cupón ya aplicado. Se reproduce ese evento: el pedido se crea con order.created
+# apagado, se canjea un cupón de monto fijo y Nexus recibe el order.created firmado con el pedido ya descontado.
+gifthub_webhook_events() {
+  gh PATCH "/api/admin/integrations/$GIFTHUB_E2E_INTEGRATION_ID" "{\"webhookEvents\":$1}"; expect 200 "eventos del webhook de GiftHub"
+}
+
+send_gifthub_order_created() {  # pedido → order.created firmado con el secreto del webhook, como lo manda GiftHub
+  local order body timestamp signature
+  order=$(curl -sS -H "Authorization: Bearer $GIFTHUB_E2E_API_KEY" "$GH/api/integrations/v1/orders/$1")
+  body=$(jq -c --arg id "$(uuidgen)" --arg business "$GH_TENANT" \
+    '{id: $id, type: "order.created", created_at: (now | todate), business: {id: $business, name: "E2E"},
+      data: {order: (. + {customer: {id: "e2e", name: "Cliente Nexus E2E", phone: "+595981555123"},
+                          delivery: {address: "Av. España 1234", reference: "Portón negro"}})}}' <<< "$order")
+  timestamp=$(date +%s)
+  signature=$(printf '%s.%s' "$timestamp" "$body" | openssl dgst -sha256 -hmac "$GIFTHUB_E2E_WEBHOOK_SECRET" -r | cut -d' ' -f1)
+  req POST "$NEXUS/api/v1/webhooks/gifthub/$CONN_GH" "" "$body" -H "X-GiftHub-Event: order.created" \
+    -H "X-GiftHub-Delivery: $(uuidgen)" -H "X-GiftHub-Timestamp: $timestamp" -H "X-GiftHub-Signature: v1=$signature"
+  expect "200 202" "order.created firmado a Nexus"
+}
+
+phase_coupon() {
+  step "4c. Pedido delivery con cupón: total POS = total GiftHub y total SIFEN = total POS"
+  ensure_cash_session
+  ensure_product E2E-HAMB "Hamburguesa Nexus E2E" 25000 500
+  run_integration "$INT_CATALOG"
+  gifthub_product E2E-HAMB || die "E2E-HAMB no está en GiftHub"; GH_HAMB=$(jq -r .id <<< "$GH_PRODUCT")
+  gifthub_customer
+
+  gifthub_webhook_events '["order.cancelled"]'
+  gh POST /api/admin/orders "{\"customerId\":\"$GH_CUSTOMER\",\"fulfillmentType\":\"DELIVERY\",\"address\":\"Av. España 1234\",\"deliveryFeePyg\":10000,\"items\":[{\"productId\":\"$GH_HAMB\",\"quantity\":2}]}"
+  local created=$STATUS order; order=$(jq -r '.id // empty' <<< "$BODY")
+  gifthub_webhook_events '["order.created","order.cancelled"]'
+  STATUS=$created; expect 201 "pedido delivery en GiftHub"
+  local code; code="E2E$(date +%s)"
+  gh POST /api/admin/loyalty/coupons "{\"customerId\":\"$GH_CUSTOMER\",\"code\":\"$code\",\"description\":\"Cupón E2E\",\"flamesCost\":0,\"type\":\"FIXED_AMOUNT\",\"discountPyg\":7000}"
+  expect "200 201" "cupón GiftHub"
+  gh POST /api/admin/loyalty/redeem "{\"customerId\":\"$GH_CUSTOMER\",\"code\":\"$code\",\"orderId\":\"$order\"}"; expect "200 201" "canjear cupón"
+  gh GET "/api/admin/orders/$order"; expect 200 "pedido GiftHub"
+  local gh_total gh_discount; gh_total=$(jq -r .totalPyg <<< "$BODY"); gh_discount=$(jq -r .discountPyg <<< "$BODY")
+  [ "$gh_discount" = 7000 ] || die "el cupón no descontó en GiftHub (discountPyg $gh_discount)"
+
+  send_gifthub_order_created "$order"
+  wait_for "pedido con cupón CONFIRMED" 120 gh_order_is "$order" CONFIRMED
+  pos_channel_sale "$order" || die "sin venta de canal en el POS"
+  local sale pos_total; sale=$(jq -r .saleId <<< "$POS_ORDER"); pos_total=$(jq -r '.total | floor' <<< "$POS_ORDER")
+  nexus_operation "$order"
+  [ "$pos_total" = "$gh_total" ] || die "total POS $pos_total ≠ total GiftHub $gh_total (Nexus $(jq -c '.result | {total, giftHubTotal, totalMismatch}' <<< "$OP"))"
+  [ "$(jq -r .result.totalMismatch <<< "$OP")" = false ] || die "Nexus marcó totalMismatch con totales iguales"
+  ok "2 × hamburguesa + envío 10000 − cupón 7000 → total POS $pos_total = total GiftHub $gh_total, sin totalMismatch"
+
+  pos POST "/sales/$sale/payments" "{\"method\":\"CASH\",\"amount\":$pos_total,\"cashSessionId\":\"$CASH_SESSION\"}"
+  expect "200 201" "cobrar venta con cupón"
+  wait_for "factura del pedido con cupón APROBADO" 720 sale_invoice_is "$sale" APROBADO
+  local sifen; sifen=$(sifen_total "$sale")
+  [ "$pos_total" = "$sifen" ] || die "pedido con cupón: total POS $pos_total ≠ total SIFEN $sifen"
+  ok "cobrado → factura APROBADO, total SIFEN $sifen = total POS (cupón prorrateado, envío sin descuento)"
 }
 
 # ---------------------------------------------------------------- 5. operación
