@@ -85,8 +85,9 @@ class AdminAuthIT extends AbstractPostgresIT {
     }
 
     @Test
-    void should_rate_limit_when_ip_exceeds_ten_logins_per_minute() {
+    void should_rate_limit_when_ip_exceeds_ten_logins_per_minute() throws InterruptedException {
         String ip = "10.9." + (int) (Math.random() * 250) + "." + (int) (Math.random() * 250);
+        startWellInsideTheMinute();
         for (int i = 0; i < 10; i++) {
             loginRaw("nobody-" + i + "@nexus.test", "whatever-password", ip, 401);
         }
@@ -116,6 +117,14 @@ class AdminAuthIT extends AbstractPostgresIT {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(toJson(Map.of("email", email, "password", PASSWORD, "role", role.value()))), 201);
         return email;
+    }
+
+    /** The filter counts per calendar minute and eleven bcrypt logins take seconds: never straddle two windows. */
+    private static void startWellInsideTheMinute() throws InterruptedException {
+        long millisLeft = 60_000 - System.currentTimeMillis() % 60_000;
+        if (millisLeft < 30_000) {
+            Thread.sleep(millisLeft + 100);
+        }
     }
 
     private MvcResult loginRaw(String email, String password, String ip, int expected) {
