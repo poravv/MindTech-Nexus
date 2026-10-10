@@ -6,7 +6,8 @@ import java.time.Duration;
 
 /**
  * Per-integration limits and retry settings (spec §6, stored as jsonb). Missing values take the spec
- * defaults; {@code scheduleEverySeconds} only applies to CATALOG.
+ * defaults; a missing {@code readTimeoutMs} takes its flow's default when the policy joins an
+ * {@link Integration}. {@code scheduleEverySeconds} only applies to CATALOG.
  */
 public record IntegrationPolicy(Double ratePerSecond, Integer burst, Integer maxInFlight, Integer maxAttempts,
                                 Integer baseDelaySeconds, Integer maxDelaySeconds, Integer readTimeoutMs,
@@ -23,19 +24,28 @@ public record IntegrationPolicy(Double ratePerSecond, Integer burst, Integer max
         maxAttempts = maxAttempts == null ? 5 : maxAttempts;
         baseDelaySeconds = baseDelaySeconds == null ? 5 : baseDelaySeconds;
         maxDelaySeconds = maxDelaySeconds == null ? 300 : maxDelaySeconds;
-        readTimeoutMs = readTimeoutMs == null ? 150_000 : readTimeoutMs;
         require(ratePerSecond > 0, "ratePerSecond debe ser mayor a 0");
         require(burst >= 1, "burst debe ser al menos 1");
         require(maxInFlight >= 1, "maxInFlight debe ser al menos 1");
         require(maxAttempts >= 1 && maxAttempts <= 100, "maxAttempts debe estar entre 1 y 100");
         require(baseDelaySeconds >= 1, "baseDelaySeconds debe ser al menos 1");
         require(maxDelaySeconds >= baseDelaySeconds, "maxDelaySeconds no puede ser menor que baseDelaySeconds");
-        require(readTimeoutMs >= 1000 && readTimeoutMs <= MAX_READ_TIMEOUT_MS, "readTimeoutMs debe estar entre 1000 y 540000");
+        require(readTimeoutMs == null || readTimeoutMs >= 1000 && readTimeoutMs <= MAX_READ_TIMEOUT_MS,
+                "readTimeoutMs debe estar entre 1000 y 540000");
         require(scheduleEverySeconds == null || scheduleEverySeconds >= 60, "scheduleEverySeconds debe ser al menos 60");
     }
 
     public static IntegrationPolicy defaults() {
         return new IntegrationPolicy(null, null, null, null, null, null, null, null);
+    }
+
+    /** SIFEN can hold a FISCAL call ~183 s (30 s read + 3 queries of 45 s); the other connectors answer well within 150 s. */
+    public IntegrationPolicy withDefaultReadTimeout(Flow flow) {
+        if (readTimeoutMs != null) {
+            return this;
+        }
+        return new IntegrationPolicy(ratePerSecond, burst, maxInFlight, maxAttempts, baseDelaySeconds, maxDelaySeconds,
+                flow == Flow.FISCAL ? 200_000 : 150_000, scheduleEverySeconds);
     }
 
     /**

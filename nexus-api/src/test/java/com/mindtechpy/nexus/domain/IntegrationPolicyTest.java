@@ -1,5 +1,6 @@
 package com.mindtechpy.nexus.domain;
 
+import com.mindtechpy.nexus.domain.integration.Flow;
 import com.mindtechpy.nexus.domain.integration.IntegrationPolicy;
 import com.mindtechpy.nexus.domain.shared.DomainException;
 import org.junit.jupiter.api.Test;
@@ -21,7 +22,15 @@ class IntegrationPolicyTest {
         assertThat(policy.maxAttempts()).isEqualTo(5);
         assertThat(policy.baseDelaySeconds()).isEqualTo(5);
         assertThat(policy.maxDelaySeconds()).isEqualTo(300);
-        assertThat(policy.readTimeoutMs()).isEqualTo(150_000);
+    }
+
+    @Test
+    void should_default_read_timeout_by_flow_when_it_is_missing() {
+        assertThat(policy.withDefaultReadTimeout(Flow.FISCAL).readTimeoutMs()).isEqualTo(200_000);
+        assertThat(policy.withDefaultReadTimeout(Flow.ORDER).readTimeoutMs()).isEqualTo(150_000);
+        assertThat(policy.withDefaultReadTimeout(Flow.CATALOG).readTimeoutMs()).isEqualTo(150_000);
+        assertThat(new IntegrationPolicy(null, null, null, null, null, null, 30_000, null)
+                .withDefaultReadTimeout(Flow.FISCAL).readTimeoutMs()).isEqualTo(30_000);
     }
 
     @Test

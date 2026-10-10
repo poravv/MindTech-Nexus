@@ -161,7 +161,7 @@ Todas las tablas de negocio llevan `tenant_id uuid NOT NULL` y `created_at/updat
 | `inbound_events` | `id, tenant_id, connection_id, source(GIFTHUB\|SIFEN), event_id, event_type, received_at, operation_id NULL` | `UNIQUE(connection_id, event_id)` |
 | `audit_events` | `id, tenant_id NULL, actor_type(USER\|CLIENT\|SYSTEM), actor_id, action, resource_type, resource_id, before jsonb, after jsonb, correlation_id, happened_at` | idx `(tenant_id, happened_at desc)` |
 
-`policy` de integración (jsonb tipado en `IntegrationPolicy`): `{ "ratePerSecond": 2, "burst": 5, "maxInFlight": 2, "maxAttempts": 5, "baseDelaySeconds": 5, "maxDelaySeconds": 300, "readTimeoutMs": 150000, "scheduleEverySeconds": 300 }` (el último solo para `CATALOG`). `readTimeoutMs` máximo 540 000: por debajo del lease de 10 min de la cola.
+`policy` de integración (jsonb tipado en `IntegrationPolicy`): `{ "ratePerSecond": 2, "burst": 5, "maxInFlight": 2, "maxAttempts": 5, "baseDelaySeconds": 5, "maxDelaySeconds": 300, "readTimeoutMs": 150000, "scheduleEverySeconds": 300 }` (el último solo para `CATALOG`; `readTimeoutMs` por defecto 200000 en `FISCAL`). `readTimeoutMs` máximo 540 000: por debajo del lease de 10 min de la cola.
 
 Retención: `operations.payload` de operaciones `SUCCEEDED` se vacía a `null` 30 días después de `finished_at` (job diario), `result` queda; `FAILED` y `DEAD` conservan el payload para poder reprocesarlas. `inbound_events` 90 días.
 
@@ -270,7 +270,7 @@ POS                      Nexus API                    Worker                    
  │                        integración FISCAL ENABLED? conexión SIFEN con credenciales? (fail-fast)
  │                        startOrFind(kind=ISSUE_INVOICE, key=sourceRef, hash)
  │ ◄── 202 {operationId}  ──── mismo hash: 200 estado actual / otro hash: 409 idempotency-conflict
- │                                                     claim ──► SUBMIT  POST /api/v1/facturas (HMAC) ──► síncrono ≤150 s
+ │                                                     claim ──► SUBMIT  POST /api/v1/facturas (HMAC) ──► síncrono ≤~183 s
  │                                                              200 → guarda cdc/estado → ¿final? SUCCEEDED/FAILED : TRACK
  │                                                              UNCERTAIN → VERIFY GET /facturas/{tx} → 200 adopta / 404 re-SUBMIT
  │                                                     TRACK: poll 1m,5m,15m,1h,6h (máx 72 h) o webhook SIFEN → final
@@ -281,7 +281,7 @@ POS                      Nexus API                    Worker                    
 - **Validar el efecto real**: `SUBMIT` solo se considera exitoso si la respuesta trae `cdc` no vacío y `estado` ∈ enum conocido; cualquier otra forma → `UNCERTAIN`.
 - **Idempotencia remota**: SIFEN dedupe por `(emisor, transactionId)` + hash; un 200 repetido es éxito; `409 EMISION_EN_CURSO` es "esperar", no fallo; `409 IDEMPOTENCY_CONFLICT` es `DEAD` (alguien cambió el payload: revisión humana, nunca re-emitir con otro `transactionId`).
 - **Compensación**: un DE aprobado **no se compensa automáticamente** (requiere evento fiscal de cancelación con ventana legal de 48 h, decisión humana). La única función de compensación de la saga, `FiscalSaga.compensate(op, cause)`, hace exactamente: marcar `DEAD`/`FAILED`, registrar `operation_steps`, emitir audit y métrica. Sin `return` temprano. La cancelación es una operación de negocio separada (`CANCEL_INVOICE`, pasos `SUBMIT_CANCEL` → `VERIFY`), disparada por el POS.
-- **Timeouts**: connect 5 s, read `policy.readTimeoutMs` (default 150 000, SIFEN pide >120 s). Llamada por ClusterIP: no pasa por Cloudflare (sin 524).
+- **Timeouts**: connect 5 s, read `policy.readTimeoutMs` (default 200 000 en `FISCAL`: SIFEN puede tardar ~183 s, 30 s de lectura + 3 consultas de 45 s). Llamada por ClusterIP: no pasa por Cloudflare (sin 524).
 - **Credenciales SIFEN**: una API key por emisor = por tenant; `hmacRequired` siempre en producción. Nexus firma `METHOD\nPATH?QUERY\nTS\nNONCE\nhex(body)` con `X-Timestamp`, `X-Nonce`, `X-Signature` (vectores de prueba en `electronico-sifen-backend/docs/INTEGRACION_API.md:127-139`). La IP allowlist de la key queda vacía (tráfico interno) o con el CIDR de pods.
 - **KuDE y cancelación**: pass-through síncrono con timeouts cortos (10 s); el PDF no se persiste.
 - **Logs**: `[NEXUS-FISCAL] op=… tenant=… step=SUBMIT attempt=2 → 200 estado=APROBADO cdc=…` en inicio, respuesta, decisión y compensación.

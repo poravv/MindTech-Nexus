@@ -29,7 +29,7 @@ public record Integration(UUID id, TenantId tenantId, Flow flow, String code, UU
         if (targetConnectionId == null) {
             throw DomainException.invalid("target-connection-required", "La conexión destino es obligatoria");
         }
-        policy = policy == null ? IntegrationPolicy.defaults() : policy;
+        policy = (policy == null ? IntegrationPolicy.defaults() : policy).withDefaultReadTimeout(flow);
     }
 
     public static Integration create(TenantId tenantId, Flow flow, String code, UUID sourceConnectionId,
