@@ -13,7 +13,11 @@ public interface SessionRepository {
     /** Session with this refresh hash that is neither revoked nor expired at {@code now}. */
     Optional<UserSession> findActive(String refreshHash, Instant now);
 
-    void replaceRefreshHash(UUID sessionId, String newRefreshHash);
+    /**
+     * Swaps the refresh hash only while {@code oldRefreshHash} is still the active one: of two concurrent
+     * refreshes with the same token exactly one wins. False when the token was already used, revoked or expired.
+     */
+    boolean rotateRefreshHash(String oldRefreshHash, String newRefreshHash, Instant now);
 
     void revoke(UUID sessionId, Instant now);
 }

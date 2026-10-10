@@ -10,7 +10,8 @@ import com.mindtechpy.nexus.domain.shared.DomainException;
 
 /**
  * Exchanges a valid refresh token for a new access token. The refresh token rotates on every use and
- * the user is re-read, so role, status and password-change flag are always fresh.
+ * the user is re-read, so role, status and password-change flag are always fresh. The rotation is a
+ * conditional update on the presented token, so a token is honoured once even under concurrent refreshes.
  */
 public class RefreshSession {
 
@@ -28,7 +29,8 @@ public class RefreshSession {
         if (refreshToken == null || refreshToken.isBlank()) {
             throw invalidSession();
         }
-        UserSession session = sessions.findActive(OpaqueTokens.sha256(refreshToken), clock.now())
+        String refreshHash = OpaqueTokens.sha256(refreshToken);
+        UserSession session = sessions.findActive(refreshHash, clock.now())
                 .orElseThrow(RefreshSession::invalidSession);
         User user = users.findById(session.userId()).filter(User::isActive).orElse(null);
         if (user == null || user.isLocked(clock.now())) {
@@ -36,7 +38,9 @@ public class RefreshSession {
             throw invalidSession();
         }
         String rotated = OpaqueTokens.generate(32);
-        sessions.replaceRefreshHash(session.id(), OpaqueTokens.sha256(rotated));
+        if (!sessions.rotateRefreshHash(refreshHash, OpaqueTokens.sha256(rotated), clock.now())) {
+            throw invalidSession();
+        }
         return new SessionGrant(new AuthenticatedUser(user.id(), user.email(), user.role(), user.tenantId(),
                 user.mustChangePassword()), rotated);
     }

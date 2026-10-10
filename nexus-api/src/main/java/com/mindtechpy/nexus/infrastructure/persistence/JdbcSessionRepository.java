@@ -47,9 +47,12 @@ class JdbcSessionRepository implements SessionRepository {
     }
 
     @Override
-    public void replaceRefreshHash(UUID sessionId, String newRefreshHash) {
-        jdbc.sql("UPDATE user_sessions SET refresh_hash = :hash, updated_at = now() WHERE id = :id")
-                .param("id", sessionId).param("hash", newRefreshHash).update();
+    public boolean rotateRefreshHash(String oldRefreshHash, String newRefreshHash, Instant now) {
+        return jdbc.sql("""
+                        UPDATE user_sessions SET refresh_hash = :newHash, updated_at = now()
+                        WHERE refresh_hash = :oldHash AND revoked_at IS NULL AND expires_at > :now""")
+                .param("oldHash", oldRefreshHash).param("newHash", newRefreshHash).param("now", timestamp(now))
+                .update() == 1;
     }
 
     @Override
