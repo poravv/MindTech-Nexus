@@ -73,7 +73,7 @@
 }
 
 .brand {
-  --logo-size: 1.0625rem;
+  --logo-size: 1.125rem;
   display: inline-flex;
   color: var(--color-rail-text-active);
   text-decoration: none;
@@ -93,7 +93,7 @@
   background: transparent;
   color: var(--color-rail-text-muted);
   font: inherit;
-  font-size: var(--text-md);
+  font-size: var(--text-sm);
   cursor: pointer;
   border-radius: var(--radius-md);
 }
@@ -118,7 +118,7 @@
 
 .group-label {
   padding: 0 var(--space-3) var(--space-2);
-  font-size: var(--text-xs);
+  font-size: var(--text-2xs);
   font-weight: var(--weight-medium);
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
@@ -134,18 +134,22 @@
 }
 
 .rail ul a {
-  --icon-size: 1.625rem;
+  --icon-size: 1.375rem;
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  min-height: 3rem;
+  gap: var(--space-3);
+  min-height: var(--nav-item-height);
   padding: 0 var(--space-3);
   border-radius: var(--radius-md);
   color: var(--color-rail-text);
-  font-size: var(--text-lg);
+  font-size: var(--text-sm);
   font-weight: var(--weight-regular);
   text-decoration: none;
   transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.rail ul a app-icon {
+  color: var(--color-rail-text-muted);
 }
 
 .rail ul a:hover {
@@ -156,7 +160,12 @@
 .rail ul a.active {
   background: var(--color-rail-active);
   color: var(--color-rail-text-active);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-semibold);
+}
+
+.rail ul a:hover app-icon,
+.rail ul a.active app-icon {
+  color: var(--color-rail-icon-active);
 }
 
 .rail :focus-visible {
@@ -170,7 +179,7 @@
 }
 
 .rail-toggle {
-  --icon-size: 1.5rem;
+  --icon-size: 1.375rem;
   position: sticky;
   bottom: 0;
   display: none;
@@ -178,7 +187,7 @@
   border-top: var(--border-width) solid var(--color-rail-border) !important;
   border-radius: 0 !important;
   background: var(--color-rail) !important;
-  min-height: 3.25rem;
+  min-height: var(--nav-item-height);
   padding: 0 var(--space-5);
 }
 
@@ -225,7 +234,7 @@
 }
 
 .crumbs [aria-current="page"] {
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-semibold);
 }
 
 .sep {
@@ -236,7 +245,7 @@
 .top-tools {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-3);
   margin-left: auto;
 }
 
@@ -262,11 +271,29 @@
   background-color: var(--color-surface-sunken);
 }
 
-.who {
+.user-menu {
+  position: relative;
+}
+
+.user-trigger {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 0 var(--space-2);
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.user-trigger:hover,
+.user-trigger[aria-expanded="true"],
+.caret {
+  --icon-size: 1.125rem;
 }
 
 .avatar {
@@ -277,7 +304,7 @@
   border-radius: 50%;
   background: var(--color-accent-soft);
   color: var(--color-accent-ink);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
 }
 
@@ -291,13 +318,55 @@
   max-width: 14rem;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: var(--text-md);
+  font-size: var(--text-sm);
   font-weight: var(--weight-medium);
 }
 
 .role {
   display: block;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 30;
+  display: grid;
+  min-width: 16rem;
+  padding: var(--space-2);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.menu-head {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.menu button {
+  --icon-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
   font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.caret,
+.menu app-icon {
   color: var(--color-text-muted);
 }
 
@@ -406,6 +475,24 @@
 
     .rail-toggle {
       margin-inline: var(--space-2);
+    }
+
+    // Tooltip outside the narrow rail. Fixed so the rail's overflow does not clip it; without a top it keeps the
+    // item's vertical position.
+    [data-tip]:is(:hover, :focus-visible)::after {
+      content: attr(data-tip);
+      position: fixed;
+      left: calc(var(--rail-width-collapsed) + var(--space-2));
+      z-index: 40;
+      padding: var(--space-1) var(--space-3);
+      border-radius: var(--radius-md);
+      background: var(--color-tooltip);
+      color: var(--color-rail-text-active);
+      font-size: var(--text-xs);
+      font-weight: var(--weight-medium);
+      white-space: nowrap;
+      box-shadow: var(--shadow-md);
+      pointer-events: none;
     }
   }
 }

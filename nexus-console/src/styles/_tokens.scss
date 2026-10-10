@@ -47,7 +47,8 @@
   --control-height: 2.625rem;
   --control-height-sm: 2.125rem;
   --topbar-height: 4.25rem;
-  --rail-width: 18rem;
+  --rail-width: 17rem;
+  --nav-item-height: 2.875rem;
   --rail-width-collapsed: 4.75rem;
   --filters-width: 15rem;
   --content-max: 96rem;
@@ -96,6 +97,8 @@
   --color-rail-text: oklch(90% 0.012 250);
   --color-rail-text-muted: oklch(74% 0.02 250);
   --color-rail-text-active: oklch(99% 0 0);
+  --color-rail-icon-active: oklch(80% 0.12 290);
+  --color-tooltip: oklch(20% 0.03 252);
 
   // Status ink (text/icons on soft fills, AA on white) and soft fills.
   --color-ok: oklch(48% 0.12 160);

@@ -52,6 +52,7 @@ const COLLAPSED_KEY = 'nexus.rail-collapsed';
   selector: 'app-shell',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NgTemplateOutlet, RouterOutlet, RouterLink, RouterLinkActive, Icon, Logo],
+  host: { '(document:click)': 'closeUserMenu($event)', '(document:keydown.escape)': 'userMenuOpen.set(false)' },
   templateUrl: './shell.html',
   styleUrl: './shell.scss',
 })
@@ -83,6 +84,7 @@ export default class Shell {
     defaultValue: [],
   });
   protected readonly menuOpen = signal(false);
+  protected readonly userMenuOpen = signal(false);
   protected readonly collapsed = signal(readCollapsed());
 
   private readonly url = toSignal(
@@ -111,6 +113,7 @@ export default class Shell {
       .pipe(filter((event) => event instanceof NavigationEnd), takeUntilDestroyed())
       .subscribe(() => {
         this.menuOpen.set(false);
+        this.userMenuOpen.set(false);
         this.main().nativeElement.focus({ preventScroll: true });
       });
   }
@@ -121,6 +124,12 @@ export default class Shell {
       localStorage.setItem(COLLAPSED_KEY, String(this.collapsed()));
     } catch {
       // Without storage the choice lasts until reload.
+    }
+  }
+
+  protected closeUserMenu(event: Event): void {
+    if (!(event.target as Element).closest('.user-menu')) {
+      this.userMenuOpen.set(false);
     }
   }
 
