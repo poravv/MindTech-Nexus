@@ -86,6 +86,14 @@ class AdminIntegrationController {
         return integrationQueries.list(TenantContext.currentUser(), TenantId.of(tenantId)).stream().map(IntegrationView::of).toList();
     }
 
+    @Operation(summary = "Salud por integración sobre las operaciones creadas desde from (default 24 h): SUSPENDED si está detenida, "
+            + "DEGRADED con alguna FAILED/DEAD, PROGRESSING si drena o hay operaciones sin terminar en éxito, HEALTHY solo con éxitos, "
+            + "NO_ACTIVITY sin operaciones; dead es la DLQ actual de la integración")
+    @GetMapping("/health")
+    List<IntegrationQueries.Health> health(@RequestParam(required = false) UUID tenantId, @RequestParam(required = false) Instant from) {
+        return integrationQueries.health(TenantContext.currentUser(), TenantId.of(tenantId), from);
+    }
+
     @Operation(summary = "Detalle de una integración (404 si es de otro tenant)")
     @GetMapping("/{id}")
     IntegrationView get(@RequestParam(required = false) UUID tenantId, @PathVariable UUID id) {

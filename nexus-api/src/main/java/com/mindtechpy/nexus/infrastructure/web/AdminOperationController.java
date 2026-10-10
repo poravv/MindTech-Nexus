@@ -80,6 +80,14 @@ class AdminOperationController {
         return operationQueries.summary(TenantContext.currentUser(), TenantId.of(tenantId), from);
     }
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Operaciones creadas por intervalo y estado desde from (default 24 h); bucket PT5M, PT15M, PT1H o P1D, máximo 500 puntos, intervalos vacíos incluidos")
+    @GetMapping("/timeseries")
+    List<OperationQueries.Point> timeseries(@RequestParam(required = false) UUID tenantId,
+                                            @RequestParam(required = false) Instant from,
+                                            @RequestParam(defaultValue = "PT1H") String bucket) {
+        return operationQueries.timeseries(TenantContext.currentUser(), TenantId.of(tenantId), from, bucket);
+    }
+
     @io.swagger.v3.oas.annotations.Operation(summary = "Detalle con sus pasos (404 si es de otro tenant)")
     @GetMapping("/{id}")
     OperationDetailView get(@RequestParam(required = false) UUID tenantId, @PathVariable UUID id) {
