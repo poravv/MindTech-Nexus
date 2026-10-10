@@ -11,7 +11,7 @@ import { canReplay } from '../../core/roles';
 import { TenantScope } from '../../core/tenant-scope.service';
 import { ConfirmDialog } from '../../shared/ui/confirm-dialog';
 import { Icon } from '../../shared/ui/icon';
-import { StatusBadge } from '../../shared/ui/status-badge';
+import { StatusBadge, statusMeta } from '../../shared/ui/status-badge';
 import { FLOW_META } from '../integrations/health';
 
 /** Fields of lastError the console shows; anything else the connector attached stays out of the screen. */
@@ -77,6 +77,8 @@ export default class OperationDetailPage {
       },
     });
   }
+
+  protected readonly statusMeta = statusMeta;
 
   protected flowLabel(flow: Flow): string {
     return FLOW_META[flow]?.label ?? flow;

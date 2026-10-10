@@ -52,7 +52,7 @@
         <ol class="timeline">
           @for (step of op.steps; track step.id) {
             <li class="t-item">
-              <app-status-badge [status]="step.status" [plain]="true" class="t-status" aria-hidden="true" />
+              <app-icon [name]="statusMeta(step.status).icon" class="t-status" [style.color]="'var(--color-' + statusMeta(step.status).tone + ')'" />
               <div class="t-body">
                 <p class="t-title">
                   <span class="mono">{{ step.step }}</span>

@@ -39,7 +39,10 @@ export const HEALTH_META: Record<string, StatusMeta> = {
   NO_ACTIVITY: { label: 'Sin actividad', tone: 'neutral', icon: 'circle-help' },
 };
 
-const FALLBACK: Omit<StatusMeta, 'label'> = { tone: 'neutral', icon: 'circle-help' };
+/** Meta of an entity status (or of an integration health), with a neutral fallback for unknown values. */
+export function statusMeta(status: string, health = false): StatusMeta {
+  return (health ? HEALTH_META : STATUS_META)[status] ?? { label: status, tone: 'neutral', icon: 'circle-help' };
+}
 
 /**
  * Status shown as icon + label (never color alone). `plain` drops the pill for legends and facets; `large` is the
@@ -84,7 +87,5 @@ export class StatusBadge {
   readonly plain = input(false);
   readonly large = input(false);
   readonly health = input(false);
-  protected readonly meta = computed(
-    () => (this.health() ? HEALTH_META : STATUS_META)[this.status()] ?? { ...FALLBACK, label: this.status() },
-  );
+  protected readonly meta = computed(() => statusMeta(this.status(), this.health()));
 }
