@@ -14,6 +14,9 @@ import { ConfirmDialog } from '../../shared/ui/confirm-dialog';
 import { Modal } from '../../shared/ui/modal';
 import { StatusBadge } from '../../shared/ui/status-badge';
 
+/** Base URL other pods of the cluster (the POS) use to reach the API. */
+const NEXUS_IN_CLUSTER = 'http://nexus-api.nexus.svc:8080';
+
 type PendingAction = { kind: 'rotate' | 'revoke'; client: ApiClient };
 
 @Component({
@@ -52,6 +55,12 @@ export default class ApiClientsPage {
   protected readonly pending = signal<PendingAction | null>(null);
   /** Kept only while the dialog is open; the API will never return it again. */
   protected readonly issued = signal<IssuedSecret | null>(null);
+  protected readonly posScopes = 'fiscal:issue fiscal:read orders:read orders:write';
+
+  /** The secret stays a shell variable: the command is safe to paste in a ticket or chat. */
+  protected tokenCurl(clientId: string): string {
+    return `curl -u "${clientId}:$CLIENT_SECRET" -d grant_type=client_credentials ${NEXUS_IN_CLUSTER}/oauth/token`;
+  }
 
   protected openCreate(): void {
     this.name.set('');
