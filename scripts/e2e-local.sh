@@ -5,6 +5,8 @@
 #   ./scripts/e2e-local.sh                       # todas las fases
 #   ./scripts/e2e-local.sh setup fiscal          # solo esas (setup corre siempre: es idempotente)
 #
+# Fases: fiscal discounts nc_rejected catalog order delivery ops revive
+#
 # Credenciales: de .env.local-stack (gitignored). Las que el script crea (cliente m2m de Nexus, API key del POS,
 # integración de GiftHub) se agregan ahí la primera vez; nunca se imprimen.
 set -euo pipefail
@@ -30,7 +32,7 @@ SIFEN_POINT=default
 
 [ -f "$ENV_FILE" ] || { echo "Falta $ENV_FILE"; exit 1; }
 set -a; . "./$ENV_FILE"; set +a
-PHASES=${*:-fiscal catalog order ops}
+PHASES=${*:-fiscal discounts nc_rejected catalog order delivery ops revive}
 
 step() { printf '\n== %s\n' "$*"; }
 ok() { printf '  ✅ %s\n' "$*"; }
@@ -246,6 +248,12 @@ sale_invoice_is() {  # sale estado → deja la factura en INVOICE (GET /sales/:i
 }
 
 sifen_documents() { sifen_sql "SELECT count(*) FROM documentos_electronicos WHERE transaction_id = '$1'"; }
+# Total del DE que firmó SIFEN (dTotGralOpe del XML), en guaraníes enteros.
+sifen_total() {
+  sifen_sql "SELECT substring(xml_original from '<dTotGralOpe>([0-9.]+)</dTotGralOpe>') FROM documentos_electronicos WHERE transaction_id = '$1'" \
+    | awk '{ printf "%d", $1 }'
+}
+pos_sale_total() { pos GET "/sales/$1"; expect 200 "venta $1"; jq -r '.total | tonumber | floor' <<< "$BODY"; }
 
 nexus_operation() {  # sourceRef/clave → deja la operación más reciente en OP
   nexus GET "/api/admin/operations?tenantId=$TENANT&q=$1&size=5"; expect 200 "operaciones de Nexus"
@@ -326,6 +334,60 @@ phase_fiscal() {
   wait_for "emisión completada tras volver SIFEN" 600 sale_invoice_is "$outage_sale" APROBADO
   [ "$(sifen_documents "$outage_sale")" = 1 ] || die "SIFEN tiene $(sifen_documents "$outage_sale") DE para $outage_sale"
   ok "SIFEN volvió → APROBADO, 1 DE en SIFEN"
+}
+
+# ---------------------------------------------------------------- 2b. descuentos por línea
+# Nexus manda a SIFEN el descuento de la línea por unidad: el total del DE tiene que ser el de la venta.
+phase_discounts() {
+  step "2b. Fiscal con descuento de línea: total SIFEN = total POS"
+  ensure_cash_session
+  ensure_product E2E-HAMB "Hamburguesa Nexus E2E" 25000 500
+  local hamb=$PRODUCT
+  pos_sale "[{\"productId\":\"$hamb\",\"quantity\":2,\"discountAmount\":3000}]" '[{"method":"CASH","amount":47000}]'
+  local divisible=$SALE
+  wait_for "venta qty 2 con descuento APROBADO" 720 sale_invoice_is "$divisible" APROBADO
+  local pos_total sifen; pos_total=$(pos_sale_total "$divisible"); sifen=$(sifen_total "$divisible")
+  [ "$pos_total" = "$sifen" ] || die "qty 2 − 3000: total POS $pos_total ≠ total SIFEN $sifen"
+  ok "qty 2 − 3000 → APROBADO, total POS $pos_total = total SIFEN $sifen"
+
+  # 1000 entre 3 unidades: SIFEN lo expresa por unidad (333 × 3 = 999), fuera de su tolerancia de 0,8.
+  pos_sale "[{\"productId\":\"$hamb\",\"quantity\":3,\"discountAmount\":1000}]" '[{"method":"CASH","amount":74000}]'
+  local odd=$SALE
+  wait_for "venta qty 3 con descuento no divisible APROBADO o RECHAZADO" 300 sale_invoice_in "$odd" APROBADO RECHAZADO
+  pos_total=$(pos_sale_total "$odd")
+  if [ "$(jq -r .externalEstado <<< "$INVOICE")" = APROBADO ]; then
+    sifen=$(sifen_total "$odd")
+    [ "$pos_total" = "$sifen" ] || die "qty 3 − 1000: total POS $pos_total ≠ total SIFEN $sifen"
+    ok "qty 3 − 1000 → APROBADO, total POS $pos_total = total SIFEN $sifen"
+  else
+    [ "$(sifen_documents "$odd")" = 0 ] || die "RECHAZADO pero SIFEN tiene $(sifen_documents "$odd") DE para $odd"
+    grep -q "discount-not-divisible\|no se reparte" <<< "$INVOICE" || die "RECHAZADO sin el motivo discount-not-divisible: $(jq -c '{externalEstado, externalError, externalMessage}' <<< "$INVOICE")"
+    ok "qty 3 − 1000 → RECHAZADO por discount-not-divisible (total POS $pos_total, sin DE en SIFEN): no se emite un total distinto"
+  fi
+}
+
+sale_invoice_in() {  # venta estado1 estado2 → true si la factura está en alguno (queda en INVOICE)
+  INVOICE=
+  sale_invoice_is "$1" "$2" && return 0
+  [ -n "$INVOICE" ] && [ "$(jq -r .externalEstado <<< "$INVOICE")" = "$3" ]
+}
+
+# ---------------------------------------------------------------- 2c. NC rechazada
+phase_nc_rejected() {
+  step "2c. NC rechazada por SIFEN: la NC queda RECHAZADO y la factura ISSUED"
+  ensure_cash_session
+  ensure_product E2E-HAMB "Hamburguesa Nexus E2E" 25000 500
+  pos_sale "[{\"productId\":\"$PRODUCT\",\"quantity\":1}]" '[{"method":"CASH","amount":25000}]'
+  local sale=$SALE
+  wait_for "factura innominada APROBADO" 720 sale_invoice_is "$sale" APROBADO
+  local invoice; invoice=$(jq -r .id <<< "$INVOICE")
+  # Regla 1331: SIFEN no admite receptor innominado en una NC.
+  pos POST "/credit-notes/$invoice" '{"reason":"NC E2E a rechazar","reasonCode":"2"}'; expect "200 201" "nota de crédito"
+  local credit_note; credit_note=$(jq -r .id <<< "$BODY")
+  wait_for "nota de crédito RECHAZADO" 300 credit_note_is "$credit_note" RECHAZADO
+  pos GET "/invoices/$invoice"; expect 200 "factura tras la NC rechazada"
+  [ "$(jq -r .status <<< "$BODY")" = ISSUED ] || die "la factura quedó $(jq -r .status <<< "$BODY") tras una NC rechazada"
+  ok "NC RECHAZADO, factura sigue ISSUED ($(jq -r .externalEstado <<< "$BODY"))"
 }
 
 credit_note_is() {
@@ -442,6 +504,63 @@ phase_order() {
   ok "cancelado en GiftHub → venta $cancelled_sale anulada en el POS"
 }
 
+# ---------------------------------------------------------------- 4b. delivery con topping
+# Productos de GiftHub por código POS: topping y producto que lo acepta.
+gifthub_flag() {  # código campo valor
+  gifthub_product "$1" || die "$1 no está en GiftHub (correr la fase catalog)"
+  gh PATCH "/api/admin/products/$(jq -r .id <<< "$GH_PRODUCT")" "{\"$2\":$3}"; expect 200 "$1 $2=$3"
+}
+
+gifthub_customer() {
+  gh POST /api/admin/customers '{"phone":"0981555123","name":"Cliente Nexus E2E"}'
+  [ "$STATUS" = 201 ] || [ "$STATUS" = 409 ] || die "cliente GiftHub → HTTP $STATUS"
+  gh GET "/api/admin/customers?q=Cliente%20Nexus%20E2E"; expect 200 "buscar cliente GiftHub"
+  GH_CUSTOMER=$(jq -r '.items[0].id' <<< "$BODY")
+}
+
+gifthub_delivery_order() {  # toppingId → deja el pedido en GH_ORDER y su total en GH_TOTAL
+  gh POST /api/admin/orders "{\"customerId\":\"$GH_CUSTOMER\",\"fulfillmentType\":\"DELIVERY\",\"address\":\"Av. España 1234\",\"deliveryFeePyg\":10000,\"items\":[{\"productId\":\"$GH_HAMB\",\"quantity\":2,\"toppingIds\":[\"$1\"]}]}"
+  expect 201 "pedido delivery en GiftHub"; GH_ORDER=$(jq -r .id <<< "$BODY")
+  gh GET "/api/admin/orders/$GH_ORDER"; expect 200 "pedido GiftHub"
+  GH_TOTAL=$(jq -r .totalPyg <<< "$BODY")
+}
+
+phase_delivery() {
+  step "4b. Pedido delivery con topping: total POS = total GiftHub"
+  ensure_cash_session
+  ensure_product E2E-HAMB "Hamburguesa Nexus E2E" 25000 500
+  ensure_product E2E-CHED "Extra cheddar E2E" 5000 500
+  run_integration "$INT_CATALOG"
+  gifthub_flag E2E-HAMB acceptsToppings true; GH_HAMB=$(jq -r .id <<< "$GH_PRODUCT")
+  gifthub_flag E2E-CHED isTopping true; local cheddar; cheddar=$(jq -r .id <<< "$GH_PRODUCT")
+  gifthub_customer
+
+  gifthub_delivery_order "$cheddar"
+  local order=$GH_ORDER gh_total=$GH_TOTAL
+  wait_for "pedido delivery CONFIRMED" 120 gh_order_is "$order" CONFIRMED
+  pos_channel_sale "$order" || die "sin venta de canal en el POS"
+  local pos_total; pos_total=$(jq -r '.total | floor' <<< "$POS_ORDER")
+  nexus_operation "$order"
+  [ "$pos_total" = "$gh_total" ] || die "total POS $pos_total ≠ total GiftHub $gh_total (Nexus $(jq -c '.result | {total, giftHubTotal, totalMismatch}' <<< "$OP"))"
+  [ "$(jq -r .result.totalMismatch <<< "$OP")" = false ] || die "Nexus marcó totalMismatch con totales iguales"
+  ok "2 × (hamburguesa + cheddar) + envío 10000 → total POS $pos_total = total GiftHub $gh_total, sin totalMismatch"
+
+  # Topping sin código del POS (creado solo en GiftHub): Nexus cancela el pedido con el motivo.
+  gh GET /api/admin/products; expect 200 "productos GiftHub"
+  local orphan; orphan=$(jq -r '[.products[] | select(.name == "Topping sin código E2E")][0].id // empty' <<< "$BODY")
+  if [ -z "$orphan" ]; then
+    gh POST /api/admin/products '{"name":"Topping sin código E2E","pricePyg":3000,"isTopping":true}'; expect 201 "topping sin código"
+    orphan=$(jq -r '.product.id // .id' <<< "$BODY")
+  fi
+  gifthub_delivery_order "$orphan"
+  local rejected=$GH_ORDER
+  wait_for "pedido con topping sin código CANCELLED" 120 gh_order_is "$rejected" CANCELLED
+  local reason; reason=$(gh_sql "SELECT new_data->>'note' FROM audit_logs WHERE new_data->>'orderId' = '$rejected' AND new_data->>'status' = 'CANCELLED' LIMIT 1")
+  grep -q "Topping sin código E2E" <<< "$reason" || die "GiftHub canceló sin nombrar el topping: «$reason»"
+  pos_channel_sale "$rejected" && die "el POS tiene una venta para un pedido rechazado"
+  ok "topping sin código → GiftHub CANCELLED con motivo «$reason», sin venta en el POS"
+}
+
 # ---------------------------------------------------------------- 5. operación
 integration_state() {
   nexus POST "/api/admin/integrations/$1/state?tenantId=$TENANT" "{\"state\":\"$2\",\"reason\":\"e2e: $3\"}"
@@ -481,6 +600,40 @@ phase_ops() {
   nexus POST "/api/admin/operations/$dead_op/replay?tenantId=$TENANT"; expect "200 202" "replay"
   wait_for "pedido CONFIRMED tras el replay" 120 gh_order_is "$dead" CONFIRMED
   ok "replay → pedido CONFIRMED"
+}
+
+# ---------------------------------------------------------------- 6. webhook de SIFEN revive una DEAD
+# SIFEN en pausa acepta la conexión pero no responde: con lectura de 1 s y un solo intento el SUBMIT queda sin
+# respuesta (UNCERTAIN) y la operación termina DEAD(attempts-exhausted). Al despausarlo, SIFEN procesa el
+# request que tenía en el buffer, aprueba el DE y su webhook revive la operación.
+fiscal_policy() { upsert_integration FISCAL fiscal null "$CONN_SIFEN" "$1" >/dev/null; }
+
+phase_revive() {
+  step "6. Webhook de SIFEN revive una ISSUE_INVOICE DEAD"
+  ensure_cash_session
+  ensure_product E2E-HAMB "Hamburguesa Nexus E2E" 25000 500
+  fiscal_policy '{"maxAttempts":1,"readTimeoutMs":1000}'
+  docker pause "$SIFEN_BACKEND" >/dev/null
+  pos_sale "[{\"productId\":\"$PRODUCT\",\"quantity\":1}]" '[{"method":"CASH","amount":25000}]'
+  local sale=$SALE settled=0
+  for _ in $(seq 40); do operation_settled "$sale" && { settled=1; break; }; sleep 3; done
+  docker unpause "$SIFEN_BACKEND" >/dev/null
+  # `{}` y no null: null conserva la política vigente.
+  fiscal_policy '{}'
+  [ "$settled" = 1 ] || die "la operación fiscal no terminó en 120 s con SIFEN en pausa"
+  [ "$(jq -r .status <<< "$OP")" = DEAD ] && [ "$(jq -r .deadReason <<< "$OP")" = attempts-exhausted ] \
+    || die "se esperaba DEAD(attempts-exhausted): $(jq -c '{status, deadReason, lastError}' <<< "$OP")"
+  local op; op=$(jq -r .id <<< "$OP")
+  ok "SUBMIT sin respuesta en 1 s → DEAD(attempts-exhausted) ($(jq -r .lastError.code <<< "$OP"))"
+  wait_for "webhook de SIFEN revive la operación" 720 operation_status_is "$op" SUCCEEDED
+  wait_for "POS APROBADO tras la revivida" 300 sale_invoice_is "$sale" APROBADO
+  [ "$(sifen_documents "$sale")" = 1 ] || die "SIFEN tiene $(sifen_documents "$sale") DE para $sale"
+  ok "webhook de SIFEN → operación SUCCEEDED, POS APROBADO (CDC $(jq -r .cdc <<< "$INVOICE")), 1 DE en SIFEN"
+}
+
+operation_settled() {
+  nexus_operation "$1"
+  [ -n "$OP" ] && case "$(jq -r .status <<< "$OP")" in DEAD|SUCCEEDED|FAILED) true;; *) false;; esac
 }
 
 operation_dead() { nexus_operation "$1"; [ -n "$OP" ] && [ "$(jq -r .status <<< "$OP")" = DEAD ]; }
