@@ -3,6 +3,7 @@ package com.mindtechpy.nexus.application.usecase;
 import com.mindtechpy.nexus.application.port.out.AuditRepository;
 import com.mindtechpy.nexus.application.port.out.ClockPort;
 import com.mindtechpy.nexus.application.port.out.IntegrationRepository;
+import com.mindtechpy.nexus.application.port.out.OperationRepository;
 import com.mindtechpy.nexus.domain.audit.AuditEvent;
 import com.mindtechpy.nexus.domain.identity.Actor;
 import com.mindtechpy.nexus.domain.identity.Permission;
@@ -36,23 +37,32 @@ public class RunCatalogSync {
     private static final System.Logger log = System.getLogger(RunCatalogSync.class.getName());
 
     private final IntegrationRepository integrations;
+    private final OperationRepository operations;
     private final StartOperation startOperation;
     private final AuditRepository audit;
     private final ClockPort clock;
 
-    public RunCatalogSync(IntegrationRepository integrations, StartOperation startOperation, AuditRepository audit,
-                          ClockPort clock) {
+    public RunCatalogSync(IntegrationRepository integrations, OperationRepository operations, StartOperation startOperation,
+                          AuditRepository audit, ClockPort clock) {
         this.integrations = integrations;
+        this.operations = operations;
         this.startOperation = startOperation;
         this.audit = audit;
         this.clock = clock;
     }
 
-    /** Console "sync now": operators and up; 422 {@code flow-mismatch} unless the integration is CATALOG. */
+    /**
+     * Console "sync now": operators and up; 422 {@code flow-mismatch} unless the integration is CATALOG, 409
+     * {@code catalog-run-in-progress} while another run to the same GiftHub is not finished.
+     */
     public StartOperation.Started runNow(Actor actor, TenantId requestedTenant, UUID integrationId) {
         actor.require(Permission.CHANGE_INTEGRATION_STATE);
         TenantId tenantId = actor.targetTenant(requestedTenant);
         Integration integration = integrations.findById(tenantId, integrationId).orElseThrow(() -> DomainException.notFound("Integración"));
+        if (integration.flow() == Flow.CATALOG && isRunning(integration)) {
+            throw DomainException.conflict("catalog-run-in-progress",
+                    "Ya hay una sincronización de catálogo en curso hacia este GiftHub; reintente cuando termine");
+        }
         Instant now = clock.now();
         StartOperation.Started started = startOperation.execute(new StartOperation.Command(tenantId, integration.id(),
                 OperationKind.CATALOG_SYNC, integration.id() + ":manual:" + SECOND.format(now), Map.of("trigger", "manual"), null));
@@ -61,11 +71,14 @@ public class RunCatalogSync {
         return started;
     }
 
-    /** One run per window and ENABLED CATALOG integration; a failing integration does not stop the others. */
+    /**
+     * One run per window and ENABLED CATALOG integration, skipped while a run to the same GiftHub is not
+     * finished; a failing integration does not stop the others.
+     */
     public void scheduleDue() {
         Instant now = clock.now();
         for (Integration integration : integrations.findAllByFlow(Flow.CATALOG)) {
-            if (integration.state() != IntegrationState.ENABLED) {
+            if (integration.state() != IntegrationState.ENABLED || isRunning(integration)) {
                 continue;
             }
             int every = integration.policy().scheduleEverySeconds() == null ? DEFAULT_EVERY_SECONDS
@@ -84,5 +97,13 @@ public class RunCatalogSync {
                         integration.code(), e.getMessage());
             }
         }
+    }
+
+    /**
+     * Two runs to one GiftHub must not overlap: the older one would archive what the newer one just pushed. The
+     * check is per target connection, not per integration, because two integrations can feed the same GiftHub.
+     */
+    private boolean isRunning(Integration integration) {
+        return operations.hasUnfinished(integration.tenantId(), OperationKind.CATALOG_SYNC, integration.targetConnectionId());
     }
 }

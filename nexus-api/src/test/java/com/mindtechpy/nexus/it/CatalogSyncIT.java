@@ -190,6 +190,21 @@ class CatalogSyncIT extends AbstractConnectorIT {
     }
 
     @Test
+    void should_not_start_a_second_run_to_the_same_gifthub_while_one_is_unfinished() {
+        UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+        UUID sameGiftHub = createIntegration("CATALOG", posConnection, giftHubConnection);
+        runCatalogSync.scheduleDue();
+        long scheduled = jdbc.sql("SELECT count(*) FROM operations WHERE integration_id IN (:a, :b)")
+                .param("a", integration).param("b", sameGiftHub).query(Long.class).single();
+
+        JsonNode problem = body(perform(MockMvcRequestBuilders.post("/api/admin/integrations/{id}/run", sameGiftHub)
+                .param("tenantId", tenant.toString()).header("Authorization", bearer(admin)), 409));
+
+        assertThat(scheduled).isEqualTo(1);
+        assertThat(problem.get("code").asString()).isEqualTo("catalog-run-in-progress");
+    }
+
+    @Test
     void should_guard_run_by_role_flow_and_tenant() {
         UUID catalog = createIntegration("CATALOG", posConnection, giftHubConnection);
         UUID order = orderIntegration();

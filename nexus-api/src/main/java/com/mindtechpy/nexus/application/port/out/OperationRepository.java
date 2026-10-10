@@ -34,6 +34,9 @@ public interface OperationRepository {
     /** Operations of the tenant not yet finished (PENDING, RETRY, RUNNING): the backpressure measure. */
     long countUnfinished(TenantId tenantId);
 
+    /** True while an operation of {@code kind} whose integration targets {@code connectionId} is not finished. */
+    boolean hasUnfinished(TenantId tenantId, OperationKind kind, UUID targetConnectionId);
+
     /** Operations created since {@code from}, grouped by status and flow. Empty tenant means every tenant. */
     List<StatusFlowCount> countSince(Optional<TenantId> tenantId, Instant from);
 

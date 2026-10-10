@@ -46,8 +46,8 @@ class OrderFlowConfig {
     }
 
     @Bean
-    RunCatalogSync runCatalogSync(IntegrationRepository integrations, StartOperation startOperation, AuditRepository audit,
-                                  ClockPort clock) {
-        return new RunCatalogSync(integrations, startOperation, audit, clock);
+    RunCatalogSync runCatalogSync(IntegrationRepository integrations, OperationRepository operations,
+                                  StartOperation startOperation, AuditRepository audit, ClockPort clock) {
+        return new RunCatalogSync(integrations, operations, startOperation, audit, clock);
     }
 }

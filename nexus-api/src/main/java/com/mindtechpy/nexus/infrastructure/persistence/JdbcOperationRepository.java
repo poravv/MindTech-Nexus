@@ -123,6 +123,18 @@ class JdbcOperationRepository implements OperationRepository {
     }
 
     @Override
+    public boolean hasUnfinished(TenantId tenantId, OperationKind kind, UUID targetConnectionId) {
+        return jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM operations o JOIN integrations i ON i.id = o.integration_id
+                                       WHERE o.tenant_id = :tenantId AND o.kind = :kind AND i.target_connection_id = :connectionId
+                                         AND o.status IN ('PENDING', 'RETRY', 'RUNNING'))""")
+                .param("tenantId", tenantId.value())
+                .param("kind", kind.name())
+                .param("connectionId", targetConnectionId)
+                .query(Boolean.class).single();
+    }
+
+    @Override
     public List<StatusFlowCount> countSince(Optional<TenantId> tenantId, Instant from) {
         String tenantFilter = tenantId.isPresent() ? " AND tenant_id = :tenantId" : "";
         JdbcClient.StatementSpec statement = jdbc.sql("SELECT status, flow, count(*) AS total FROM operations"
