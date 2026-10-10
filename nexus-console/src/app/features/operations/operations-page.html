@@ -60,7 +60,9 @@
       <table class="data">
         <thead>
           <tr>
-            <th scope="col">Creada</th><th scope="col">Tipo</th><th scope="col">Estado</th><th scope="col">Paso</th>
+            <th scope="col">Creada</th>
+            @if (scope.needsTenant()) { <th scope="col">Tenant</th> }
+            <th scope="col">Tipo</th><th scope="col">Estado</th><th scope="col">Paso</th>
             <th scope="col">Intentos</th><th scope="col">Clave</th>
           </tr>
         </thead>
@@ -69,6 +71,7 @@
             @for (op of operations.value(); track op.id) {
               <tr>
                 <td class="nowrap"><a [routerLink]="['/operaciones', op.id, { tenantId: op.tenantId }]">{{ op.createdAt | date: 'dd/MM HH:mm:ss' }}</a></td>
+                @if (scope.needsTenant()) { <td>{{ tenantNames.value().get(op.tenantId) ?? '—' }}</td> }
                 <td><span class="mono">{{ op.kind }}</span>&nbsp;<span class="muted">· {{ flowMeta[op.flow].label }}</span></td>
                 <td><app-status-badge [status]="op.status" /></td>
                 <td class="mono">{{ op.currentStep ?? '—' }}</td>
@@ -76,10 +79,10 @@
                 <td class="mono">{{ op.idempotencyKey }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="6" class="empty">No hay operaciones con estos filtros.</td></tr>
+              <tr><td colspan="7" class="empty">No hay operaciones con estos filtros.</td></tr>
             }
           } @else if (operations.isLoading()) {
-            <tr><td colspan="6" class="empty">Cargando…</td></tr>
+            <tr><td colspan="7" class="empty">Cargando…</td></tr>
           }
         </tbody>
       </table>

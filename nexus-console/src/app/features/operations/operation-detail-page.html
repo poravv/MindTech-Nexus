@@ -13,7 +13,8 @@
       <div class="page-actions">
         <a class="btn" [routerLink]="['/integraciones', op.integrationId]"><app-icon name="workflow" />Integración</a>
         @if (canReplay()) {
-          <button type="button" class="btn btn-primary" (click)="confirming.set(true)"><app-icon name="rotate-cw" />Reintentar (replay)</button>
+          <button type="button" class="btn" (click)="pending.set('discard')"><app-icon name="ban" />Descartar</button>
+          <button type="button" class="btn btn-primary" (click)="pending.set('replay')"><app-icon name="rotate-cw" />Reintentar (replay)</button>
         }
       </div>
     </header>
@@ -113,7 +114,18 @@
   heading="Reintentar operación"
   message="La operación vuelve a la cola con la misma clave de idempotencia y los intentos en cero. Los pasos ya exitosos no se repiten."
   confirmLabel="Reintentar"
-  [open]="confirming()"
+  [open]="pending() === 'replay'"
   [busy]="busy()"
   (confirmed)="replay()"
-  (cancelled)="confirming.set(false)" />
+  (cancelled)="pending.set(null)" />
+
+<app-confirm-dialog
+  heading="Descartar operación"
+  message="Sale de la DLQ como descartada y no se vuelve a procesar. No se puede deshacer."
+  confirmLabel="Descartar"
+  [danger]="true"
+  [confirmText]="operation.hasValue() ? operation.value().idempotencyKey : ''"
+  [open]="pending() === 'discard'"
+  [busy]="busy()"
+  (confirmed)="discard()"
+  (cancelled)="pending.set(null)" />

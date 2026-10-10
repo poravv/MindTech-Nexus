@@ -4,7 +4,9 @@ import { rxResource } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Flow } from '../../api/integrations.api';
+import { map } from 'rxjs';
 import { OPERATION_STATUSES, OperationsApi } from '../../api/operations.api';
+import { TenantsApi } from '../../api/tenants.api';
 import { problemMessage } from '../../core/problem';
 import { TenantScope } from '../../core/tenant-scope.service';
 import { Pager } from '../../shared/ui/pager';
@@ -24,7 +26,7 @@ const FLOWS: Flow[] = ['FISCAL', 'ORDER', 'CATALOG'];
 export default class OperationsPage {
   private readonly api = inject(OperationsApi);
   private readonly router = inject(Router);
-  private readonly scope = inject(TenantScope);
+  protected readonly scope = inject(TenantScope);
 
   readonly integrationId = input<string>();
   readonly flow = input<string>();
@@ -34,6 +36,13 @@ export default class OperationsPage {
   readonly q = input<string>();
   readonly page = input(0, { transform: (value: unknown) => numberAttribute(value, 0) });
 
+  private readonly tenantsApi = inject(TenantsApi);
+  /** On "Todos los tenants" the list spans tenants: names for the Tenant column, from the tenants list. */
+  protected readonly tenantNames = rxResource({
+    params: () => (this.scope.needsTenant() ? {} : undefined),
+    stream: () => this.tenantsApi.list().pipe(map((tenants) => new Map(tenants.map((t) => [t.id, t.name])))),
+    defaultValue: new Map<string, string>(),
+  });
   protected readonly flows = FLOWS;
   protected readonly statuses = OPERATION_STATUSES;
   protected readonly statusMeta = STATUS_META;

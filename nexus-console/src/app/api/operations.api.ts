@@ -4,7 +4,8 @@ import { Observable } from 'rxjs';
 import { TenantScope } from '../core/tenant-scope.service';
 import { Flow } from './integrations.api';
 
-export const OPERATION_STATUSES = ['PENDING', 'RUNNING', 'RETRY', 'SUCCEEDED', 'FAILED', 'DEAD'] as const;
+/** FAILED: rejected by the business rules of the target (final, not a platform fault). DISCARDED: a DEAD one an operator dropped. */
+export const OPERATION_STATUSES = ['PENDING', 'RUNNING', 'RETRY', 'SUCCEEDED', 'FAILED', 'DEAD', 'DISCARDED'] as const;
 export type OperationStatus = (typeof OPERATION_STATUSES)[number];
 
 export interface Operation {
@@ -89,6 +90,11 @@ export class OperationsApi {
   /** Only DEAD operations; same idempotency key, attempts reset. */
   replay(id: string, tenantId = this.scope.tenantId()): Observable<Operation> {
     return this.http.post<Operation>(`${this.url}/${id}/replay`, {}, { params: this.scope.params({}, tenantId) });
+  }
+
+  /** Only DEAD operations: drops it from the DLQ for good (DEAD → DISCARDED). */
+  discard(id: string, tenantId = this.scope.tenantId()): Observable<Operation> {
+    return this.http.post<Operation>(`${this.url}/${id}/discard`, {}, { params: this.scope.params({}, tenantId) });
   }
 
   summary(from: string): Observable<OperationSummary> {

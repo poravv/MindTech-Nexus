@@ -91,14 +91,18 @@ export default class IntegrationDetailPage {
       return '';
     }
     const by = row.insight?.byStatus ?? {};
-    const total = Object.values(by).reduce((sum, value) => sum + (value ?? 0), 0);
+    // Business rejections stay visible but never explain a degraded health: only the unresolved DLQ does.
+    const rejected = by.FAILED ? ` · ${by.FAILED} ${by.FAILED === 1 ? 'rechazada' : 'rechazadas'} (negocio)` : '';
     switch (row.health) {
-      case 'DEGRADED':
-        return 'En 24 h: ' + [by.DEAD && `${by.DEAD} a DLQ`, by.FAILED && `${by.FAILED} ${by.FAILED === 1 ? 'fallida' : 'fallidas'}`].filter(Boolean).join(' · ');
+      case 'DEGRADED': {
+        const dead = row.insight?.dead ?? 0;
+        // Until the API stops degrading on FAILED alone, a degraded health may carry an empty DLQ.
+        return dead ? `${dead} ${dead === 1 ? 'operación' : 'operaciones'} sin resolver en la DLQ` + rejected : `En 24 h${rejected}`;
+      }
       case 'PROGRESSING':
         return row.integration.state === 'DRAINING' ? 'Terminando las operaciones en curso' : 'Hay operaciones en curso o reintentando';
       case 'HEALTHY':
-        return `${total} ${total === 1 ? 'operación exitosa' : 'operaciones exitosas'} en 24 h`;
+        return `${by.SUCCEEDED ?? 0} ${by.SUCCEEDED === 1 ? 'operación exitosa' : 'operaciones exitosas'} en 24 h` + rejected;
       case 'SUSPENDED':
         return 'La integración no está despachando';
       default:
@@ -131,7 +135,7 @@ export default class IntegrationDetailPage {
   protected readonly flowMeta = FLOW_META;
   protected readonly connectorMeta = CONNECTOR_META;
   protected readonly statusMeta = STATUS_META;
-  protected readonly policyFields = [...POLICY_FIELDS, { key: 'scheduleEverySeconds' as const, label: 'Sincronizar cada (s)' }];
+  protected readonly policyFields = [...POLICY_FIELDS, { key: 'scheduleEverySeconds' as const, label: 'Sincronizar cada', unit: 's' }];
   protected readonly connectionSignals = connectionSignals;
 
   protected openState(integration: Integration, suggested: IntegrationState | null = null): void {

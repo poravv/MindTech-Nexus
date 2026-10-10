@@ -75,72 +75,116 @@
     </div>
 </section>
 
-<app-modal [heading]="editing()?.id ? 'Editar conexión' : 'Nueva conexión'" [open]="editing() !== null"
-           (closed)="close()">
-  <form class="form" (ngSubmit)="save()" #ngForm="ngForm">
-    @if (formError(); as message) {
-      <p class="alert" role="alert">{{ message }}</p>
-    }
-    <div class="field">
-      <label for="conn-connector">Sistema</label>
-      <select id="conn-connector" name="connector" class="select" [ngModel]="form.connector"
-              (ngModelChange)="changeConnector($event)" [disabled]="!!editing()?.id">
-        @for (type of connectorTypes; track type) {
-          <option [value]="type">{{ connectors[type].label }}</option>
+<app-modal variant="sheet" [heading]="editing()?.id ? 'Editar conexión' : 'Nueva conexión'"
+           [description]="editing()?.id ? 'Cambiá destino, credenciales o ajustes de ' + (editing()?.original?.name ?? '') + '.' : 'Un sistema externo con el que Nexus va a hablar.'"
+           [open]="editing() !== null" (closed)="close()">
+  @if (editing(); as target) {
+  <form id="connection-form" class="form" (ngSubmit)="ngForm.valid && save()" #ngForm="ngForm">
+    <app-form-section heading="Sistema" [description]="target.id ? 'El sistema no se puede cambiar una vez creada la conexión.' : ''">
+      <div class="choice-grid" role="radiogroup" aria-label="Sistema">
+        @for (type of target.id ? [form.connector] : connectorTypes; track type) {
+          <label class="choice">
+            <input type="radio" name="connector" [value]="type" [ngModel]="form.connector"
+                   (ngModelChange)="changeConnector($event)" />
+            <span class="choice-icon"><app-icon [name]="connectors[type].icon" /></span>
+            <span class="choice-text">
+              <span class="choice-title">{{ connectors[type].label }}</span>
+              <span class="choice-note">{{ connectors[type].note }}</span>
+            </span>
+            <app-icon class="choice-check" name="circle-check" />
+          </label>
         }
-      </select>
-    </div>
-    <div class="field">
-      <label for="conn-name">Nombre</label>
-      <input id="conn-name" name="name" class="input" required maxlength="100" [(ngModel)]="form.name" />
-    </div>
-    <div class="field">
-      <label for="conn-url">URL base</label>
-      <input id="conn-url" name="baseUrl" type="url" class="input mono" required maxlength="500" [(ngModel)]="form.baseUrl"
-             placeholder="http://backend.punto-venta.svc.cluster.local:3000/api" aria-describedby="conn-url-hint" />
-      <span id="conn-url-hint" class="hint">Solo hosts permitidos (por defecto *.svc.cluster.local).</span>
-    </div>
+      </div>
+    </app-form-section>
 
-    <fieldset class="form">
-      <legend>Credenciales</legend>
-      @if (editing()?.id) {
-        <p class="hint">Dejalas vacías para conservar las actuales. Si cargás una, cargá todas.</p>
-      }
+    <app-form-section heading="Destino" description="Cómo se llama y dónde la encuentra Nexus.">
+      <div class="field">
+        <label for="conn-name">Nombre<span class="req" aria-hidden="true">*</span></label>
+        <input id="conn-name" name="name" class="input" required maxlength="100" [(ngModel)]="form.name" #nameModel="ngModel"
+               [placeholder]="connectors[form.connector].namePlaceholder"
+               [attr.aria-invalid]="nameModel.invalid && (nameModel.touched || ngForm.submitted)" />
+        @if (nameModel.invalid && (nameModel.touched || ngForm.submitted)) {
+          <span class="field-error" role="alert">Ingresá un nombre.</span>
+        }
+      </div>
+      <div class="field">
+        <label for="conn-url">URL base<span class="req" aria-hidden="true">*</span></label>
+        <input id="conn-url" name="baseUrl" type="url" class="input mono" required maxlength="500" pattern="https?://.+"
+               [(ngModel)]="form.baseUrl" #urlModel="ngModel" [placeholder]="connectors[form.connector].urlPlaceholder"
+               aria-describedby="conn-url-hint" spellcheck="false"
+               [attr.aria-invalid]="urlModel.invalid && (urlModel.touched || ngForm.submitted)" />
+        @if (urlModel.invalid && (urlModel.touched || ngForm.submitted)) {
+          <span class="field-error" role="alert">{{ urlModel.errors?.['required'] ? 'Ingresá la URL base.' : 'Tiene que empezar con http:// o https://.' }}</span>
+        }
+        <span id="conn-url-hint" class="hint">Solo hosts permitidos (por defecto *.svc.cluster.local).</span>
+      </div>
+    </app-form-section>
+
+    <app-form-section heading="Credenciales"
+                      [description]="target.id ? 'Se guardan cifradas y no se vuelven a mostrar. Dejá vacío para no cambiar; si cargás una, cargá todas.' : 'Se guardan cifradas y no se vuelven a mostrar.'"
+                      [columns]="connectors[form.connector].credentials.length > 1 ? 2 : 1">
       @for (field of connectors[form.connector].credentials; track field.key) {
         <div class="field">
-          <label [for]="'cred-' + field.key">{{ field.label }}</label>
-          <input [id]="'cred-' + field.key" [name]="'cred-' + field.key" type="password" class="input mono"
-                 autocomplete="off" [required]="!editing()?.id" [(ngModel)]="form.credentials[field.key]" />
-          @if (field.hint) {
-            <span class="hint">{{ field.hint }}</span>
+          <label [for]="'cred-' + field.key">{{ field.label }}@if (!target.id) {<span class="req" aria-hidden="true">*</span>}</label>
+          <app-secret-input [inputId]="'cred-' + field.key" [name]="'cred-' + field.key" [required]="!target.id"
+                            [(ngModel)]="form.credentials[field.key]" #credModel="ngModel"
+                            [placeholder]="target.id ? 'Sin cambios' : (field.hint ?? '')"
+                            [invalid]="!!(credModel.invalid && (credModel.touched || ngForm.submitted))" />
+          @if (credModel.invalid && (credModel.touched || ngForm.submitted)) {
+            <span class="field-error" role="alert">Ingresá {{ field.label }}.</span>
           }
         </div>
       }
-    </fieldset>
+    </app-form-section>
 
     @if (connectors[form.connector].settings.length || connectors[form.connector].flags.length) {
-      <fieldset class="form">
-        <legend>Ajustes</legend>
+      <app-form-section heading="Ajustes" description="Opcionales. Valores que el conector usa al procesar." [columns]="2">
         @for (field of connectors[form.connector].settings; track field.key) {
           <div class="field">
-            <label [for]="'set-' + field.key">{{ field.label }}</label>
-            <input [id]="'set-' + field.key" [name]="'set-' + field.key" class="input" [(ngModel)]="form.settings[field.key]" />
+            <label [for]="'set-' + field.key">{{ field.label }} <span class="optional">(opcional)</span></label>
+            <input [id]="'set-' + field.key" [name]="'set-' + field.key" class="input" [(ngModel)]="form.settings[field.key]"
+                   [attr.aria-describedby]="field.hint ? 'set-hint-' + field.key : null" />
             @if (field.hint) {
-              <span class="hint">{{ field.hint }}</span>
+              <span class="hint" [id]="'set-hint-' + field.key">{{ field.hint }}</span>
             }
           </div>
         }
         @for (field of connectors[form.connector].flags; track field.key) {
-          <label class="check">
+          <label class="check field-wide">
             <input type="checkbox" [name]="'flag-' + field.key" [(ngModel)]="form.flags[field.key]" />{{ field.label }}
           </label>
         }
-      </fieldset>
+      </app-form-section>
     }
 
-    <div class="form-actions">
-      <button type="button" class="btn" (click)="close()">Cancelar</button>
-      <button type="submit" class="btn btn-primary" [disabled]="busy() || ngForm.invalid">Guardar</button>
-    </div>
+    <app-form-section heading="Verificación">
+      @if (target.original; as original) {
+        <div class="test-row">
+          <button type="button" class="btn" (click)="testInForm(original)" [disabled]="testing() === original.id"
+                  [attr.aria-busy]="testing() === original.id">
+            <app-icon name="plug" />{{ testing() === original.id ? 'Probando…' : 'Probar conexión' }}
+          </button>
+          <p class="hint">Prueba la configuración guardada. Si cambiaste algo, guardá primero.</p>
+        </div>
+        @if (formTest(); as result) {
+          <p class="test-result" [class]="result.ok ? 'test-result tone-ok' : 'test-result tone-danger'" role="status">
+            <app-icon [name]="result.ok ? 'circle-check' : 'circle-x'" />
+            <span><strong>{{ result.ok ? 'Conexión correcta' : 'Falló la prueba' }}</strong>@if (result.detail) { · {{ result.detail }}}</span>
+          </p>
+        }
+      } @else {
+        <p class="hint">Guardá la conexión y después probala desde la lista o al editarla.</p>
+      }
+    </app-form-section>
   </form>
+  }
+  <ng-container modal-footer>
+    @if (formError(); as message) {
+      <p class="alert" role="alert">{{ message }}</p>
+    }
+    <button type="button" class="btn" (click)="close()">Cancelar</button>
+    <button type="submit" form="connection-form" class="btn btn-primary" [disabled]="busy()" [attr.aria-busy]="busy()">
+      {{ busy() ? 'Guardando…' : (editing()?.id ? 'Guardar cambios' : 'Crear conexión') }}
+    </button>
+  </ng-container>
 </app-modal>

@@ -70,68 +70,92 @@
     </div>
 </section>
 
-<app-modal heading="Nuevo cliente m2m" [open]="creating()" (closed)="creating.set(false)">
-  <form class="form" (ngSubmit)="create()" #form="ngForm">
+<app-modal variant="sheet" heading="Nuevo cliente m2m"
+           description="La credencial de un sistema (p. ej. el POS) para pedir tokens a la API de Nexus."
+           [open]="creating()" (closed)="creating.set(false)">
+  @if (creating()) {
+  <form id="client-form" class="form" (ngSubmit)="form.valid && scopes().size > 0 && create()" #form="ngForm">
+    <app-form-section heading="Identificación">
+      <div class="field">
+        <label for="client-name">Nombre<span class="req" aria-hidden="true">*</span></label>
+        <input id="client-name" name="name" class="input" required maxlength="200" [(ngModel)]="name" #nameModel="ngModel"
+               placeholder="POS sucursal centro" [attr.aria-invalid]="nameModel.invalid && (nameModel.touched || form.submitted)" />
+        @if (nameModel.invalid && (nameModel.touched || form.submitted)) {
+          <span class="field-error" role="alert">Ingresá un nombre.</span>
+        }
+      </div>
+    </app-form-section>
+    <app-form-section heading="Permisos" description="Scopes que podrá pedir en el token. Un POS necesita los cuatro de fiscal y pedidos.">
+      <fieldset>
+        <legend class="visually-hidden">Scopes</legend>
+        <div class="choice-grid">
+          @for (option of allScopes; track option) {
+            <label class="choice">
+              <input type="checkbox" [checked]="scopes().has(option)" (change)="toggleScope(option, $any($event.target).checked)" />
+              <span class="choice-text">
+                <span class="choice-title mono">{{ option }}</span>
+                <span class="choice-note">{{ scopeHelp[option] }}</span>
+              </span>
+              <app-icon class="choice-check" name="circle-check" />
+            </label>
+          }
+        </div>
+        <div class="scope-actions">
+          <button type="button" class="btn btn-sm" (click)="usePosScopes()">Usar los de un POS</button>
+          @if (form.submitted && scopes().size === 0) {
+            <span class="field-error" role="alert">Elegí al menos un scope.</span>
+          }
+        </div>
+      </fieldset>
+    </app-form-section>
+  </form>
+  }
+  <ng-container modal-footer>
     @if (formError(); as message) {
       <p class="alert" role="alert">{{ message }}</p>
     }
-    <div class="field">
-      <label for="client-name">Nombre</label>
-      <input id="client-name" name="name" class="input" required maxlength="200" [(ngModel)]="name"
-             placeholder="POS sucursal centro" />
-    </div>
-    <fieldset>
-      <legend>Scopes</legend>
-      <div class="checks">
-        @for (option of allScopes; track option) {
-          <label class="check mono">
-            <input type="checkbox" [checked]="scopes().has(option)"
-                   (change)="toggleScope(option, $any($event.target).checked)" />{{ option }}
-          </label>
-        }
-      </div>
-    </fieldset>
-    <div class="form-actions">
-      <button type="button" class="btn" (click)="creating.set(false)">Cancelar</button>
-      <button type="submit" class="btn btn-primary" [disabled]="busy() || form.invalid || scopes().size === 0">Crear</button>
-    </div>
-  </form>
+    <button type="button" class="btn" (click)="creating.set(false)">Cancelar</button>
+    <button type="submit" form="client-form" class="btn btn-primary" [disabled]="busy()" [attr.aria-busy]="busy()">
+      {{ busy() ? 'Creando…' : 'Crear cliente' }}
+    </button>
+  </ng-container>
 </app-modal>
 
-<app-modal heading="Guardá el secreto ahora" [open]="issued() !== null" (closed)="issued.set(null)">
+<app-modal variant="sheet" heading="Guardá el secreto ahora"
+           description="Se muestra una única vez. Si lo perdés, rotalo para obtener uno nuevo."
+           [open]="issued() !== null" (closed)="issued.set(null)">
   @if (issued(); as secret) {
     <div class="form">
-      <p class="alert alert-warn" role="status">
-        Este secreto se muestra una única vez. Si lo perdés, rotalo para obtener uno nuevo.
-      </p>
-      <div class="field">
-        <label for="issued-id">Client ID</label>
-        <div class="toolbar">
-          <input id="issued-id" class="input mono" readonly [value]="secret.client.clientId" />
-          <button type="button" class="btn btn-sm" (click)="copy(secret.client.clientId)">Copiar</button>
+      <p class="alert alert-warn" role="status">Copiá el secreto y guardalo en el sistema que lo va a usar antes de cerrar.</p>
+      <app-form-section heading="Credenciales">
+        <div class="field">
+          <label for="issued-id">Client ID</label>
+          <div class="copy-row">
+            <input id="issued-id" class="input mono" readonly [value]="secret.client.clientId" />
+            <button type="button" class="btn" (click)="copy(secret.client.clientId)" aria-label="Copiar client ID">Copiar</button>
+          </div>
         </div>
-      </div>
-      <div class="field">
-        <label for="issued-secret">Client secret</label>
-        <div class="toolbar">
-          <input id="issued-secret" class="input mono" readonly [value]="secret.clientSecret" />
-          <button type="button" class="btn btn-sm" (click)="copy(secret.clientSecret)">Copiar</button>
+        <div class="field">
+          <label for="issued-secret">Client secret</label>
+          <div class="copy-row">
+            <input id="issued-secret" class="input mono" readonly [value]="secret.clientSecret" />
+            <button type="button" class="btn" (click)="copy(secret.clientSecret)" aria-label="Copiar client secret">Copiar</button>
+          </div>
         </div>
-      </div>
-      <section class="field" aria-labelledby="usage-heading">
-        <h3 id="usage-heading" class="eyebrow">Cómo usarlo</h3>
-        <p class="hint">Un POS necesita los scopes <span class="mono">{{ posScopes }}</span>.</p>
-        <div class="toolbar">
-          <input class="input mono" readonly aria-label="Comando para obtener un token" [value]="tokenCurl(secret.client.clientId)" />
-          <button type="button" class="btn btn-sm" (click)="copy(tokenCurl(secret.client.clientId))">Copiar</button>
+      </app-form-section>
+      <app-form-section heading="Cómo usarlo" [description]="'Un POS necesita los scopes ' + posScopes + '.'">
+        <div class="field">
+          <label for="issued-curl">Pedir un token</label>
+          <textarea id="issued-curl" class="textarea mono curl" readonly rows="3" [value]="tokenCurl(secret.client.clientId)"></textarea>
+          <button type="button" class="btn btn-sm copy-curl" (click)="copy(tokenCurl(secret.client.clientId))">Copiar comando</button>
         </div>
         <p class="hint">En el POS: Configuración → Facturación, pegá client_id y secret y tocá Probar conexión.</p>
-      </section>
-      <div class="form-actions">
-        <button type="button" class="btn btn-primary" (click)="issued.set(null)">Ya lo guardé</button>
-      </div>
+      </app-form-section>
     </div>
   }
+  <ng-container modal-footer>
+    <button type="button" class="btn btn-primary" (click)="issued.set(null)">Ya lo guardé</button>
+  </ng-container>
 </app-modal>
 
 <app-confirm-dialog
@@ -142,6 +166,7 @@
   [message]="pending()?.kind === 'rotate'
     ? 'Se genera un secreto nuevo. El anterior sigue válido 24 horas para que actualices el sistema que lo usa.'
     : 'El cliente ' + (pending()?.client?.name ?? '') + ' no podrá obtener nuevos tokens. No se puede deshacer.'"
-  [confirmLabel]="pending()?.kind === 'rotate' ? 'Rotar' : 'Revocar'"
+  [confirmLabel]="pending()?.kind === 'rotate' ? 'Rotar secreto' : 'Revocar cliente'"
+  [confirmText]="pending()?.kind === 'revoke' ? (pending()?.client?.name ?? '') : ''"
   (confirmed)="confirmPending()"
   (cancelled)="pending.set(null)" />

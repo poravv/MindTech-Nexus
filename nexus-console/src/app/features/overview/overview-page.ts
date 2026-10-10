@@ -17,7 +17,7 @@ import { loadIntegrationData, toRows } from '../integrations/integration-data';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Stack and legend order: outcomes first, then work in flight, then failures (keeps adjacent hues apart). */
-const STATUS_ORDER: OperationStatus[] = ['SUCCEEDED', 'RUNNING', 'RETRY', 'PENDING', 'FAILED', 'DEAD'];
+const STATUS_ORDER: OperationStatus[] = ['SUCCEEDED', 'RUNNING', 'RETRY', 'PENDING', 'FAILED', 'DEAD', 'DISCARDED'];
 const STATUS_FILL: Record<OperationStatus, string> = {
   SUCCEEDED: 'var(--chart-ok)',
   RUNNING: 'var(--chart-info)',
@@ -25,6 +25,7 @@ const STATUS_FILL: Record<OperationStatus, string> = {
   PENDING: 'var(--chart-neutral)',
   FAILED: 'var(--chart-serious)',
   DEAD: 'var(--chart-danger)',
+  DISCARDED: 'var(--chart-muted)',
 };
 
 @Component({
@@ -66,7 +67,7 @@ export default class OverviewPage {
     const by = this.summary.value().byStatus;
     const count = (status: OperationStatus) => by[status] ?? 0;
     const total = STATUS_ORDER.reduce((sum, status) => sum + count(status), 0);
-    const finished = count('SUCCEEDED') + count('FAILED') + count('DEAD');
+    const finished = count('SUCCEEDED') + count('FAILED') + count('DEAD') + count('DISCARDED');
     return {
       total,
       dead: this.summary.value().dead,

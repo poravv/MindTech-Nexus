@@ -38,24 +38,41 @@
   </div>
 </section>
 
-<app-modal heading="Nuevo tenant" [open]="creating()" (closed)="creating.set(false)">
-  <form class="form" (ngSubmit)="create()" #form="ngForm">
+<app-modal variant="sheet" heading="Nuevo tenant" description="Un comercio con su POS, su emisor SIFEN y su tienda GiftHub."
+           [open]="creating()" (closed)="creating.set(false)">
+  @if (creating()) {
+  <form id="tenant-form" class="form" (ngSubmit)="form.valid && create()" #form="ngForm">
+    <app-form-section heading="Identidad">
+      <div class="field">
+        <label for="tenant-name">Nombre<span class="req" aria-hidden="true">*</span></label>
+        <input id="tenant-name" name="name" class="input" required maxlength="200" [(ngModel)]="name" #nameModel="ngModel"
+               placeholder="Farmacia Centro" [attr.aria-invalid]="nameModel.invalid && (nameModel.touched || form.submitted)" />
+        @if (nameModel.invalid && (nameModel.touched || form.submitted)) {
+          <span class="field-error" role="alert">Ingresá el nombre del comercio.</span>
+        }
+      </div>
+      <div class="field">
+        <label for="tenant-slug">Slug<span class="req" aria-hidden="true">*</span></label>
+        <input id="tenant-slug" name="slug" class="input mono" required maxlength="63" pattern="[a-z0-9][a-z0-9-]*"
+               [(ngModel)]="slug" #slugModel="ngModel" placeholder="farmacia-centro" autocomplete="off" spellcheck="false"
+               aria-describedby="tenant-slug-hint" [attr.aria-invalid]="slugModel.invalid && (slugModel.touched || form.submitted)" />
+        @if (slugModel.invalid && (slugModel.touched || form.submitted)) {
+          <span class="field-error" role="alert">
+            {{ slugModel.errors?.['required'] ? 'Ingresá un slug.' : 'Solo minúsculas, números y guiones; empieza con letra o número.' }}
+          </span>
+        }
+        <span id="tenant-slug-hint" class="hint">Identificador en URLs y logs. No se puede cambiar después.</span>
+      </div>
+    </app-form-section>
+  </form>
+  }
+  <ng-container modal-footer>
     @if (formError(); as message) {
       <p class="alert" role="alert">{{ message }}</p>
     }
-    <div class="field">
-      <label for="tenant-name">Nombre</label>
-      <input id="tenant-name" name="name" class="input" required maxlength="200" [(ngModel)]="name" />
-    </div>
-    <div class="field">
-      <label for="tenant-slug">Slug</label>
-      <input id="tenant-slug" name="slug" class="input mono" required maxlength="63" pattern="[a-z0-9][a-z0-9-]*"
-             [(ngModel)]="slug" aria-describedby="tenant-slug-hint" />
-      <span id="tenant-slug-hint" class="hint">Minúsculas, números y guiones. No se puede cambiar después.</span>
-    </div>
-    <div class="form-actions">
-      <button type="button" class="btn" (click)="creating.set(false)">Cancelar</button>
-      <button type="submit" class="btn btn-primary" [disabled]="busy() || form.invalid">Crear</button>
-    </div>
-  </form>
+    <button type="button" class="btn" (click)="creating.set(false)">Cancelar</button>
+    <button type="submit" form="tenant-form" class="btn btn-primary" [disabled]="busy()" [attr.aria-busy]="busy()">
+      {{ busy() ? 'Creando…' : 'Crear tenant' }}
+    </button>
+  </ng-container>
 </app-modal>

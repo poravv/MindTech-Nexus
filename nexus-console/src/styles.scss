@@ -225,8 +225,19 @@ pre,
 .field > .label,
 legend {
   font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-  color: var(--color-text-muted);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
+
+// Required marker after a label; the control itself carries `required` for assistive tech.
+.req {
+  margin-left: 0.125rem;
+  color: var(--color-danger);
+}
+
+.optional {
+  font-weight: var(--weight-regular);
+  color: var(--color-text-faint);
 }
 
 .input,
@@ -277,8 +288,45 @@ legend {
 
 .input[aria-invalid="true"],
 .select[aria-invalid="true"],
-.textarea[aria-invalid="true"] {
+.textarea[aria-invalid="true"],
+.input.ng-invalid.ng-touched,
+.select.ng-invalid.ng-touched,
+.textarea.ng-invalid.ng-touched,
+.ng-submitted .input.ng-invalid,
+.ng-submitted .select.ng-invalid,
+.ng-submitted .textarea.ng-invalid {
   border-color: var(--color-danger);
+}
+
+.input:disabled,
+.select:disabled,
+.input[readonly] {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+}
+
+// Input with something pinned to its right edge: a unit (ms, s) or an icon button (show/hide).
+.input-affix {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-affix > .input {
+  padding-right: calc(var(--control-height) + var(--space-2));
+}
+
+.input-affix > .unit,
+.input-affix > .affix-button {
+  position: absolute;
+  right: var(--space-1);
+}
+
+.input-affix > .unit {
+  right: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  pointer-events: none;
 }
 
 .hint {
@@ -289,6 +337,158 @@ legend {
 .field-error {
   font-size: var(--text-xs);
   color: var(--color-danger);
+}
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+// Selectable cards over native radios/checkboxes (system, flow, state, scopes): keyboard and screen readers get
+// the real input; the selection reads as a soft fill plus a check, never a side bar.
+.choice-grid {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+}
+
+.choice-grid.stacked {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.choice {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease;
+}
+
+@media (hover: hover) {
+  .choice:hover {
+    background: var(--color-surface-hover);
+  }
+}
+
+.choice > input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.choice:has(input:focus-visible) {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.choice:has(input:checked) {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.choice-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--choice-icon);
+  height: var(--choice-icon);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  --icon-size: 1.25rem;
+}
+
+.choice:has(input:checked) .choice-icon {
+  background: var(--color-surface);
+  color: var(--color-accent-ink);
+}
+
+.choice-text {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+  padding-right: var(--space-5);
+}
+
+.choice-title {
+  font-weight: var(--weight-medium);
+}
+
+.choice-note {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.choice-check {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  color: var(--color-accent-ink);
+  visibility: hidden;
+}
+
+.choice:has(input:checked) .choice-check {
+  visibility: visible;
+}
+
+// Collapsed advanced settings ("Avanzado"), with a one-line summary of the current values.
+details.advanced {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+details.advanced > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  list-style: none;
+}
+
+details.advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.advanced > summary app-icon {
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+details.advanced[open] > summary app-icon {
+  transform: rotate(90deg);
+}
+
+details.advanced > summary .summary-text {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+details.advanced > .advanced-body {
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-4);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.subhead {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-muted);
+}
+
+// Blocking error and secondary content inside a modal footer take the full row above the buttons.
+.modal-foot > .alert {
+  flex-basis: 100%;
+}
+
+.foot-spacer {
+  margin-right: auto;
 }
 
 fieldset {

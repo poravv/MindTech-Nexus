@@ -109,7 +109,7 @@
         } @else if (integrations.hasValue()) {
           <app-donut-chart [segments]="healthSegments()" caption="integraciones" />
           @if (failing().length) {
-            <ul class="failing" aria-label="Integraciones con fallas">
+            <ul class="failing" aria-label="Integraciones degradadas">
               @for (row of failing(); track row.integration.id) {
                 <li>
                   <app-icon [name]="flowMeta[row.integration.flow].icon" class="f-icon" />
@@ -118,7 +118,7 @@
                     <span class="f-why">
                       @if (row.tenant; as tenant) { {{ tenant.name }} · }
                       @if (row.insight?.lastFailure; as failure) {
-                        {{ row.insight.dead ? row.insight.dead + ' en DLQ' : 'Fallida' }} en <span class="mono">{{ failure.step ?? '—' }}</span>
+                        {{ row.insight.dead ? row.insight.dead + ' sin resolver en DLQ' : 'Rechazada (negocio)' }} en <span class="mono">{{ failure.step ?? '—' }}</span>
                       }
                     </span>
                   </span>
@@ -129,7 +129,7 @@
               }
             </ul>
           } @else if (integrationRows().length) {
-            <p class="all-good"><app-icon name="circle-check" />Ninguna integración con fallas en las últimas 24 h.</p>
+            <p class="all-good"><app-icon name="circle-check" />Ninguna integración con operaciones sin resolver en la DLQ.</p>
           }
         } @else {
           <p class="chart-empty">Cargando…</p>

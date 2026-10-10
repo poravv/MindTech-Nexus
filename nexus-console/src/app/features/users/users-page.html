@@ -16,22 +16,28 @@
     <div class="table-wrap" role="region" aria-label="Usuarios" tabindex="0">
       <table class="data">
         <thead>
-          <tr><th scope="col">Email</th><th scope="col">Rol</th><th scope="col">Estado</th><th scope="col">Contraseña</th></tr>
+          <tr>
+            <th scope="col">Email</th>
+            @if (scope.needsTenant()) { <th scope="col">Tenant</th> }
+            <th scope="col">Rol</th><th scope="col">Estado</th><th scope="col">Contraseña</th></tr>
         </thead>
         <tbody>
           @if (users.hasValue()) {
             @for (user of users.value(); track user.id) {
               <tr>
                 <td>{{ user.email }}</td>
+                @if (scope.needsTenant()) {
+                  <td>{{ user.tenantId ? (tenantNames.value().get(user.tenantId) ?? '—') : 'Plataforma' }}</td>
+                }
                 <td>{{ roleLabels[user.role] }}</td>
                 <td><app-status-badge [status]="user.status" /></td>
                 <td class="muted">{{ user.mustChangePassword ? 'Pendiente de cambio' : 'Definida' }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="4" class="empty">No hay usuarios.</td></tr>
+              <tr><td colspan="5" class="empty">No hay usuarios.</td></tr>
             }
           } @else if (users.isLoading()) {
-            <tr><td colspan="4" class="empty">Cargando…</td></tr>
+            <tr><td colspan="5" class="empty">Cargando…</td></tr>
           }
         </tbody>
       </table>
@@ -39,33 +45,56 @@
   </div>
 </section>
 
-<app-modal heading="Nuevo usuario" [open]="creating()" (closed)="creating.set(false)">
-  <form class="form" (ngSubmit)="create()" #form="ngForm">
+<app-modal variant="sheet" heading="Nuevo usuario" description="Una persona con acceso a la consola dentro del tenant elegido."
+           [open]="creating()" (closed)="creating.set(false)">
+  @if (creating()) {
+  <form id="user-form" class="form" (ngSubmit)="form.valid && create()" #form="ngForm">
+    <app-form-section heading="Cuenta">
+      <div class="field">
+        <label for="user-email">Email<span class="req" aria-hidden="true">*</span></label>
+        <input id="user-email" name="email" type="email" class="input" required email maxlength="320" autocomplete="off"
+               placeholder="nombre@comercio.com.py" [(ngModel)]="email" #emailModel="ngModel"
+               [attr.aria-invalid]="emailModel.invalid && (emailModel.touched || form.submitted)" />
+        @if (emailModel.invalid && (emailModel.touched || form.submitted)) {
+          <span class="field-error" role="alert">{{ emailModel.errors?.['required'] ? 'Ingresá el email.' : 'El email no es válido.' }}</span>
+        }
+      </div>
+    </app-form-section>
+    <app-form-section heading="Rol" description="Define qué puede ver y hacer en la consola.">
+      <div class="choice-grid" role="radiogroup" aria-label="Rol">
+        @for (option of roles; track option) {
+          <label class="choice">
+            <input type="radio" name="role" [value]="option" [(ngModel)]="role" />
+            <span class="choice-text">
+              <span class="choice-title">{{ roleLabels[option] }}</span>
+              <span class="choice-note">{{ roleHelp[option] }}</span>
+            </span>
+            <app-icon class="choice-check" name="circle-check" />
+          </label>
+        }
+      </div>
+    </app-form-section>
+    <app-form-section heading="Contraseña inicial" description="Deberá cambiarla en el primer ingreso.">
+      <div class="field">
+        <label for="user-password">Contraseña<span class="req" aria-hidden="true">*</span></label>
+        <app-secret-input inputId="user-password" name="password" required autocomplete="new-password"
+                          [minlength]="minPassword" maxlength="200" [(ngModel)]="password" #passwordModel="ngModel"
+                          describedBy="user-password-hint" [invalid]="!!(passwordModel.invalid && (passwordModel.touched || form.submitted))" />
+        @if (passwordModel.invalid && (passwordModel.touched || form.submitted)) {
+          <span class="field-error" role="alert">Mínimo {{ minPassword }} caracteres.</span>
+        }
+        <span id="user-password-hint" class="hint">Mínimo {{ minPassword }} caracteres. Compartila por un canal seguro.</span>
+      </div>
+    </app-form-section>
+  </form>
+  }
+  <ng-container modal-footer>
     @if (formError(); as message) {
       <p class="alert" role="alert">{{ message }}</p>
     }
-    <div class="field">
-      <label for="user-email">Email</label>
-      <input id="user-email" name="email" type="email" class="input" required maxlength="320" autocomplete="off"
-             [(ngModel)]="email" />
-    </div>
-    <div class="field">
-      <label for="user-role">Rol</label>
-      <select id="user-role" name="role" class="select" [(ngModel)]="role">
-        @for (option of roles; track option) {
-          <option [value]="option">{{ roleLabels[option] }}</option>
-        }
-      </select>
-    </div>
-    <div class="field">
-      <label for="user-password">Contraseña inicial</label>
-      <input id="user-password" name="password" type="password" class="input" required autocomplete="new-password"
-             [minlength]="minPassword" maxlength="200" [(ngModel)]="password" aria-describedby="user-password-hint" />
-      <span id="user-password-hint" class="hint">Mínimo {{ minPassword }} caracteres. Compartila por un canal seguro.</span>
-    </div>
-    <div class="form-actions">
-      <button type="button" class="btn" (click)="creating.set(false)">Cancelar</button>
-      <button type="submit" class="btn btn-primary" [disabled]="busy() || form.invalid">Crear</button>
-    </div>
-  </form>
+    <button type="button" class="btn" (click)="creating.set(false)">Cancelar</button>
+    <button type="submit" form="user-form" class="btn btn-primary" [disabled]="busy()" [attr.aria-busy]="busy()">
+      {{ busy() ? 'Creando…' : 'Crear usuario' }}
+    </button>
+  </ng-container>
 </app-modal>

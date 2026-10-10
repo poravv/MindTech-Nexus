@@ -5,13 +5,14 @@ import { FormsModule } from '@angular/forms';
 import { TenantsApi } from '../../api/tenants.api';
 import { Notifier } from '../../core/notifier.service';
 import { problemMessage } from '../../core/problem';
+import { FormSection } from '../../shared/ui/form-section';
 import { Modal } from '../../shared/ui/modal';
 import { StatusBadge } from '../../shared/ui/status-badge';
 
 @Component({
   selector: 'app-tenants-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, FormsModule, Modal, StatusBadge],
+  imports: [DatePipe, FormsModule, FormSection, Modal, StatusBadge],
   templateUrl: './tenants-page.html',
 })
 export default class TenantsPage {

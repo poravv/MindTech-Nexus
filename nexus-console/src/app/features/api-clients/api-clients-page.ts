@@ -11,18 +11,36 @@ import { canManageTenantConfig } from '../../core/roles';
 import { tenantFanOut } from '../../core/tenant-fan-out';
 import { TenantScope } from '../../core/tenant-scope.service';
 import { ConfirmDialog } from '../../shared/ui/confirm-dialog';
+import { FormSection } from '../../shared/ui/form-section';
+import { Icon } from '../../shared/ui/icon';
 import { Modal } from '../../shared/ui/modal';
 import { StatusBadge } from '../../shared/ui/status-badge';
 
 /** Base URL other pods of the cluster (the POS) use to reach the API. */
 const NEXUS_IN_CLUSTER = 'http://nexus-api.nexus.svc:8080';
 
+const SCOPE_HELP: Record<(typeof SCOPES)[number], string> = {
+  'fiscal:issue': 'Emitir y anular facturas.',
+  'fiscal:read': 'Consultar facturas y su KuDE.',
+  'orders:write': 'Informar el estado de pedidos.',
+  'orders:read': 'Consultar pedidos.',
+  'catalog:read': 'Leer el catálogo.',
+  'operations:read': 'Consultar operaciones y su estado.',
+};
+
 type PendingAction = { kind: 'rotate' | 'revoke'; client: ApiClient };
 
 @Component({
   selector: 'app-api-clients-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, FormsModule, Modal, ConfirmDialog, StatusBadge],
+  imports: [DatePipe, FormsModule, FormSection, Icon, Modal, ConfirmDialog, StatusBadge],
+  styles: `
+    .scope-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
+    .copy-row { display: flex; gap: var(--space-2); }
+    .copy-row .input { flex: 1 1 auto; min-width: 0; }
+    .curl { min-height: 0; resize: none; overflow-wrap: anywhere; }
+    .copy-curl { justify-self: start; margin-top: var(--space-1); }
+  `,
   templateUrl: './api-clients-page.html',
 })
 export default class ApiClientsPage {
@@ -45,6 +63,7 @@ export default class ApiClientsPage {
     return role !== null && canManageTenantConfig(role);
   });
   protected readonly allScopes = SCOPES;
+  protected readonly scopeHelp = SCOPE_HELP;
 
   protected readonly creating = signal(false);
   protected readonly name = signal('');
@@ -79,6 +98,10 @@ export default class ApiClientsPage {
       }
       return next;
     });
+  }
+
+  protected usePosScopes(): void {
+    this.scopes.set(new Set(this.posScopes.split(' ')));
   }
 
   protected create(): void {
