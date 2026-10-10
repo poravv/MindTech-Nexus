@@ -1,0 +1,123 @@
+<ng-template #card let-node let-count="count" let-root="root">
+  <span class="node-icon" [class.root-icon]="root">
+    @if (node.icon === 'nexus') {
+      <app-logo [withText]="false" />
+    } @else {
+      <app-icon [name]="node.icon" />
+    }
+  </span>
+  <span class="node-kind">{{ node.kind }}</span>
+
+  <div class="node-body">
+    @if (node.link) {
+      <a class="node-title" [routerLink]="node.link" [attr.aria-label]="describe(node)">{{ node.title }}</a>
+    } @else {
+      <span class="node-title" [attr.aria-label]="describe(node)" tabindex="0">{{ node.title }}</span>
+    }
+    <p class="node-signals" aria-hidden="true">
+      @for (signal of node.signals; track signal.label) {
+        <span class="signal" [class]="'signal tone-' + signal.tone" [attr.title]="signal.label"><app-icon [name]="signal.icon" /></span>
+      }
+      @if (node.note) {
+        <span class="node-note">{{ node.note }}</span>
+      }
+    </p>
+  </div>
+
+  @if (node.actions?.length) {
+    <div class="menu">
+      <button type="button" class="kebab" (click)="toggleMenu(node, $event)" aria-haspopup="menu"
+              [attr.aria-expanded]="openMenu() === node.id" [attr.aria-label]="'Acciones de ' + node.title">
+        <app-icon name="ellipsis-vertical" />
+      </button>
+      @if (openMenu() === node.id) {
+        <ul class="menu-list" role="menu" [attr.aria-label]="'Acciones de ' + node.title">
+          @for (item of node.actions; track item.id) {
+            <li role="none">
+              <button type="button" role="menuitem" (click)="choose(node, item)"><app-icon [name]="item.icon" />{{ item.label }}</button>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+  }
+
+  @if (count) {
+    <button type="button" class="expander" (click)="toggle(node)" [attr.aria-expanded]="!isCollapsed(node.id)"
+            [attr.aria-label]="(isCollapsed(node.id) ? 'Mostrar ' : 'Ocultar ') + count + ' elementos de ' + node.title"
+            [attr.title]="isCollapsed(node.id) ? 'Mostrar ' + count : 'Ocultar'">
+      @if (isCollapsed(node.id)) {
+        <app-icon name="plus" /><span class="expander-count">{{ count }}</span>
+      } @else {
+        <app-icon name="minus" />
+      }
+    </button>
+  }
+
+  @if (node.since) {
+    <span class="age" [attr.title]="node.since">{{ age(node.since) }}</span>
+  }
+</ng-template>
+
+@if (compact()) {
+  <ng-template #branch let-nodes>
+    <ul class="nested">
+      @for (node of nodes; track node.id) {
+        <li>
+          <article class="node nested-node">
+            <ng-container [ngTemplateOutlet]="card" [ngTemplateOutletContext]="{ $implicit: node, count: node.children?.length ?? 0 }" />
+          </article>
+          @if (node.children?.length && !isCollapsed(node.id)) {
+            <ng-container [ngTemplateOutlet]="branch" [ngTemplateOutletContext]="{ $implicit: node.children }" />
+          }
+        </li>
+      }
+    </ul>
+  </ng-template>
+  <nav class="nested-root" [attr.aria-label]="label()">
+    <ng-container [ngTemplateOutlet]="branch" [ngTemplateOutletContext]="{ $implicit: [root()] }" />
+  </nav>
+} @else {
+  <section class="map" [attr.aria-label]="label()">
+    <div class="tools" role="toolbar" aria-label="Zoom del mapa">
+      <button type="button" (click)="fit()" title="Ajustar a la pantalla" aria-label="Ajustar a la pantalla"><app-icon name="maximize" /></button>
+      <button type="button" (click)="center()" title="Tamaño real y centrar" aria-label="Tamaño real y centrar"><app-icon name="network" /></button>
+      <span class="sep" aria-hidden="true"></span>
+      <button type="button" (click)="zoomBy(1 / 1.2)" title="Alejar" aria-label="Alejar"><app-icon name="zoom-out" /></button>
+      <button type="button" (click)="zoomBy(1.2)" title="Acercar" aria-label="Acercar"><app-icon name="zoom-in" /></button>
+      <output class="zoom" aria-live="polite">{{ zoomLabel() }}</output>
+    </div>
+
+    <div class="viewport" #viewport tabindex="0" aria-roledescription="lienzo"
+         aria-label="Lienzo: flechas para mover, + y − para zoom, 0 para centrar. Tab recorre los nodos."
+         (pointerdown)="onPointerDown($event)" (pointermove)="onPointerMove($event)" (pointerup)="onPointerUp()"
+         (pointercancel)="onPointerUp()" (wheel)="onWheel($event)" (keydown)="onKeydown($event)" (focusin)="revealFocused($event)">
+      <div class="stage" [style.transform]="transform()" [style.width.px]="layout().width" [style.height.px]="layout().height">
+        <svg class="edges" [attr.width]="layout().width" [attr.height]="layout().height" aria-hidden="true" focusable="false">
+          <defs>
+            <marker [attr.id]="markerId" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+              <path d="M0 0L10 5L0 10z" class="arrow-head" />
+            </marker>
+          </defs>
+          @for (d of layout().trunks; track $index) {
+            <path class="trunk" [attr.d]="d" />
+          }
+          @for (d of layout().branches; track $index) {
+            <path class="branch" [attr.d]="d" />
+          }
+          @for (d of layout().arrows; track $index) {
+            <path class="branch" [attr.d]="d" [attr.marker-end]="'url(#' + markerId + ')'" />
+          }
+        </svg>
+
+        @for (placed of layout().nodes; track placed.node.id) {
+          <article class="node" [class.root]="placed.depth === 0" [class.raised]="openMenu() === placed.node.id"
+                   [style.left.px]="placed.x" [style.top.px]="placed.y" [style.width.px]="nodeWidth" [style.height.px]="nodeHeight">
+            <ng-container [ngTemplateOutlet]="card"
+                          [ngTemplateOutletContext]="{ $implicit: placed.node, count: placed.childCount, root: placed.depth === 0 }" />
+          </article>
+        }
+      </div>
+    </div>
+  </section>
+}
