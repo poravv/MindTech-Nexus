@@ -1,83 +1,113 @@
-<section class="page">
-  <a routerLink="/operaciones" class="muted">← Operaciones</a>
+@if (operation.error(); as error) {
+  <p class="alert" role="alert">{{ errorOf(error) }}</p>
+}
 
-  @if (operation.error(); as error) {
-    <p class="alert" role="alert">{{ errorOf(error) }}</p>
-  }
-
-  @if (operation.hasValue()) {
-    @let op = operation.value();
+@if (operation.hasValue()) {
+  @let op = operation.value();
+  <section class="page">
     <header class="page-head">
       <div>
-        <h1><span class="mono">{{ op.kind }}</span> <app-status-badge [status]="op.status" /></h1>
-        <p class="mono">{{ op.id }}</p>
+        <h1 class="mono">{{ op.kind }}</h1>
+        <p class="mono id">{{ op.id }}</p>
       </div>
-      @if (canReplay()) {
-        <button type="button" class="btn btn-primary" (click)="confirming.set(true)">Reintentar (replay)</button>
-      }
+      <div class="page-actions">
+        <a class="btn" [routerLink]="['/integraciones', op.integrationId]"><app-icon name="workflow" />Integración</a>
+        @if (canReplay()) {
+          <button type="button" class="btn btn-primary" (click)="confirming.set(true)"><app-icon name="rotate-cw" />Reintentar (replay)</button>
+        }
+      </div>
     </header>
 
-    <div class="panel panel-body">
-      <dl class="facts">
-        <dt>Flujo</dt><dd>{{ op.flow }}</dd>
-        <dt>Clave de idempotencia</dt><dd class="mono">{{ op.idempotencyKey }}</dd>
-        <dt>Paso actual</dt><dd class="mono">{{ op.currentStep ?? '—' }}</dd>
-        <dt>Intentos</dt><dd>{{ op.attempts }} de {{ op.maxAttempts }}</dd>
-        <dt>Próximo intento</dt><dd>{{ (op.nextRunAt | date: 'dd/MM/yyyy HH:mm:ss') ?? '—' }}</dd>
-        <dt>Correlación</dt><dd class="mono">{{ op.correlationId ?? '—' }}</dd>
-        <dt>Creada</dt><dd>{{ op.createdAt | date: 'dd/MM/yyyy HH:mm:ss' }}</dd>
-        <dt>Finalizada</dt><dd>{{ (op.finishedAt | date: 'dd/MM/yyyy HH:mm:ss') ?? '—' }}</dd>
-        @if (op.deadReason) {
-          <dt>Motivo DLQ</dt><dd>{{ op.deadReason }}</dd>
-        }
-      </dl>
+    <div class="panel status-strip">
+      <section class="block">
+        <h2 class="block-title">Estado</h2>
+        <app-status-badge [status]="op.status" [large]="true" />
+        <p class="block-note">
+          @if (op.deadReason) {
+            Motivo: <strong>{{ op.deadReason }}</strong>
+          } @else if (op.finishedAt) {
+            Finalizada {{ op.finishedAt | date: 'dd/MM HH:mm:ss' }}
+          } @else {
+            Paso actual <span class="mono">{{ op.currentStep ?? '—' }}</span>
+          }
+        </p>
+      </section>
+      <section class="block">
+        <h2 class="block-title">Intentos</h2>
+        <p class="block-value num">{{ op.attempts }} <span class="muted">/ {{ op.maxAttempts }}</span></p>
+        <p class="block-note">
+          {{ op.nextRunAt ? 'Próximo intento ' + (op.nextRunAt | date: 'HH:mm:ss') : 'Sin reintentos programados' }}
+        </p>
+      </section>
+      <section class="block">
+        <h2 class="block-title">Flujo</h2>
+        <p class="block-value">{{ flowLabel(op.flow) }}</p>
+        <p class="block-note">Creada {{ op.createdAt | date: 'dd/MM/yyyy HH:mm:ss' }}</p>
+      </section>
     </div>
 
-    <section class="panel" aria-labelledby="steps-heading">
-      <h2 id="steps-heading" class="panel-body">Pasos</h2>
-      <div class="table-wrap" role="region" aria-labelledby="steps-heading" tabindex="0">
-        <table class="data">
-          <thead>
-            <tr>
-              <th scope="col">Paso</th><th scope="col">Intento</th><th scope="col">Estado</th><th scope="col">HTTP</th>
-              <th scope="col">Error</th><th scope="col">Ref. externa</th><th scope="col">Inicio</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (step of op.steps; track step.id) {
-              <tr>
-                <td class="mono">{{ step.step }}</td>
-                <td class="num">{{ step.attempt }}</td>
-                <td><app-status-badge [status]="step.status" /></td>
-                <td class="num">{{ step.responseCode ?? '—' }}</td>
-                <td class="mono">{{ step.errorCode ?? '—' }}</td>
-                <td class="mono">{{ step.externalRef ?? '—' }}</td>
-                <td class="nowrap">{{ step.startedAt | date: 'dd/MM HH:mm:ss' }}</td>
-              </tr>
-            } @empty {
-              <tr><td colspan="7" class="empty">Todavía no se ejecutó ningún paso.</td></tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <div class="detail-grid">
+      <section class="panel" aria-labelledby="steps-heading">
+        <header class="panel-head"><h2 id="steps-heading">Pasos</h2><span class="hint">{{ op.steps.length }} ejecuciones</span></header>
+        <ol class="timeline">
+          @for (step of op.steps; track step.id) {
+            <li class="t-item">
+              <app-status-badge [status]="step.status" [plain]="true" class="t-status" aria-hidden="true" />
+              <div class="t-body">
+                <p class="t-title">
+                  <span class="mono">{{ step.step }}</span>
+                  <app-status-badge [status]="step.status" />
+                  <span class="chip">intento {{ step.attempt }}</span>
+                </p>
+                <p class="t-meta">
+                  {{ step.startedAt | date: 'dd/MM HH:mm:ss' }}
+                  @if (duration(step); as d) { · {{ d }} }
+                  @if (step.responseCode) { · HTTP <span class="mono">{{ step.responseCode }}</span> }
+                  @if (step.errorCode) { · <span class="mono t-error">{{ step.errorCode }}</span> }
+                  @if (step.externalRef) { · ref <span class="mono">{{ step.externalRef }}</span> }
+                </p>
+              </div>
+            </li>
+          } @empty {
+            <li class="empty">Todavía no se ejecutó ningún paso.</li>
+          }
+        </ol>
+      </section>
 
-    @if (op.lastError) {
-      <section class="panel panel-body page" aria-labelledby="error-heading">
-        <h2 id="error-heading">Último error</h2>
-        <pre class="json">{{ op.lastError | json }}</pre>
-      </section>
-    }
-    @if (op.result) {
-      <section class="panel panel-body page" aria-labelledby="result-heading">
-        <h2 id="result-heading">Resultado</h2>
-        <pre class="json">{{ op.result | json }}</pre>
-      </section>
-    }
-  } @else if (operation.isLoading()) {
-    <p class="empty">Cargando…</p>
-  }
-</section>
+      <div class="side">
+        @if (lastError(); as error) {
+          <section class="panel" aria-labelledby="error-heading">
+            <header class="panel-head"><h2 id="error-heading">Último error</h2></header>
+            <dl class="facts pad">
+              @if (error.message) { <dt>Mensaje</dt><dd>{{ error.message }}</dd> }
+              @if (error.kind) { <dt>Tipo</dt><dd class="mono">{{ error.kind }}</dd> }
+              @if (error.code) { <dt>Código</dt><dd class="mono">{{ error.code }}</dd> }
+              @if (error.httpStatus) { <dt>HTTP</dt><dd class="mono">{{ error.httpStatus }}</dd> }
+            </dl>
+          </section>
+        }
+
+        <section class="panel" aria-labelledby="ids-heading">
+          <header class="panel-head"><h2 id="ids-heading">Identificadores</h2></header>
+          <dl class="facts pad">
+            <dt>Idempotencia</dt><dd class="mono">{{ op.idempotencyKey }}</dd>
+            <dt>Correlación</dt><dd class="mono">{{ op.correlationId ?? '—' }}</dd>
+            <dt>Integración</dt><dd><a class="mono" [routerLink]="['/integraciones', op.integrationId]">{{ op.integrationId }}</a></dd>
+          </dl>
+        </section>
+
+        @if (op.result) {
+          <details class="panel raw">
+            <summary>Resultado (JSON)</summary>
+            <pre class="json">{{ op.result | json }}</pre>
+          </details>
+        }
+      </div>
+    </div>
+  </section>
+} @else if (operation.isLoading()) {
+  <p class="empty" aria-busy="true">Cargando operación…</p>
+}
 
 <app-confirm-dialog
   heading="Reintentar operación"

@@ -12,7 +12,7 @@
       <select id="f-status" name="status" class="select" [ngModel]="draft().status" (ngModelChange)="update('status', $event)">
         <option value="">Todos</option>
         @for (option of statuses; track option) {
-          <option [value]="option">{{ option }}</option>
+          <option [value]="option">{{ statusMeta[option].label }}</option>
         }
       </select>
     </div>
@@ -21,7 +21,7 @@
       <select id="f-flow" name="flow" class="select" [ngModel]="draft().flow" (ngModelChange)="update('flow', $event)">
         <option value="">Todos</option>
         @for (option of flows; track option) {
-          <option [value]="option">{{ option }}</option>
+          <option [value]="option">{{ flowMeta[option].label }}</option>
         }
       </select>
     </div>
@@ -62,7 +62,7 @@
             @for (op of operations.value(); track op.id) {
               <tr>
                 <td class="nowrap"><a [routerLink]="['/operaciones', op.id]">{{ op.createdAt | date: 'dd/MM HH:mm:ss' }}</a></td>
-                <td><span class="mono">{{ op.kind }}</span> <span class="muted">· {{ op.flow }}</span></td>
+                <td><span class="mono">{{ op.kind }}</span>&nbsp;<span class="muted">· {{ flowMeta[op.flow].label }}</span></td>
                 <td><app-status-badge [status]="op.status" /></td>
                 <td class="mono">{{ op.currentStep ?? '—' }}</td>
                 <td class="num">{{ op.attempts }}/{{ op.maxAttempts }}</td>

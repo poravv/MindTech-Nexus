@@ -8,7 +8,8 @@ import { OPERATION_STATUSES, OperationsApi } from '../../api/operations.api';
 import { problemMessage } from '../../core/problem';
 import { TenantScope } from '../../core/tenant-scope.service';
 import { Pager } from '../../shared/ui/pager';
-import { StatusBadge } from '../../shared/ui/status-badge';
+import { STATUS_META, StatusBadge } from '../../shared/ui/status-badge';
+import { FLOW_META } from '../integrations/health';
 
 const PAGE_SIZE = 25;
 const FLOWS: Flow[] = ['FISCAL', 'ORDER', 'CATALOG'];
@@ -34,6 +35,8 @@ export default class OperationsPage {
 
   protected readonly flows = FLOWS;
   protected readonly statuses = OPERATION_STATUSES;
+  protected readonly statusMeta = STATUS_META;
+  protected readonly flowMeta = FLOW_META;
   protected readonly draft = signal({ flow: '', status: '', from: '', to: '', q: '' });
 
   protected readonly operations = rxResource({
