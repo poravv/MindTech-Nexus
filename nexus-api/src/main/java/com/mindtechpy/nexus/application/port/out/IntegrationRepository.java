@@ -1,5 +1,6 @@
 package com.mindtechpy.nexus.application.port.out;
 
+import com.mindtechpy.nexus.domain.integration.Flow;
 import com.mindtechpy.nexus.domain.integration.Integration;
 import com.mindtechpy.nexus.domain.shared.TenantId;
 
@@ -19,4 +20,7 @@ public interface IntegrationRepository {
     Optional<Integration> findById(TenantId tenantId, UUID id);
 
     List<Integration> findAll(TenantId tenantId);
+
+    /** Integrations of every tenant for one flow; only for system jobs (catalog scheduler). */
+    List<Integration> findAllByFlow(Flow flow);
 }

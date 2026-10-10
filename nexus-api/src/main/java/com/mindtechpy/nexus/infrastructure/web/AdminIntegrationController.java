@@ -2,6 +2,8 @@ package com.mindtechpy.nexus.infrastructure.web;
 
 import com.mindtechpy.nexus.application.usecase.ChangeIntegrationState;
 import com.mindtechpy.nexus.application.usecase.IntegrationQueries;
+import com.mindtechpy.nexus.application.usecase.RunCatalogSync;
+import com.mindtechpy.nexus.application.usecase.StartOperation;
 import com.mindtechpy.nexus.application.usecase.UpsertIntegration;
 import com.mindtechpy.nexus.application.usecase.UpsertIntegration.Draft;
 import com.mindtechpy.nexus.domain.integration.Flow;
@@ -62,15 +64,20 @@ class AdminIntegrationController {
         }
     }
 
+    record RunView(UUID operationId, String status) {
+    }
+
     private final UpsertIntegration upsertIntegration;
     private final IntegrationQueries integrationQueries;
     private final ChangeIntegrationState changeIntegrationState;
+    private final RunCatalogSync runCatalogSync;
 
     AdminIntegrationController(UpsertIntegration upsertIntegration, IntegrationQueries integrationQueries,
-                               ChangeIntegrationState changeIntegrationState) {
+                               ChangeIntegrationState changeIntegrationState, RunCatalogSync runCatalogSync) {
         this.upsertIntegration = upsertIntegration;
         this.integrationQueries = integrationQueries;
         this.changeIntegrationState = changeIntegrationState;
+        this.runCatalogSync = runCatalogSync;
     }
 
     @Operation(summary = "Lista integraciones del tenant")
@@ -107,5 +114,13 @@ class AdminIntegrationController {
                                 @Valid @RequestBody ChangeStateRequest request) {
         return IntegrationView.of(changeIntegrationState.execute(TenantContext.currentUser(), TenantId.of(tenantId), id,
                 request.state(), request.reason()));
+    }
+
+    @Operation(summary = "CATALOG: encola una sincronización ahora (operator o superior); auditado")
+    @PostMapping("/{id}/run")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    RunView run(@RequestParam(required = false) UUID tenantId, @PathVariable UUID id) {
+        StartOperation.Started started = runCatalogSync.runNow(TenantContext.currentUser(), TenantId.of(tenantId), id);
+        return new RunView(started.operation().id(), started.operation().status().name());
     }
 }

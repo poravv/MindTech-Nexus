@@ -2,6 +2,7 @@ package com.mindtechpy.nexus.infrastructure.jobs;
 
 import com.mindtechpy.nexus.application.port.out.JobQueuePort;
 import com.mindtechpy.nexus.application.saga.SagaRunner;
+import com.mindtechpy.nexus.application.usecase.RunCatalogSync;
 import com.mindtechpy.nexus.infrastructure.config.NexusProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
 import org.springframework.context.annotation.Bean;
@@ -28,5 +29,10 @@ class WorkerConfig {
     @Bean
     PayloadRetentionJob payloadRetentionJob(JdbcClient jdbc) {
         return new PayloadRetentionJob(jdbc);
+    }
+
+    @Bean
+    CatalogScheduler catalogScheduler(RunCatalogSync runCatalogSync) {
+        return new CatalogScheduler(runCatalogSync);
     }
 }

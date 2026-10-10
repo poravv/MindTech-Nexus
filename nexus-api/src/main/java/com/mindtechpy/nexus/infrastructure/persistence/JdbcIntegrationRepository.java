@@ -92,4 +92,9 @@ class JdbcIntegrationRepository implements IntegrationRepository {
         return jdbc.sql("SELECT * FROM integrations WHERE tenant_id = :tenantId ORDER BY flow, code")
                 .param("tenantId", tenantId.value()).query(row).list();
     }
+
+    @Override
+    public List<Integration> findAllByFlow(Flow flow) {
+        return jdbc.sql("SELECT * FROM integrations WHERE flow = :flow").param("flow", flow.name()).query(row).list();
+    }
 }

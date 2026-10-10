@@ -5,6 +5,10 @@ import com.mindtechpy.nexus.application.saga.Saga;
 import com.mindtechpy.nexus.application.saga.catalog.CatalogSyncSaga;
 import com.mindtechpy.nexus.application.saga.order.CreateOrderSaga;
 import com.mindtechpy.nexus.application.saga.order.OrderStatusSaga;
+import com.mindtechpy.nexus.application.usecase.ReceiveGiftHubEvent;
+import com.mindtechpy.nexus.application.usecase.ReportOrderStatus;
+import com.mindtechpy.nexus.application.usecase.RunCatalogSync;
+import com.mindtechpy.nexus.application.usecase.StartOperation;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -25,5 +29,24 @@ class OrderFlowConfig {
     @Bean
     Saga catalogSyncSaga(PosPort pos, GiftHubPort giftHub, EntityMappingRepository mappings) {
         return new CatalogSyncSaga(pos, giftHub, mappings);
+    }
+
+    @Bean
+    ReceiveGiftHubEvent receiveGiftHubEvent(ConnectionRepository connections, IntegrationRepository integrations,
+                                            OperationRepository operations, InboundEventRepository inboundEvents,
+                                            StartOperation startOperation, SecretCipherPort cipher, ClockPort clock,
+                                            TransactionRunner tx) {
+        return new ReceiveGiftHubEvent(connections, integrations, operations, inboundEvents, startOperation, cipher, clock, tx);
+    }
+
+    @Bean
+    ReportOrderStatus reportOrderStatus(OperationRepository operations, StartOperation startOperation) {
+        return new ReportOrderStatus(operations, startOperation);
+    }
+
+    @Bean
+    RunCatalogSync runCatalogSync(IntegrationRepository integrations, StartOperation startOperation, AuditRepository audit,
+                                  ClockPort clock) {
+        return new RunCatalogSync(integrations, startOperation, audit, clock);
     }
 }
