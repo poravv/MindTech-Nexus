@@ -54,6 +54,6 @@ class LeaseRescueIT extends AbstractOperationIT {
     }
 
     private void expireLease(UUID id) {
-        jdbc.sql("UPDATE operations SET locked_until = now() - interval '1 second' WHERE id = :id").param("id", id).update();
+        jdbc.sql("UPDATE operations SET locked_until = :past WHERE id = :id").param("past", oneSecondAgo()).param("id", id).update();
     }
 }

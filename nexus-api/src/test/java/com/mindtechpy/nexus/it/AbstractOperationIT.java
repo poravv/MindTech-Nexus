@@ -14,6 +14,9 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.JsonNode;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -100,31 +103,15 @@ abstract class AbstractOperationIT extends AbstractPostgresIT {
     /** Claims and runs everything due until the queue has nothing left to hand out. */
     protected void drain() {
         List<Operation> claimed;
-        while (!(claimed = claimDue("it-worker", 10)).isEmpty()) {
+        while (!(claimed = queue.claim("it-worker", 10)).isEmpty()) {
             claimed.forEach(runner::run);
         }
     }
 
-    /**
-     * {@code next_run_at} is written with the JVM clock and compared with Postgres {@code now()}; the Docker VM
-     * clock can lag the JVM by a millisecond or two, so an operation scheduled "now" may not be due yet for
-     * the database. Operations due within {@value #CLOCK_SKEW_MS} ms are pulled to {@code now()} before
-     * claiming; real backoffs (seconds) are untouched.
-     */
-    protected List<Operation> claimDue(String worker, int limit) {
-        jdbc.sql("""
-                UPDATE operations SET next_run_at = now()
-                WHERE status IN ('PENDING', 'RETRY') AND next_run_at > now()
-                  AND next_run_at <= now() + make_interval(secs => :skew / 1000.0)""").param("skew", CLOCK_SKEW_MS).update();
-        return queue.claim(worker, limit);
-    }
-
-    private static final int CLOCK_SKEW_MS = 100;
-
     /** Claims as {@code worker} and keeps the leases of {@code ids}; any other due operation is run normally. */
     protected List<Operation> claimOnly(Set<UUID> ids, String worker) {
         List<Operation> ours = new ArrayList<>();
-        for (Operation claimed : claimDue(worker, 200)) {
+        for (Operation claimed : queue.claim(worker, 200)) {
             if (ids.contains(claimed.id())) {
                 ours.add(claimed);
             } else {
@@ -144,7 +131,13 @@ abstract class AbstractOperationIT extends AbstractPostgresIT {
     }
 
     protected void makeDue(UUID id) {
-        jdbc.sql("UPDATE operations SET next_run_at = now() - interval '1 second' WHERE id = :id").param("id", id).update();
+        jdbc.sql("UPDATE operations SET next_run_at = :past WHERE id = :id")
+                .param("past", oneSecondAgo()).param("id", id).update();
+    }
+
+    /** The engine schedules with the JVM clock, so tests move dates with it too, never with Postgres {@code now()}. */
+    protected static OffsetDateTime oneSecondAgo() {
+        return Instant.now().minusSeconds(1).atOffset(ZoneOffset.UTC);
     }
 
     /** Machine token of {@code tenantId} with the given scopes, through the real token endpoint. */
