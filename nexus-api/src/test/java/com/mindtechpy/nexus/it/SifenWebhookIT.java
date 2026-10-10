@@ -36,6 +36,41 @@ class SifenWebhookIT extends AbstractFiscalIT {
     }
 
     @Test
+    void should_revive_a_dead_tracking_and_finish_it_when_sifen_announces_the_final_state() {
+        String ref = newSourceRef();
+        stubSubmit(ref, document(ref, "PENDIENTE_ENVIO"));
+        Operation op = issue(ref);
+        drain();
+        trackingStartedHoursAgo(op.id(), 73);
+        stubFind(ref, document(ref, "EN_PROCESO"));
+        makeDue(op.id());
+        drain();
+        assertThat(reload(op.id()).deadReason()).isEqualTo("tracking-expired");
+        stubFind(ref, document(ref, "APROBADO"));
+
+        deliver(sifenConnection, event(UUID.randomUUID().toString(), ref), now(), WEBHOOK_SECRET, 200);
+        assertThat(reload(op.id()).status()).isEqualTo(OperationStatus.PENDING);
+        drain();
+
+        assertThat(reload(op.id()).status()).isEqualTo(OperationStatus.SUCCEEDED);
+        assertThat(invoiceState(ref).get("status").asString()).isEqualTo("APPROVED");
+        assertThat(count(submitsOf(ref))).isEqualTo(1);
+    }
+
+    @Test
+    void should_leave_dead_when_it_died_for_a_reason_the_event_does_not_fix() {
+        String ref = newSourceRef();
+        stubSubmit(ref, sifenError(401, "HMAC_INVALID", "Firma invalida"));
+        Operation op = issue(ref);
+        drain();
+
+        deliver(sifenConnection, event(UUID.randomUUID().toString(), ref), now(), WEBHOOK_SECRET, 200);
+
+        assertThat(reload(op.id()).status()).isEqualTo(OperationStatus.DEAD);
+        assertThat(reload(op.id()).deadReason()).isEqualTo("credentials");
+    }
+
+    @Test
     void should_answer_200_once_and_record_nothing_new_when_the_same_delivery_repeats() {
         String eventId = UUID.randomUUID().toString();
         String body = event(eventId, newSourceRef());

@@ -5,6 +5,7 @@ import com.mindtechpy.nexus.application.port.out.ConnectionRepository;
 import com.mindtechpy.nexus.application.port.out.InboundEventRepository;
 import com.mindtechpy.nexus.application.port.out.OperationRepository;
 import com.mindtechpy.nexus.application.port.out.SecretCipherPort;
+import com.mindtechpy.nexus.application.saga.fiscal.IssueInvoiceSaga;
 import com.mindtechpy.nexus.domain.connection.Connection;
 import com.mindtechpy.nexus.domain.connection.ConnectorType;
 import com.mindtechpy.nexus.domain.operation.Operation;
@@ -14,6 +15,7 @@ import com.mindtechpy.nexus.domain.shared.DomainException;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
 
@@ -23,7 +25,8 @@ import static java.lang.System.Logger.Level.INFO;
  * SIFEN state-change webhook ({@code APROBADO|RECHAZADO|CANCELADO|PENDIENTE_ENVIO}). The event is a hint,
  * not the truth: it makes the waiting {@code ISSUE_INVOICE} run now, and its next step reads the state
  * from SIFEN ({@code GET /facturas/{transactionId}}), as SIFEN recommends because delivery order is not
- * guaranteed. Deliveries are deduplicated by {@code eventId}.
+ * guaranteed. An operation Nexus gave up on ({@code DEAD} by {@code tracking-expired} or
+ * {@code attempts-exhausted}) is revived the same way. Deliveries are deduplicated by {@code eventId}.
  */
 public class ReceiveSifenEvent {
 
@@ -33,6 +36,7 @@ public class ReceiveSifenEvent {
     public enum Outcome { ACCEPTED, DUPLICATE }
 
     private static final System.Logger log = System.getLogger(ReceiveSifenEvent.class.getName());
+    private static final Set<String> REVIVABLE = Set.of(IssueInvoiceSaga.TRACKING_EXPIRED, "attempts-exhausted");
 
     private final ConnectionRepository connections;
     private final SecretCipherPort cipher;
@@ -75,13 +79,19 @@ public class ReceiveSifenEvent {
         if (!isNew) {
             return Outcome.DUPLICATE;
         }
-        boolean isWaiting = issue.filter(op -> op.status() == OperationStatus.PENDING || op.status() == OperationStatus.RETRY)
-                .map(op -> operations.update(op, op.dueAt(now)))
+        boolean isWaiting = issue.filter(op -> op.status() == OperationStatus.PENDING || op.status() == OperationStatus.RETRY
+                        || isRevivable(op))
+                .map(op -> operations.update(op, op.status() == OperationStatus.DEAD ? op.replayed(now) : op.dueAt(now)))
                 .orElse(false);
         log.log(INFO, "[NEXUS-FISCAL] webhook SIFEN conexión={0} tenant={1} evento={2} op={3} {4}", connection.id(),
                 connection.tenantId(), event.evento(), issue.map(op -> op.id().toString()).orElse("-"),
                 isWaiting ? "→ la operación se consulta ahora" : "→ sin operación en espera");
         return Outcome.ACCEPTED;
+    }
+
+    /** Nexus gave up waiting, not SIFEN: the event means SIFEN may now have the final state. */
+    private static boolean isRevivable(Operation op) {
+        return op.status() == OperationStatus.DEAD && REVIVABLE.contains(op.deadReason());
     }
 
     private static boolean isBlank(String value) {
