@@ -8,6 +8,7 @@ import com.mindtechpy.nexus.domain.shared.TenantId;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -30,10 +31,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Boots the full application against a real Postgres 16 (one container and one Spring context for all
  * ITs). Keys are generated per run; nothing comes from {@code .env}. Each test creates its own tenants
- * and users, so tests are independent without cleaning the database.
+ * and users, so tests are independent without cleaning the database. The background worker is off: tests
+ * drive the queue explicitly to stay deterministic.
  */
-@SpringBootTest
+@SpringBootTest(properties = {"nexus.worker.enabled=false", "nexus.queue.max-unfinished-per-tenant=150"})
 @AutoConfigureMockMvc
+@Import(TestSagaConfig.class)
 public abstract class AbstractPostgresIT {
 
     protected static final String BOOTSTRAP_EMAIL = "bootstrap@nexus.test";
