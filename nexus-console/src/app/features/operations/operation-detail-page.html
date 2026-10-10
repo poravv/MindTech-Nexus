@@ -36,7 +36,7 @@
         <h2 class="block-title">Intentos</h2>
         <p class="block-value num">{{ op.attempts }} <span class="muted">/ {{ op.maxAttempts }}</span></p>
         <p class="block-note">
-          {{ op.nextRunAt ? 'Próximo intento ' + (op.nextRunAt | date: 'HH:mm:ss') : 'Sin reintentos programados' }}
+          {{ nextRun() ? 'Próximo intento ' + (nextRun() | date: 'dd/MM HH:mm:ss') : 'Sin reintentos programados' }}
         </p>
       </section>
       <section class="block">
@@ -52,7 +52,7 @@
         <ol class="timeline">
           @for (step of op.steps; track step.id) {
             <li class="t-item">
-              <app-status-badge [status]="step.status" [plain]="true" class="t-status" aria-hidden="true" />
+              <app-icon [name]="statusMeta(step.status).icon" class="t-status" [style.color]="'var(--color-' + statusMeta(step.status).tone + ')'" />
               <div class="t-body">
                 <p class="t-title">
                   <span class="mono">{{ step.step }}</span>
@@ -79,7 +79,7 @@
           <section class="panel" aria-labelledby="error-heading">
             <header class="panel-head"><h2 id="error-heading">Último error</h2></header>
             <dl class="facts pad">
-              @if (error.message) { <dt>Mensaje</dt><dd>{{ error.message }}</dd> }
+              @if (error.detail) { <dt>Detalle</dt><dd>{{ error.detail }}</dd> }
               @if (error.kind) { <dt>Tipo</dt><dd class="mono">{{ error.kind }}</dd> }
               @if (error.code) { <dt>Código</dt><dd class="mono">{{ error.code }}</dd> }
               @if (error.httpStatus) { <dt>HTTP</dt><dd class="mono">{{ error.httpStatus }}</dd> }

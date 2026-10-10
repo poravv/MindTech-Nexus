@@ -169,8 +169,8 @@ class UseCaseConfig {
     }
 
     @Bean
-    IntegrationQueries integrationQueries(IntegrationRepository integrations) {
-        return new IntegrationQueries(integrations);
+    IntegrationQueries integrationQueries(IntegrationRepository integrations, OperationRepository operations, ClockPort clock) {
+        return new IntegrationQueries(integrations, operations, clock);
     }
 
     @Bean

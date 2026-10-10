@@ -86,6 +86,8 @@ export class IntegrationStateDialog {
   private readonly notifier = inject(Notifier);
 
   readonly integration = input<Integration | null>(null);
+  /** State preselected on open (e.g. PAUSED from a "Pausar" button); otherwise the first one that changes something. */
+  readonly suggested = input<IntegrationState | null>(null);
   readonly closed = output<void>();
   readonly changed = output<void>();
 
@@ -103,7 +105,11 @@ export class IntegrationStateDialog {
     effect(() => {
       const current = this.integration();
       if (current) {
-        this.next = this.states().find((state) => state !== current.state) ?? 'PAUSED';
+        const suggested = this.suggested();
+        this.next =
+          suggested && suggested !== current.state && this.states().includes(suggested)
+            ? suggested
+            : (this.states().find((state) => state !== current.state) ?? 'PAUSED');
         this.reason = '';
         this.error.set(null);
       }
@@ -112,7 +118,7 @@ export class IntegrationStateDialog {
 
   protected submit(current: Integration): void {
     this.busy.set(true);
-    this.api.changeState(current.id, this.next, this.reason.trim()).subscribe({
+    this.api.changeState(current, this.next, this.reason.trim()).subscribe({
       next: () => {
         this.busy.set(false);
         this.notifier.success(`${current.code}: estado cambiado.`);

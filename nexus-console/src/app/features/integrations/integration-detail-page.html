@@ -1,148 +1,126 @@
-<ng-template #systemNode let-connection let-role="role">
-  @if (connection) {
-    <article class="node system" [attr.aria-label]="role + ': ' + connection.name">
-      <span class="node-icon"><app-icon [name]="iconOf(connection)" /></span>
-      <div class="node-body">
-        <p class="node-kind">{{ role }} · {{ connection.connector }}</p>
-        <p class="node-name">{{ connection.name }}</p>
-        <p class="node-meta mono">{{ host(connection.baseUrl) }}</p>
-        <p class="node-checks">
-          @let test = testStatus(connection);
-          <span class="check-item" [class]="'check-item t-' + test.tone"><app-icon [name]="test.icon" />{{ test.label }}</span>
-          <span class="check-item" [class]="connection.hasCredentials ? 'check-item t-ok' : 'check-item t-danger'">
-            <app-icon [name]="connection.hasCredentials ? 'key-round' : 'triangle-alert'" />
-            {{ connection.hasCredentials ? 'Credenciales' : 'Sin credenciales' }}
-          </span>
-        </p>
-      </div>
-    </article>
-  } @else {
-    <article class="node system missing"><p class="node-kind">{{ role }}</p><p class="muted">Conexión no encontrada</p></article>
-  }
-</ng-template>
-
-@if (scope.needsTenant()) {
-  <app-tenant-required />
-} @else if (data.error(); as error) {
+@if (data.error(); as error) {
   <p class="alert" role="alert">{{ errorOf(error) }}</p>
 } @else if (row(); as row) {
   @let integration = row.integration;
   <section class="page">
-    <header class="page-head">
-      <div class="title">
-        <span class="flow-icon"><app-icon [name]="flowMeta[integration.flow].icon" /></span>
-        <div>
-          <h1 class="mono">{{ integration.code }}</h1>
-          <p>Flujo {{ flowMeta[integration.flow].label.toLowerCase() }} · versión {{ integration.version }}</p>
-        </div>
-      </div>
-      <div class="page-actions">
-        <a class="btn" routerLink="/operaciones" [queryParams]="{ flow: integration.flow }"><app-icon name="activity" />Operaciones</a>
-        @if (canRun() && integration.flow === 'CATALOG') {
-          <button type="button" class="btn" (click)="run(integration)"><app-icon name="refresh-cw" />Sincronizar ahora</button>
-        }
-        @if (canChangeState()) {
-          <button type="button" class="btn btn-primary" (click)="stateTarget.set(integration)">
-            <app-icon name="arrow-right-left" />Cambiar estado
-          </button>
-        }
+    <header class="title">
+      <span class="title-icon"><app-icon [name]="flowMeta[integration.flow].icon" /></span>
+      <div>
+        <h1>{{ integration.code }}</h1>
+        <p>
+          Flujo {{ flowMeta[integration.flow].label.toLowerCase() }} · {{ flowMeta[integration.flow].route }} · versión {{ integration.version }}
+          @if (row.tenant; as tenant) { · <app-icon name="building" class="inline-icon" />{{ tenant.name }} }
+        </p>
       </div>
     </header>
 
-    <div class="panel status-strip">
+    <nav class="actions" aria-label="Acciones de la integración">
+      <button type="button" class="action" [attr.aria-pressed]="showDetails()" (click)="showDetails.set(!showDetails())">
+        <app-icon name="info" />Detalles
+      </button>
+      @if (canRun() && integration.flow === 'CATALOG') {
+        <button type="button" class="action" (click)="run(integration)"><app-icon name="play" />Ejecutar</button>
+      }
+      @if (canChangeState()) {
+        @if (integration.state === 'ENABLED') {
+          <button type="button" class="action" (click)="openState(integration, 'PAUSED')"><app-icon name="pause" />Pausar</button>
+        } @else {
+          <button type="button" class="action" (click)="openState(integration, 'ENABLED')"><app-icon name="play" />Reanudar</button>
+        }
+        <button type="button" class="action" (click)="openState(integration)"><app-icon name="arrow-right-left" />Cambiar estado</button>
+      }
+      <a class="action" routerLink="/operaciones" [queryParams]="{ integrationId: integration.id }"><app-icon name="history" />Operaciones</a>
+      @if (canManage()) {
+        <button type="button" class="action" (click)="formTarget.set(integration)"><app-icon name="pencil" />Editar</button>
+      }
+      <button type="button" class="action" (click)="refresh()" [attr.aria-busy]="data.isLoading()">
+        <app-icon name="refresh-cw" [spin]="data.isLoading()" />Refrescar
+      </button>
+    </nav>
+
+    <div class="status-strip">
       <section class="block" aria-labelledby="b-health">
-        <h2 id="b-health" class="block-title">Salud</h2>
-        <p class="block-value"><app-status-badge [status]="row.health" [large]="true" /></p>
+        <h2 id="b-health" class="eyebrow">Salud</h2>
+        <p class="block-value"><app-status-badge [status]="row.health" [health]="true" [large]="true" /></p>
         <p class="block-note">{{ healthReason() }}</p>
       </section>
       <section class="block" aria-labelledby="b-state">
-        <h2 id="b-state" class="block-title">Estado</h2>
+        <h2 id="b-state" class="eyebrow">Estado</h2>
         <p class="block-value"><app-status-badge [status]="integration.state" [large]="true" /></p>
-        <p class="block-note">Actualizada {{ integration.updatedAt | date: 'dd/MM/yyyy HH:mm' }}</p>
+        <p class="block-note">{{ stateHelp() }}</p>
+        <p class="block-meta">Cambiado {{ integration.updatedAt | date: 'dd/MM/yyyy HH:mm' }}</p>
       </section>
       <section class="block" aria-labelledby="b-last">
-        @if (row.failing; as failing) {
-          <h2 id="b-last" class="block-title">Última falla</h2>
-          <p class="block-value"><app-status-badge [status]="failing.status" [large]="true" /></p>
+        @if (row.insight?.lastFailure; as failure) {
+          <h2 id="b-last" class="eyebrow">Última falla</h2>
+          <p class="block-value"><app-status-badge [status]="failure.status" [large]="true" /></p>
           <p class="block-note">
-            En <span class="mono">{{ failing.currentStep ?? failing.kind }}</span>{{ failing.deadReason ? ' · ' + failing.deadReason : '' }}
-            · {{ failing.createdAt | date: 'dd/MM HH:mm' }}
+            En <span class="mono">{{ failure.step ?? '—' }}</span>{{ failure.errorCode ? ' · ' + failure.errorCode : '' }}
+            · {{ failure.at | date: 'dd/MM HH:mm' }}
           </p>
-          <a class="block-link" [routerLink]="['/operaciones', failing.id]">Ver detalle y reintentar<app-icon name="chevron-right" /></a>
+          <a class="block-link" [routerLink]="['/operaciones', failure.operationId, { tenantId: integration.tenantId }]">Ver detalle y reintentar<app-icon name="chevron-right" /></a>
         } @else {
-          <h2 id="b-last" class="block-title">Última operación</h2>
-          @if (row.operations[0]; as last) {
+          <h2 id="b-last" class="eyebrow">Última operación</h2>
+          @if (recent.value()[0]; as last) {
             <p class="block-value"><app-status-badge [status]="last.status" [large]="true" /></p>
             <p class="block-note"><span class="mono">{{ last.kind }}</span> · {{ last.createdAt | date: 'dd/MM HH:mm' }}</p>
+            <a class="block-link" [routerLink]="['/operaciones', last.id, { tenantId: integration.tenantId }]">Ver operación<app-icon name="chevron-right" /></a>
+          } @else if (row.insight?.lastOperationAt; as at) {
+            <p class="block-value plain">{{ at | date: 'dd/MM HH:mm' }}</p>
+            <p class="block-note">Última operación registrada</p>
           } @else {
-            <p class="block-value muted">—</p>
-            <p class="block-note">Sin operaciones en 24 h</p>
+            <p class="block-value plain muted">Ninguna</p>
+            <p class="block-note">Todavía no tiene operaciones</p>
           }
         }
       </section>
     </div>
 
-    <section class="panel" aria-labelledby="topology-heading">
-      <header class="panel-head">
-        <h2 id="topology-heading">Topología</h2>
-        <span class="hint">Origen → Nexus → destino, con las operaciones de las últimas 24 h</span>
-      </header>
-      <div class="canvas">
-        <div class="tree">
-          <div class="slot-source"><ng-container [ngTemplateOutlet]="systemNode" [ngTemplateOutletContext]="{ $implicit: row.source, role: 'Origen' }" /></div>
-          <svg class="edge e1" viewBox="0 0 64 16" preserveAspectRatio="none" aria-hidden="true">
-            <path d="M0 8H58" /><path d="M54 3l6 5-6 5" class="arrow" />
-          </svg>
-          <article class="node root" aria-label="Integración {{ integration.code }}">
-            <span class="root-icon"><app-icon [name]="flowMeta[integration.flow].icon" /></span>
-            <div class="node-body">
-              <p class="node-kind">Nexus · {{ flowMeta[integration.flow].label }}</p>
-              <p class="node-name mono">{{ integration.code }}</p>
-              <p class="node-checks">
-                <app-status-badge [status]="row.health" [plain]="true" />
-                <app-status-badge [status]="integration.state" [plain]="true" />
+    @if (showDetails()) {
+      <section class="details" aria-label="Detalles">
+        <div class="panel detail-card">
+          <h2 class="eyebrow">Política de ritmo y reintentos</h2>
+          <dl class="policy">
+            @for (field of policyFields; track field.key) {
+              @if (integration.policy[field.key] !== undefined) {
+                <div><dt>{{ field.label }}</dt><dd class="num">{{ integration.policy[field.key] }}</dd></div>
+              }
+            }
+          </dl>
+        </div>
+        @for (side of [{ label: 'Origen', c: row.source }, { label: 'Destino', c: row.target }]; track side.label) {
+          <div class="panel detail-card">
+            <h2 class="eyebrow">{{ side.label }}</h2>
+            @if (side.c; as c) {
+              <p class="conn-name"><app-icon [name]="connectorMeta[c.connector].icon" />{{ c.name }}</p>
+              <p class="mono muted">{{ host(c.baseUrl) }}</p>
+              <p class="conn-checks">
+                @for (check of connectionSignals(c); track check.label) {
+                  <span class="inline-status" [class]="'inline-status tone-' + check.tone"><app-icon [name]="check.icon" />{{ check.label }}</span>
+                }
               </p>
-            </div>
-          </article>
-          <svg class="edge e2" viewBox="0 0 64 16" preserveAspectRatio="none" aria-hidden="true">
-            <path d="M0 8H58" /><path d="M54 3l6 5-6 5" class="arrow" />
-          </svg>
-          <div class="slot-target"><ng-container [ngTemplateOutlet]="systemNode" [ngTemplateOutletContext]="{ $implicit: row.target, role: 'Destino' }" /></div>
-
-          <svg class="edge-down" viewBox="0 0 16 40" preserveAspectRatio="none" aria-hidden="true"><path d="M8 0V40" /></svg>
-          <div class="ops">
-            @for (op of recent(); track op.id) {
-              <a class="node op" [routerLink]="['/operaciones', op.id]">
-                <app-status-badge [status]="op.status" [plain]="true" />
-                <span class="op-kind mono">{{ op.kind }}</span>
-                <span class="op-meta">
-                  <span class="mono">{{ op.currentStep ?? '—' }}</span> · {{ op.attempts }}/{{ op.maxAttempts }} · {{ op.createdAt | date: 'HH:mm' }}
-                </span>
-              </a>
-            } @empty {
-              <p class="node op empty-op">Sin operaciones en las últimas 24 h.</p>
+            } @else {
+              <p class="muted">Conexión no encontrada</p>
             }
           </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel" aria-labelledby="policy-heading">
-      <header class="panel-head"><h2 id="policy-heading">Política de ritmo y reintentos</h2></header>
-      <dl class="policy">
-        @for (item of policy(); track item.label) {
-          <div><dt>{{ item.label }}</dt><dd class="num">{{ item.value }}</dd></div>
         }
-      </dl>
-    </section>
+      </section>
+    }
+
+    @if (tree(); as tree) {
+      <app-tree-map class="map" [root]="tree" [label]="'Mapa de ' + integration.code" />
+    }
   </section>
 } @else if (data.isLoading()) {
   <p class="empty" aria-busy="true">Cargando integración…</p>
 } @else {
   <div class="panel empty">
-    <p>No existe una integración con ese identificador en este tenant.</p>
+    <p>No existe una integración con ese identificador.</p>
     <a routerLink="/integraciones">Volver a integraciones</a>
   </div>
 }
 
-<app-integration-state-dialog [integration]="stateTarget()" (closed)="stateTarget.set(null)" (changed)="stateChanged()" />
+<app-integration-state-dialog [integration]="stateTarget()" [suggested]="suggestedState()" (closed)="stateTarget.set(null)"
+                              (changed)="stateChanged()" />
+<app-integration-form-dialog [target]="formTarget()" [connections]="data.hasValue() ? data.value().connections : []"
+                             (closed)="formTarget.set(null)" (saved)="saved()" />

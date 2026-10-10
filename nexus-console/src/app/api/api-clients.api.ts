@@ -29,19 +29,19 @@ export class ApiClientsApi {
   private readonly scope = inject(TenantScope);
   private readonly url = '/api/admin/api-clients';
 
-  list(): Observable<ApiClient[]> {
-    return this.http.get<ApiClient[]>(this.url, { params: this.scope.params() });
+  list(tenantId = this.scope.tenantId()): Observable<ApiClient[]> {
+    return this.http.get<ApiClient[]>(this.url, { params: this.scope.params({}, tenantId) });
   }
 
   create(name: string, scopes: string[]): Observable<IssuedSecret> {
     return this.http.post<IssuedSecret>(this.url, { name, scopes }, { params: this.scope.params() });
   }
 
-  rotate(id: string): Observable<IssuedSecret> {
-    return this.http.post<IssuedSecret>(`${this.url}/${id}/rotate`, {}, { params: this.scope.params() });
+  rotate(client: ApiClient): Observable<IssuedSecret> {
+    return this.http.post<IssuedSecret>(`${this.url}/${client.id}/rotate`, {}, { params: this.scope.params({}, client.tenantId) });
   }
 
-  revoke(id: string): Observable<ApiClient> {
-    return this.http.post<ApiClient>(`${this.url}/${id}/revoke`, {}, { params: this.scope.params() });
+  revoke(client: ApiClient): Observable<ApiClient> {
+    return this.http.post<ApiClient>(`${this.url}/${client.id}/revoke`, {}, { params: this.scope.params({}, client.tenantId) });
   }
 }

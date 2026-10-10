@@ -61,14 +61,15 @@ class AdminOperationController {
         this.replayOperation = replayOperation;
     }
 
-    @io.swagger.v3.oas.annotations.Operation(summary = "Lista operaciones, más recientes primero; q busca por id, clave idempotente o correlationId")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Lista operaciones, más recientes primero; filtra por integrationId, flow, status y rango; q busca por id, clave idempotente o correlationId")
     @GetMapping
-    List<OperationView> list(@RequestParam(required = false) UUID tenantId, @RequestParam(required = false) Flow flow,
+    List<OperationView> list(@RequestParam(required = false) UUID tenantId, @RequestParam(required = false) UUID integrationId,
+                             @RequestParam(required = false) Flow flow,
                              @RequestParam(required = false) OperationStatus status,
                              @RequestParam(required = false) Instant from, @RequestParam(required = false) Instant to,
                              @RequestParam(required = false) String q, @RequestParam(defaultValue = "0") int page,
                              @RequestParam(defaultValue = "50") int size) {
-        var filter = new OperationRepository.Filter(flow, status, from, to, q);
+        var filter = new OperationRepository.Filter(integrationId, flow, status, from, to, q);
         return operationQueries.list(TenantContext.currentUser(), TenantId.of(tenantId), filter, page, size)
                 .stream().map(OperationView::of).toList();
     }
@@ -78,6 +79,14 @@ class AdminOperationController {
     OperationQueries.Summary summary(@RequestParam(required = false) UUID tenantId,
                                      @RequestParam(required = false) Instant from) {
         return operationQueries.summary(TenantContext.currentUser(), TenantId.of(tenantId), from);
+    }
+
+    @io.swagger.v3.oas.annotations.Operation(summary = "Operaciones creadas por intervalo y estado desde from (default 24 h); bucket PT5M, PT15M, PT1H o P1D, máximo 500 puntos, intervalos vacíos incluidos")
+    @GetMapping("/timeseries")
+    List<OperationQueries.Point> timeseries(@RequestParam(required = false) UUID tenantId,
+                                            @RequestParam(required = false) Instant from,
+                                            @RequestParam(defaultValue = "PT1H") String bucket) {
+        return operationQueries.timeseries(TenantContext.currentUser(), TenantId.of(tenantId), from, bucket);
     }
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Detalle con sus pasos (404 si es de otro tenant)")

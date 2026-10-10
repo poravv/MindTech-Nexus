@@ -48,6 +48,7 @@ const ICONS = {
   'circle-x': [C10, 'm15 9-6 6', 'm9 9 6 6'],
   'circle-pause': [C10, 'M10 15V9', 'M14 15V9'],
   'circle-minus': [C10, 'M8 12h8'],
+  'circle-play': [C10, 'M10 8.5v7l5.5-3.5z'],
   'circle-help': [C10, 'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3', 'M12 17h.01'],
   info: [C10, 'M12 16v-4', 'M12 8h.01'],
   clock: ['M12 6v6l4 2', C10],
@@ -111,11 +112,29 @@ const ICONS = {
     'm2 2 20 20',
   ],
   'arrow-right-left': ['m16 3 4 4-4 4', 'M20 7H4', 'm8 21-4-4 4-4', 'M4 17h16'],
+  network: [rect(16, 16, 6, 6, 1), rect(2, 16, 6, 6, 1), rect(9, 2, 6, 6, 1), 'M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3', 'M12 12V8'],
+  'chart-pie': [
+    'M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z',
+    'M21.21 15.89A10 10 0 1 1 8 2.83',
+  ],
+  'ellipsis-vertical': [circle(12, 12, 1), circle(12, 5, 1), circle(12, 19, 1)],
+  'zoom-in': [circle(11, 11, 8), 'm21 21-4.35-4.35', 'M11 8v6', 'M8 11h6'],
+  'zoom-out': [circle(11, 11, 8), 'm21 21-4.35-4.35', 'M8 11h6'],
+  maximize: ['M8 3H5a2 2 0 0 0-2 2v3', 'M21 8V5a2 2 0 0 0-2-2h-3', 'M3 16v3a2 2 0 0 0 2 2h3', 'M16 21h3a2 2 0 0 0 2-2v-3'],
+  minus: ['M5 12h14'],
+  play: ['M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z'],
+  pause: [rect(14, 3, 5, 18, 1), rect(5, 3, 5, 18, 1)],
+  history: ['M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8', 'M3 3v5h5', 'M12 7v5l4 2'],
+  'arrow-right': ['M5 12h14', 'm12 5 7 7-7 7'],
+  'chevron-up': ['m18 15-6-6-6 6'],
 } satisfies Record<string, string[]>;
 
 export type IconName = keyof typeof ICONS;
 
-/** Decorative stroke icon; the surrounding text or aria-label carries the meaning. */
+/**
+ * Decorative stroke icon; the surrounding text or aria-label carries the meaning.
+ * `spin` is only for the moment a request is in flight, never for a status.
+ */
 @Component({
   selector: 'app-icon',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -131,7 +150,8 @@ export type IconName = keyof typeof ICONS;
   styles: `
     :host { display: inline-flex; flex: none; width: var(--icon-size, 1rem); height: var(--icon-size, 1rem); }
     svg { width: 100%; height: 100%; }
-    :host(.spin) svg { animation: icon-spin 1s linear infinite; }
+    :host(.spin) svg { animation: icon-spin 0.8s linear infinite; }
+    @media (prefers-reduced-motion: reduce) { :host(.spin) svg { animation: none; } }
     @keyframes icon-spin { to { transform: rotate(360deg); } }
   `,
 })

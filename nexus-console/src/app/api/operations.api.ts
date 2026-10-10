@@ -45,6 +45,7 @@ export interface OperationDetail extends Operation {
 }
 
 export interface OperationFilter {
+  integrationId?: string;
   flow?: string;
   status?: string;
   from?: string;
@@ -62,6 +63,14 @@ export interface OperationSummary {
   dead: number;
 }
 
+export type TimeseriesBucket = 'PT5M' | 'PT15M' | 'PT1H' | 'P1D';
+
+/** Operations created in the bucket starting at `t` (UTC, epoch-aligned); absent statuses mean zero. */
+export interface TimeseriesPoint {
+  t: string;
+  byStatus: Partial<Record<OperationStatus, number>>;
+}
+
 /** /api/admin/operations (slice S2). */
 @Injectable({ providedIn: 'root' })
 export class OperationsApi {
@@ -69,20 +78,25 @@ export class OperationsApi {
   private readonly scope = inject(TenantScope);
   private readonly url = '/api/admin/operations';
 
-  list(filter: OperationFilter): Observable<Operation[]> {
-    return this.http.get<Operation[]>(this.url, { params: this.scope.params({ ...filter }) });
+  list(filter: OperationFilter, tenantId = this.scope.tenantId()): Observable<Operation[]> {
+    return this.http.get<Operation[]>(this.url, { params: this.scope.params({ ...filter }, tenantId) });
   }
 
-  get(id: string): Observable<OperationDetail> {
-    return this.http.get<OperationDetail>(`${this.url}/${id}`, { params: this.scope.params() });
+  get(id: string, tenantId = this.scope.tenantId()): Observable<OperationDetail> {
+    return this.http.get<OperationDetail>(`${this.url}/${id}`, { params: this.scope.params({}, tenantId) });
   }
 
   /** Only DEAD operations; same idempotency key, attempts reset. */
-  replay(id: string): Observable<Operation> {
-    return this.http.post<Operation>(`${this.url}/${id}/replay`, {}, { params: this.scope.params() });
+  replay(id: string, tenantId = this.scope.tenantId()): Observable<Operation> {
+    return this.http.post<Operation>(`${this.url}/${id}/replay`, {}, { params: this.scope.params({}, tenantId) });
   }
 
   summary(from: string): Observable<OperationSummary> {
     return this.http.get<OperationSummary>(`${this.url}/summary`, { params: this.scope.params({ from }) });
+  }
+
+  /** Dense series (empty buckets included) from the bucket containing `from` up to now; at most 500 points. */
+  timeseries(from: string, bucket: TimeseriesBucket = 'PT1H'): Observable<TimeseriesPoint[]> {
+    return this.http.get<TimeseriesPoint[]>(`${this.url}/timeseries`, { params: this.scope.params({ from, bucket }) });
   }
 }

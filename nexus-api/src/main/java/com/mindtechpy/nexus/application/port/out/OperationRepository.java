@@ -7,18 +7,30 @@ import com.mindtechpy.nexus.domain.operation.OperationStatus;
 import com.mindtechpy.nexus.domain.operation.OperationStep;
 import com.mindtechpy.nexus.domain.shared.TenantId;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface OperationRepository {
 
     /** Console filters; every field is optional. {@code q} matches id, idempotency key or correlation id. */
-    record Filter(Flow flow, OperationStatus status, Instant from, Instant to, String q) {
+    record Filter(UUID integrationId, Flow flow, OperationStatus status, Instant from, Instant to, String q) {
     }
 
     record StatusFlowCount(OperationStatus status, Flow flow, long count) {
+    }
+
+    record IntegrationStatusCount(UUID integrationId, OperationStatus status, long count, Instant lastCreatedAt) {
+    }
+
+    /** Latest {@code FAILED} or {@code DEAD} operation of an integration; {@code errorCode} is the dead reason or the last error code. */
+    record LastFailure(UUID operationId, OperationStatus status, String step, String errorCode, Instant at) {
+    }
+
+    record BucketCount(Instant bucket, OperationStatus status, long count) {
     }
 
     Optional<Operation> findByKey(TenantId tenantId, OperationKind kind, String idempotencyKey);
@@ -42,6 +54,18 @@ public interface OperationRepository {
 
     /** Current size of the dead-letter queue, regardless of age. */
     long countDead(Optional<TenantId> tenantId);
+
+    /** Operations of the tenant created since {@code from}, grouped by integration and status. */
+    List<IntegrationStatusCount> countByIntegrationSince(TenantId tenantId, Instant from);
+
+    /** Current dead-letter queue of the tenant per integration, regardless of age. */
+    Map<UUID, Long> countDeadByIntegration(TenantId tenantId);
+
+    /** Per integration id, its newest failure among the operations created since {@code from}. */
+    Map<UUID, LastFailure> lastFailuresSince(TenantId tenantId, Instant from);
+
+    /** Operations created since {@code from} (a bucket boundary), counted per {@code bucket}-wide bin and status. */
+    List<BucketCount> countByBucket(Optional<TenantId> tenantId, Instant from, Duration bucket);
 
     /**
      * Compare-and-set: writes {@code next} only if the row still matches {@code expected} (same status,

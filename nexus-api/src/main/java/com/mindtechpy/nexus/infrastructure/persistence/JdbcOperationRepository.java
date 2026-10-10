@@ -12,6 +12,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -89,6 +90,10 @@ class JdbcOperationRepository implements OperationRepository {
             sql.append(" AND tenant_id = :tenantId");
             params.put("tenantId", id.value());
         });
+        if (filter.integrationId() != null) {
+            sql.append(" AND integration_id = :integrationId");
+            params.put("integrationId", filter.integrationId());
+        }
         if (filter.flow() != null) {
             sql.append(" AND flow = :flow");
             params.put("flow", filter.flow().name());
@@ -151,6 +156,60 @@ class JdbcOperationRepository implements OperationRepository {
         JdbcClient.StatementSpec statement = jdbc.sql("SELECT count(*) FROM operations WHERE status = 'DEAD'" + tenantFilter);
         tenantId.ifPresent(id -> statement.param("tenantId", id.value()));
         return statement.query(Long.class).single();
+    }
+
+    @Override
+    public List<IntegrationStatusCount> countByIntegrationSince(TenantId tenantId, Instant from) {
+        return jdbc.sql("""
+                        SELECT integration_id, status, count(*) AS total, max(created_at) AS last_created_at FROM operations
+                        WHERE tenant_id = :tenantId AND created_at >= :from GROUP BY integration_id, status""")
+                .param("tenantId", tenantId.value())
+                .param("from", timestamp(from))
+                .query((rs, n) -> new IntegrationStatusCount(uuid(rs, "integration_id"), OperationStatus.valueOf(rs.getString("status")),
+                        rs.getLong("total"), instant(rs, "last_created_at"))).list();
+    }
+
+    @Override
+    public Map<UUID, Long> countDeadByIntegration(TenantId tenantId) {
+        Map<UUID, Long> dead = new HashMap<>();
+        jdbc.sql("SELECT integration_id, count(*) AS total FROM operations WHERE tenant_id = :tenantId AND status = 'DEAD' GROUP BY integration_id")
+                .param("tenantId", tenantId.value())
+                .query(rs -> {
+                    dead.put(uuid(rs, "integration_id"), rs.getLong("total"));
+                });
+        return dead;
+    }
+
+    @Override
+    public Map<UUID, LastFailure> lastFailuresSince(TenantId tenantId, Instant from) {
+        Map<UUID, LastFailure> failures = new HashMap<>();
+        jdbc.sql("""
+                        SELECT DISTINCT ON (integration_id) integration_id, id, status, current_step,
+                               coalesce(dead_reason, last_error ->> 'code') AS error_code, coalesce(finished_at, updated_at) AS failed_at
+                        FROM operations
+                        WHERE tenant_id = :tenantId AND created_at >= :from AND status IN ('FAILED', 'DEAD')
+                        ORDER BY integration_id, created_at DESC, id DESC""")
+                .param("tenantId", tenantId.value())
+                .param("from", timestamp(from))
+                .query(rs -> {
+                    failures.put(uuid(rs, "integration_id"), new LastFailure(uuid(rs, "id"), OperationStatus.valueOf(rs.getString("status")),
+                            rs.getString("current_step"), rs.getString("error_code"), instant(rs, "failed_at")));
+                });
+        return failures;
+    }
+
+    @Override
+    public List<BucketCount> countByBucket(Optional<TenantId> tenantId, Instant from, Duration bucket) {
+        String tenantFilter = tenantId.isPresent() ? " AND tenant_id = :tenantId" : "";
+        JdbcClient.StatementSpec statement = jdbc.sql("""
+                        SELECT date_bin(make_interval(secs => :bucketSeconds), created_at, TIMESTAMPTZ 'epoch') AS bucket, status,
+                               count(*) AS total
+                        FROM operations WHERE created_at >= :from""" + tenantFilter + " GROUP BY bucket, status")
+                .param("bucketSeconds", bucket.toSeconds())
+                .param("from", timestamp(from));
+        tenantId.ifPresent(id -> statement.param("tenantId", id.value()));
+        return statement.query((rs, n) -> new BucketCount(instant(rs, "bucket"), OperationStatus.valueOf(rs.getString("status")),
+                rs.getLong("total"))).list();
     }
 
     @Override

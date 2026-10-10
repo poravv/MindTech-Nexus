@@ -44,6 +44,13 @@
     </div>
   </form>
 
+  @if (integrationId()) {
+    <p class="alert alert-info" role="status">
+      <span>Solo las operaciones de <a [routerLink]="['/integraciones', integrationId()]">esta integración</a>.</span>
+      <button type="button" class="btn btn-sm" (click)="clearIntegration()">Ver todas</button>
+    </p>
+  }
+
   @if (operations.error(); as error) {
     <p class="alert" role="alert">{{ errorOf(error) }}</p>
   }
@@ -61,7 +68,7 @@
           @if (operations.hasValue()) {
             @for (op of operations.value(); track op.id) {
               <tr>
-                <td class="nowrap"><a [routerLink]="['/operaciones', op.id]">{{ op.createdAt | date: 'dd/MM HH:mm:ss' }}</a></td>
+                <td class="nowrap"><a [routerLink]="['/operaciones', op.id, { tenantId: op.tenantId }]">{{ op.createdAt | date: 'dd/MM HH:mm:ss' }}</a></td>
                 <td><span class="mono">{{ op.kind }}</span>&nbsp;<span class="muted">· {{ flowMeta[op.flow].label }}</span></td>
                 <td><app-status-badge [status]="op.status" /></td>
                 <td class="mono">{{ op.currentStep ?? '—' }}</td>

@@ -35,7 +35,7 @@ let nextId = 0;
     .mark { flex: none; width: 2em; height: 2em; }
     .text { display: grid; gap: 0.2em; }
     .name { font-size: 1.15em; font-weight: var(--weight-bold); letter-spacing: var(--tracking-tight); }
-    .sub { font-size: 0.62em; font-weight: var(--weight-medium); letter-spacing: 0.02em; opacity: 0.72; }
+    .sub { font-size: max(0.62em, var(--text-2xs)); font-weight: var(--weight-medium); letter-spacing: 0.02em; opacity: 0.72; }
   `,
 })
 export class Logo {

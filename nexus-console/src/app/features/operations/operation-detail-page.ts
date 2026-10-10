@@ -11,7 +11,7 @@ import { canReplay } from '../../core/roles';
 import { TenantScope } from '../../core/tenant-scope.service';
 import { ConfirmDialog } from '../../shared/ui/confirm-dialog';
 import { Icon } from '../../shared/ui/icon';
-import { StatusBadge } from '../../shared/ui/status-badge';
+import { StatusBadge, statusMeta } from '../../shared/ui/status-badge';
 import { FLOW_META } from '../integrations/health';
 
 /** Fields of lastError the console shows; anything else the connector attached stays out of the screen. */
@@ -19,7 +19,7 @@ interface SafeError {
   kind?: string;
   code?: string;
   httpStatus?: number;
-  message?: string;
+  detail?: string;
 }
 
 @Component({
@@ -36,10 +36,13 @@ export default class OperationDetailPage {
   private readonly scope = inject(TenantScope);
 
   readonly id = input.required<string>();
+  /** Matrix param set by links from "Todos los tenants", where the scope alone can't tell the API whose operation it is. */
+  readonly tenantId = input<string>();
 
+  private readonly tenant = computed(() => this.tenantId() ?? this.scope.tenantId());
   protected readonly operation = rxResource({
-    params: () => ({ id: this.id(), tenantId: this.scope.tenantId() }),
-    stream: ({ params }) => this.api.get(params.id),
+    params: () => ({ id: this.id(), tenantId: this.tenant() }),
+    stream: ({ params }) => this.api.get(params.id, params.tenantId),
   });
   protected readonly canReplay = computed(() => {
     const role = this.auth.role();
@@ -50,20 +53,25 @@ export default class OperationDetailPage {
     if (!raw || typeof raw !== 'object') {
       return null;
     }
-    const { kind, code, httpStatus, message } = raw as Record<string, unknown>;
+    const { kind, code, httpStatus, detail } = raw as Record<string, unknown>;
     return {
       kind: typeof kind === 'string' ? kind : undefined,
       code: typeof code === 'string' ? code : undefined,
       httpStatus: typeof httpStatus === 'number' ? httpStatus : undefined,
-      message: typeof message === 'string' ? message : undefined,
+      detail: typeof detail === 'string' ? detail : undefined,
     };
+  });
+  /** nextRunAt stays on the row after the operation ends; it only means something while the operation waits. */
+  protected readonly nextRun = computed(() => {
+    const op = this.operation.hasValue() ? this.operation.value() : null;
+    return op && (op.status === 'PENDING' || op.status === 'RETRY') ? op.nextRunAt : null;
   });
   protected readonly confirming = signal(false);
   protected readonly busy = signal(false);
 
   protected replay(): void {
     this.busy.set(true);
-    this.api.replay(this.id()).subscribe({
+    this.api.replay(this.id(), this.tenant()).subscribe({
       next: () => {
         this.busy.set(false);
         this.confirming.set(false);
@@ -77,6 +85,8 @@ export default class OperationDetailPage {
       },
     });
   }
+
+  protected readonly statusMeta = statusMeta;
 
   protected flowLabel(flow: Flow): string {
     return FLOW_META[flow]?.label ?? flow;

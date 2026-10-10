@@ -20,7 +20,7 @@
               <li>
                 <a [routerLink]="item.path" routerLinkActive="active" ariaCurrentWhenActive="page"
                    [routerLinkActiveOptions]="{ exact: item.path === '/' }"
-                   [attr.title]="collapsed() ? item.label : null">
+                   [attr.aria-label]="collapsed() ? item.label : null" [attr.data-tip]="item.label">
                   <app-icon [name]="item.icon" />
                   <span class="label">{{ item.label }}</span>
                 </a>
@@ -38,7 +38,8 @@
     }
 
     <button type="button" class="rail-toggle" (click)="toggleCollapsed()"
-            [attr.aria-label]="collapsed() ? 'Expandir menú' : 'Contraer menú'" [attr.aria-expanded]="!collapsed()">
+            [attr.aria-label]="collapsed() ? 'Expandir menú' : 'Contraer menú'" [attr.aria-expanded]="!collapsed()"
+            data-tip="Expandir menú">
       <app-icon [name]="collapsed() ? 'panel-left-open' : 'panel-left-close'" />
       <span class="label">Contraer</span>
     </button>
@@ -84,22 +85,32 @@
           </div>
         }
 
-        <button type="button" class="btn btn-ghost btn-icon" (click)="theme.cycle()" [attr.aria-label]="themeLabel()"
-                [title]="themeLabel()">
-          <app-icon [name]="theme.mode() === 'dark' ? 'moon' : theme.mode() === 'light' ? 'sun' : 'monitor'" />
-        </button>
-
-        <div class="who">
-          <span class="avatar" aria-hidden="true">{{ initials() }}</span>
-          <span class="who-text">
-            <span class="email">{{ user()?.email }}</span>
-            <span class="role">{{ roleLabel() }}</span>
-          </span>
+        <div class="user-menu">
+          <button type="button" class="user-trigger" aria-haspopup="menu" aria-controls="user-menu"
+                  [attr.aria-label]="'Cuenta de ' + (user()?.email ?? '')"
+                  [attr.aria-expanded]="userMenuOpen()" (click)="userMenuOpen.set(!userMenuOpen())">
+            <span class="avatar" aria-hidden="true">{{ initials() }}</span>
+            <span class="who-text">
+              <span class="email">{{ user()?.email }}</span>
+              <span class="role">{{ roleLabel() }}</span>
+            </span>
+            <app-icon name="chevron-down" class="caret" />
+          </button>
+          @if (userMenuOpen()) {
+            <div id="user-menu" class="menu" role="menu" aria-label="Cuenta">
+              <p class="menu-head">
+                <span class="email">{{ user()?.email }}</span>
+                <span class="role">{{ roleLabel() }}</span>
+              </p>
+              <button type="button" role="menuitem" (click)="theme.cycle()">
+                <app-icon [name]="theme.mode() === 'dark' ? 'moon' : theme.mode() === 'light' ? 'sun' : 'monitor'" />{{ themeLabel() }}
+              </button>
+              <button type="button" role="menuitem" (click)="logout()">
+                <app-icon name="log-out" />Salir
+              </button>
+            </div>
+          }
         </div>
-
-        <button type="button" class="btn btn-ghost btn-icon" (click)="logout()" aria-label="Salir" title="Salir">
-          <app-icon name="log-out" />
-        </button>
       </div>
     </header>
 

@@ -26,6 +26,7 @@ export default class OperationsPage {
   private readonly router = inject(Router);
   private readonly scope = inject(TenantScope);
 
+  readonly integrationId = input<string>();
   readonly flow = input<string>();
   readonly status = input<string>();
   readonly from = input<string>();
@@ -42,6 +43,7 @@ export default class OperationsPage {
   protected readonly operations = rxResource({
     params: () => ({
       tenantId: this.scope.tenantId(),
+      integrationId: this.integrationId(),
       flow: this.flow(),
       status: this.status(),
       from: toIso(this.from()),
@@ -65,15 +67,27 @@ export default class OperationsPage {
   }
 
   protected apply(): void {
-    void this.navigate({ ...this.draft(), page: 0 });
+    void this.navigate({ ...this.draft(), integrationId: this.integrationId(), page: 0 });
   }
 
   protected clear(): void {
     void this.navigate({ page: 0 });
   }
 
+  protected clearIntegration(): void {
+    void this.navigate({ ...this.draft(), page: 0 });
+  }
+
   protected goTo(page: number): void {
-    void this.navigate({ flow: this.flow(), status: this.status(), from: this.from(), to: this.to(), q: this.q(), page });
+    void this.navigate({
+      integrationId: this.integrationId(),
+      flow: this.flow(),
+      status: this.status(),
+      from: this.from(),
+      to: this.to(),
+      q: this.q(),
+      page,
+    });
   }
 
   protected errorOf(error: unknown): string {
