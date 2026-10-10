@@ -15,25 +15,28 @@ const FLOWS: Record<Flow, { label: string; source: Connector; target: Connector 
   CATALOG: { label: 'Catálogo (POS → GiftHub)', source: 'POS', target: 'GIFTHUB' },
 };
 
-const DEFAULT_POLICY: IntegrationPolicy = {
-  ratePerSecond: 2,
-  burst: 5,
-  maxInFlight: 2,
-  maxAttempts: 5,
-  baseDelaySeconds: 5,
-  maxDelaySeconds: 300,
-  readTimeoutMs: 150000,
-  scheduleEverySeconds: 300,
-};
+/** Same defaults and limits as the API's IntegrationPolicy: SIFEN can hold a FISCAL call ~183 s. */
+export function defaultPolicy(flow: Flow): IntegrationPolicy {
+  return {
+    ratePerSecond: 2,
+    burst: 5,
+    maxInFlight: 2,
+    maxAttempts: 5,
+    baseDelaySeconds: 5,
+    maxDelaySeconds: 300,
+    readTimeoutMs: flow === 'FISCAL' ? 200000 : 150000,
+    scheduleEverySeconds: 300,
+  };
+}
 
-export const POLICY_FIELDS: { key: keyof IntegrationPolicy; label: string }[] = [
-  { key: 'ratePerSecond', label: 'Operaciones por segundo' },
-  { key: 'burst', label: 'Ráfaga' },
-  { key: 'maxInFlight', label: 'Máx. en curso' },
-  { key: 'maxAttempts', label: 'Máx. intentos' },
-  { key: 'baseDelaySeconds', label: 'Espera base (s)' },
-  { key: 'maxDelaySeconds', label: 'Espera máxima (s)' },
-  { key: 'readTimeoutMs', label: 'Timeout de lectura (ms)' },
+export const POLICY_FIELDS: { key: keyof IntegrationPolicy; label: string; min: number; max?: number }[] = [
+  { key: 'ratePerSecond', label: 'Operaciones por segundo', min: 1 },
+  { key: 'burst', label: 'Ráfaga', min: 1 },
+  { key: 'maxInFlight', label: 'Máx. en curso', min: 1 },
+  { key: 'maxAttempts', label: 'Máx. intentos', min: 1, max: 100 },
+  { key: 'baseDelaySeconds', label: 'Espera base (s)', min: 1 },
+  { key: 'maxDelaySeconds', label: 'Espera máxima (s)', min: 1 },
+  { key: 'readTimeoutMs', label: 'Timeout de lectura (ms)', min: 1000, max: 280000 },
 ];
 
 /**
@@ -101,8 +104,12 @@ export const POLICY_FIELDS: { key: keyof IntegrationPolicy; label: string }[] = 
             @for (field of policyFields; track field.key) {
               <div class="field">
                 <label [for]="'pol-' + field.key">{{ field.label }}</label>
-                <input [id]="'pol-' + field.key" [name]="'pol-' + field.key" type="number" min="1" required class="input"
+                <input [id]="'pol-' + field.key" [name]="'pol-' + field.key" type="number" required class="input"
+                       [min]="field.min" [max]="field.max ?? null" [attr.aria-describedby]="'pol-hint-' + field.key"
                        [(ngModel)]="form.policy[field.key]" />
+                @if (field.max) {
+                  <span class="hint" [id]="'pol-hint-' + field.key">Entre {{ field.min }} y {{ field.max }}</span>
+                }
               </div>
             }
             @if (form.flow === 'CATALOG') {
@@ -163,7 +170,7 @@ export class IntegrationFormDialog {
           code: target.code,
           sourceConnectionId: target.sourceConnectionId,
           targetConnectionId: target.targetConnectionId,
-          policy: { ...DEFAULT_POLICY, ...target.policy },
+          policy: { ...defaultPolicy(target.flow), ...target.policy },
         };
         this.tenantId.set(target.tenantId);
       }
@@ -181,7 +188,11 @@ export class IntegrationFormDialog {
   }
 
   protected changeFlow(flow: Flow): void {
-    this.form = { ...this.form, flow, sourceConnectionId: '', targetConnectionId: '' };
+    const policy = { ...this.form.policy };
+    if (policy.readTimeoutMs === defaultPolicy(this.form.flow).readTimeoutMs) {
+      policy.readTimeoutMs = defaultPolicy(flow).readTimeoutMs;
+    }
+    this.form = { ...this.form, flow, policy, sourceConnectionId: '', targetConnectionId: '' };
   }
 
   protected save(): void {
@@ -208,5 +219,5 @@ export class IntegrationFormDialog {
 }
 
 function emptyDraft(): IntegrationDraft {
-  return { flow: 'FISCAL', code: '', sourceConnectionId: '', targetConnectionId: '', policy: { ...DEFAULT_POLICY } };
+  return { flow: 'FISCAL', code: '', sourceConnectionId: '', targetConnectionId: '', policy: defaultPolicy('FISCAL') };
 }
