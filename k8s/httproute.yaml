@@ -1,0 +1,21 @@
+# Única entrada pública: nexus.mindtechpy.net → nexus-console. Cloudflare Tunnel entrega *.mindtechpy.net
+# a traefik.traefik:80 (regla wildcard existente); el CNAME nexus ya existe.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: nexus-console
+  namespace: nexus
+spec:
+  parentRefs:
+    - name: public-gateway
+      namespace: traefik
+  hostnames:
+    - nexus.mindtechpy.net
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: nexus-console
+          port: 8080

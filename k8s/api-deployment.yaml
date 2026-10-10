@@ -1,0 +1,91 @@
+# El tag lo escribe deploy.yml (GitOps: Argo aplica el commit del pin). Rollback = revertir ese commit.
+# Sin imagePullSecrets: el paquete GHCR es público.
+# replicas 1 y sin HPA: el worker de operaciones es único por diseño en v1.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus-api
+  namespace: nexus
+  labels:
+    app: nexus-api
+    tier: backend
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: nexus-api
+  template:
+    metadata:
+      labels:
+        app: nexus-api
+        tier: backend
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nexus-api
+          image: ghcr.io/poravv/mindtech-nexus-api:sha-1b15637
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 8081
+              name: management
+          # Todas las claves de nexus-secrets son NEXUS_* y la app las lee con ese nombre.
+          envFrom:
+            - secretRef:
+                name: nexus-secrets
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://postgres.nexus.svc.cluster.local:5432/$(NEXUS_DB_NAME)
+            - name: NEXUS_CONNECTORS_ALLOWED_HOSTS
+              value: "*.svc.cluster.local"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "300m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          # Liveness solo mira la JVM: una caída breve de Postgres no debe reiniciar el pod.
+          # Readiness incluye la DB (grupo readiness en application.yml).
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

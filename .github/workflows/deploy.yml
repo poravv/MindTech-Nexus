@@ -1,0 +1,307 @@
+name: CI/CD — Build & Release (GitOps / Argo CD)
+
+# PR: tests + build sin push, en runners efímeros de GitHub (el self-hosted vive en el cluster con kubectl:
+# nunca corre código no revisado).
+# main: tests → build y push a GHCR (tag sha-<7>) → release en el runner self-hosted: crea el Secret
+# nexus-secrets (Argo no gestiona Secrets), escribe el tag en k8s/*-deployment.yaml y commitea [skip ci].
+# Argo CD (Application nexus en k8s-platforms) sincroniza el rollout. Rollback = revertir el commit del pin.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'nexus-api/**'
+      - 'nexus-console/**'
+      - '.github/workflows/deploy.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'nexus-api/**'
+      - 'nexus-console/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      deploy_api:
+        description: 'Forzar build+release de nexus-api'
+        type: boolean
+        default: false
+      deploy_console:
+        description: 'Forzar build+release de nexus-console'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_API: ghcr.io/poravv/mindtech-nexus-api
+  IMAGE_CONSOLE: ghcr.io/poravv/mindtech-nexus-console
+  NAMESPACE: nexus
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  detect-changes:
+    name: Detectar cambios
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.changes.outputs.api }}
+      console: ${{ steps.changes.outputs.console }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detectar cambios por path
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_API: ${{ github.event.inputs.deploy_api }}
+          INPUT_CONSOLE: ${{ github.event.inputs.deploy_console }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            API="$INPUT_API"; CONSOLE="$INPUT_CONSOLE"
+          else
+            BASE_SHA="$PUSH_BEFORE"
+            [ "$EVENT" = "pull_request" ] && BASE_SHA="$PR_BASE"
+            if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+              BASE_SHA="HEAD~1"
+            fi
+            CHANGED=$(git diff --name-only "$BASE_SHA" HEAD)
+            echo "Archivos cambiados:"; echo "$CHANGED"
+            API=$(echo "$CHANGED" | grep -q '^nexus-api/' && echo true || echo false)
+            CONSOLE=$(echo "$CHANGED" | grep -q '^nexus-console/' && echo true || echo false)
+            # Un cambio del workflow rebuildea ambas imágenes: así el primer deploy pinea las dos.
+            if echo "$CHANGED" | grep -q '^\.github/workflows/deploy\.yml'; then
+              API=true; CONSOLE=true
+            fi
+          fi
+          # La consola llega en S6: sin su Dockerfile no hay imagen que construir.
+          [ -f nexus-console/Dockerfile ] || CONSOLE=false
+          echo "api=$API" >> "$GITHUB_OUTPUT"
+          echo "console=$CONSOLE" >> "$GITHUB_OUTPUT"
+          echo "api:$API console:$CONSOLE"
+
+  # Sin `if` a nivel job: nunca queda `skipped` y sirve de gate para los `needs`.
+  test:
+    name: Tests
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        if: needs.detect-changes.outputs.api == 'true'
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Incluye ArchUnit y los IT con Testcontainers (Docker del runner).
+      - name: Tests nexus-api
+        if: needs.detect-changes.outputs.api == 'true'
+        working-directory: nexus-api
+        run: ./mvnw -B verify
+
+      - uses: actions/setup-node@v5
+        if: needs.detect-changes.outputs.console == 'true'
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: nexus-console/package-lock.json
+
+      - name: Tests nexus-console
+        if: needs.detect-changes.outputs.console == 'true'
+        working-directory: nexus-console
+        run: |
+          npm ci
+          npm test -- --watch=false
+
+  build-api:
+    name: Build nexus-api
+    needs: [detect-changes, test]
+    if: needs.detect-changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: nexus-api
+          file: nexus-api/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ env.IMAGE_API }}:sha-${{ env.SHORT_SHA }}
+          cache-from: type=gha,scope=nexus-api
+          cache-to: type=gha,mode=max,scope=nexus-api
+
+  build-console:
+    name: Build nexus-console
+    needs: [detect-changes, test]
+    if: needs.detect-changes.outputs.console == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: nexus-console
+          file: nexus-console/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ env.IMAGE_CONSOLE }}:sha-${{ env.SHORT_SHA }}
+          cache-from: type=gha,scope=nexus-console
+          cache-to: type=gha,mode=max,scope=nexus-console
+
+  release:
+    name: Release (secret, tag→git)
+    needs: [detect-changes, test, build-api, build-console]
+    # `always()` quita el gate implícito de los needs: el resultado de cada uno se exige a mano.
+    if: |
+      always() &&
+      github.event_name != 'pull_request' &&
+      github.ref == 'refs/heads/main' &&
+      needs.test.result == 'success' &&
+      (needs.detect-changes.outputs.api == 'true' || needs.detect-changes.outputs.console == 'true') &&
+      (needs.build-api.result == 'success' || needs.build-api.result == 'skipped') &&
+      (needs.build-console.result == 'success' || needs.build-console.result == 'skipped')
+    runs-on: self-hosted
+    permissions:
+      contents: write   # commit del pin del tag
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      # Solo se crea si falta (primer deploy, antes de que exista la Application): Argo es su dueño después.
+      - name: Namespace
+        run: kubectl get namespace "$NAMESPACE" >/dev/null 2>&1 || kubectl create namespace "$NAMESPACE"
+
+      # Los valores llegan por env y se escriben a archivos temporales: no aparecen en argv ni se
+      # interpolan en el script. Falta uno → el job falla sin tocar el Secret del cluster.
+      - name: Secret nexus-secrets
+        shell: bash
+        env:
+          NEXUS_DB_NAME: ${{ secrets.NEXUS_DB_NAME }}
+          NEXUS_DB_USER: ${{ secrets.NEXUS_DB_USER }}
+          NEXUS_DB_PASSWORD: ${{ secrets.NEXUS_DB_PASSWORD }}
+          NEXUS_JWT_SIGNING_KEY: ${{ secrets.NEXUS_JWT_SIGNING_KEY }}
+          NEXUS_MASTER_KEY: ${{ secrets.NEXUS_MASTER_KEY }}
+          NEXUS_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.NEXUS_BOOTSTRAP_ADMIN_EMAIL }}
+          NEXUS_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.NEXUS_BOOTSTRAP_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYS=(NEXUS_DB_NAME NEXUS_DB_USER NEXUS_DB_PASSWORD NEXUS_JWT_SIGNING_KEY NEXUS_MASTER_KEY
+                NEXUS_BOOTSTRAP_ADMIN_EMAIL NEXUS_BOOTSTRAP_ADMIN_PASSWORD)
+          missing=()
+          for key in "${KEYS[@]}"; do
+            [ -n "${!key:-}" ] || missing+=("$key")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Faltan secrets de GitHub: ${missing[*]}. No se toca el Secret del cluster."
+            exit 1
+          fi
+          workdir=$(mktemp -d)
+          trap 'rm -rf "$workdir"' EXIT
+          args=()
+          for key in "${KEYS[@]}"; do
+            printf '%s' "${!key}" > "$workdir/$key"
+            args+=("--from-file=${key}=${workdir}/${key}")
+          done
+          kubectl create secret generic nexus-secrets -n "$NAMESPACE" "${args[@]}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Pin image tags en git
+        env:
+          API: ${{ needs.detect-changes.outputs.api }}
+          CONSOLE: ${{ needs.detect-changes.outputs.console }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # El pin se re-aplica sobre el main más reciente en cada intento: un rebase chocaría en la
+          # misma línea si otro deploy pineó entre medio.
+          for i in 1 2 3 4 5; do
+            git fetch origin main && git reset --hard origin/main
+            [ "$API" = "true" ] && sed -i -E "s|(image: ${IMAGE_API}:)[^[:space:]]+|\1sha-${SHORT_SHA}|" k8s/api-deployment.yaml
+            [ "$CONSOLE" = "true" ] && sed -i -E "s|(image: ${IMAGE_CONSOLE}:)[^[:space:]]+|\1sha-${SHORT_SHA}|" k8s/console-deployment.yaml
+            git add k8s/api-deployment.yaml k8s/console-deployment.yaml
+            git commit -m "chore(deploy): nexus sha-${SHORT_SHA} [skip ci]" || { echo "Sin cambios de tag"; exit 0; }
+            git push origin HEAD:main && exit 0
+            echo "push rechazado (intento ${i}); reintento sobre origin/main"
+          done
+          echo "::error::No se pudo escribir el tag tras 5 intentos"; exit 1
+
+      # Sin `kubectl set image`: Argo aplica el pin. Primer deploy: la Application nexus todavía no existe
+      # (se mergea en k8s-platforms después de este pin) y no hay rollout que esperar.
+      - name: Esperar que Argo aplique la imagen y verificar rollout
+        env:
+          API: ${{ needs.detect-changes.outputs.api }}
+          CONSOLE: ${{ needs.detect-changes.outputs.console }}
+        run: |
+          set -euo pipefail
+          if ! kubectl -n argocd get application nexus >/dev/null 2>&1; then
+            echo "::notice::Application nexus aún no existe en Argo: tags pineados, sin rollout que verificar."
+            exit 0
+          fi
+          kubectl -n argocd annotate application nexus argocd.argoproj.io/refresh=normal --overwrite
+          for app in nexus-api nexus-console; do
+            [ "$app" = nexus-api ] && { changed="$API"; image="$IMAGE_API"; }
+            [ "$app" = nexus-console ] && { changed="$CONSOLE"; image="$IMAGE_CONSOLE"; }
+            [ "$changed" = "true" ] || continue
+            want="${image}:sha-${SHORT_SHA}"
+            cur=""
+            for _ in $(seq 1 60); do
+              cur=$(kubectl -n "$NAMESPACE" get deployment/${app} -o jsonpath="{.spec.template.spec.containers[?(@.name=='${app}')].image}" 2>/dev/null || true)
+              [ "$cur" = "$want" ] && break
+              sleep 5
+            done
+            if [ "$cur" != "$want" ]; then
+              echo "::error::Argo no aplicó ${want} en 5 min (en el cluster: ${cur}). Revisar la app nexus en Argo."
+              exit 1
+            fi
+            if ! kubectl rollout status deployment/${app} -n "$NAMESPACE" --timeout=10m; then
+              kubectl -n "$NAMESPACE" describe deployment ${app} || true
+              kubectl -n "$NAMESPACE" get events --sort-by=.metadata.creationTimestamp | tail -n 20 || true
+              kubectl -n "$NAMESPACE" logs deployment/${app} --tail=80 || true
+              exit 1
+            fi
+          done
+
+      # Ruta pública viva: sin token la admin API responde 401 a través de túnel → Traefik → nginx → API.
+      - name: Smoke check post-deploy
+        run: |
+          if ! kubectl -n argocd get application nexus >/dev/null 2>&1; then exit 0; fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 https://nexus.mindtechpy.net/api/admin/auth/me)
+          echo "GET /api/admin/auth/me → ${code}"
+          [ "$code" = "401" ]
