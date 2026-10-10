@@ -163,6 +163,11 @@ class UseCaseConfig {
     }
 
     @Bean
+    DiscardOperation discardOperation(OperationRepository operations, AuditRepository audit, ClockPort clock, TransactionRunner tx) {
+        return new DiscardOperation(operations, audit, clock, tx);
+    }
+
+    @Bean
     UpsertIntegration upsertIntegration(IntegrationRepository integrations, ConnectionRepository connections,
                                         TenantRepository tenants, AuditRepository audit, ClockPort clock, TransactionRunner tx) {
         return new UpsertIntegration(integrations, connections, tenants, audit, clock, tx);

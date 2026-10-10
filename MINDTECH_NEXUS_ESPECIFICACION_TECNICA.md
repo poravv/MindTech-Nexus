@@ -175,6 +175,7 @@ PENDING ──claim──► RUNNING ──ok──► SUCCEEDED
                                             FAILED  (resultado definitivo de negocio, p.ej. RECHAZADO)
                                             DEAD    (requiere humano: credenciales, conflicto idempotente, agotado)
 DEAD ──replay (consola, mismo idempotency_key, attempts=0)──► PENDING
+DEAD ──discard (consola, auditado)──► DISCARDED  (terminal: sale de la DLQ sin reprocesar)
 ```
 
 ### 7.2 Claim (worker, cada 500 ms, `nexus.worker.batch-size=10`)

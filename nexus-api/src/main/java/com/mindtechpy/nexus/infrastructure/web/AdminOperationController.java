@@ -1,6 +1,7 @@
 package com.mindtechpy.nexus.infrastructure.web;
 
 import com.mindtechpy.nexus.application.port.out.OperationRepository;
+import com.mindtechpy.nexus.application.usecase.DiscardOperation;
 import com.mindtechpy.nexus.application.usecase.OperationQueries;
 import com.mindtechpy.nexus.application.usecase.ReplayOperation;
 import com.mindtechpy.nexus.domain.integration.Flow;
@@ -55,10 +56,13 @@ class AdminOperationController {
 
     private final OperationQueries operationQueries;
     private final ReplayOperation replayOperation;
+    private final DiscardOperation discardOperation;
 
-    AdminOperationController(OperationQueries operationQueries, ReplayOperation replayOperation) {
+    AdminOperationController(OperationQueries operationQueries, ReplayOperation replayOperation,
+                             DiscardOperation discardOperation) {
         this.operationQueries = operationQueries;
         this.replayOperation = replayOperation;
+        this.discardOperation = discardOperation;
     }
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Lista operaciones, más recientes primero; filtra por integrationId, flow, status y rango; q busca por id, clave idempotente o correlationId")
@@ -100,5 +104,11 @@ class AdminOperationController {
     @PostMapping("/{id}/replay")
     OperationView replay(@RequestParam(required = false) UUID tenantId, @PathVariable UUID id) {
         return OperationView.of(replayOperation.execute(TenantContext.currentUser(), TenantId.of(tenantId), id));
+    }
+
+    @io.swagger.v3.oas.annotations.Operation(summary = "Descarta una operación DEAD sin reprocesarla: pasa a DISCARDED (terminal) y sale de la DLQ; auditado")
+    @PostMapping("/{id}/discard")
+    OperationView discard(@RequestParam(required = false) UUID tenantId, @PathVariable UUID id) {
+        return OperationView.of(discardOperation.execute(TenantContext.currentUser(), TenantId.of(tenantId), id));
     }
 }

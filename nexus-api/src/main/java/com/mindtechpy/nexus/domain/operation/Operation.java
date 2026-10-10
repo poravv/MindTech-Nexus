@@ -92,6 +92,14 @@ public record Operation(UUID id, TenantId tenantId, UUID integrationId, Operatio
         return next(OperationStatus.PENDING, currentStep, 0, now, result, lastError, null, null);
     }
 
+    /** A human closes a dead operation without replaying it; it leaves the DLQ and never runs again. */
+    public Operation discarded(Instant now) {
+        if (status != OperationStatus.DEAD) {
+            throw DomainException.conflict("operation-not-dead", "Solo se pueden descartar operaciones DEAD");
+        }
+        return next(OperationStatus.DISCARDED, currentStep, attempts, nextRunAt, result, lastError, deadReason, now);
+    }
+
     /**
      * A FAILED operation its client asks for again: back to the queue at the failed step with a fresh budget.
      * {@code lastError} is kept, so the saga treats it as a resend and verifies the remote state first.

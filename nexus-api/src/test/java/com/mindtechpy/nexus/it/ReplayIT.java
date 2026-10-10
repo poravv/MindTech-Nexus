@@ -88,6 +88,44 @@ class ReplayIT extends AbstractOperationIT {
     }
 
     @Test
+    void should_take_a_dead_operation_out_of_the_dlq_for_good_when_it_is_discarded() {
+        UUID integration = createIntegration(fastPolicy());
+        Operation op = start(integration, "discard-1");
+        saga.behave(context -> new StepResult.Failed(ConnectorError.of(ErrorKind.AUTH, "unauthorized", "401")));
+        drain();
+        String operator = tokenFor(Role.OPERATOR, tenant);
+
+        JsonNode discarded = body(perform(post("/api/admin/operations/{id}/discard", op.id())
+                .header("Authorization", bearer(operator)), 200));
+
+        assertThat(discarded.get("status").asString()).isEqualTo("DISCARDED");
+        assertThat(discarded.get("deadReason").asString()).isEqualTo("credentials");
+        drain();
+        assertThat(reload(op.id()).status()).isEqualTo(OperationStatus.DISCARDED);
+        JsonNode summary = body(perform(get("/api/admin/operations/summary").param("tenantId", tenant.toString())
+                .header("Authorization", bearer(admin)), 200));
+        assertThat(summary.get("dead").asLong()).isZero();
+        assertThat(body(perform(post("/api/admin/operations/{id}/replay", op.id())
+                .header("Authorization", bearer(operator)), 409)).get("code").asString()).isEqualTo("operation-not-dead");
+        assertThat(body(perform(post("/api/admin/operations/{id}/discard", op.id())
+                .header("Authorization", bearer(operator)), 409)).get("code").asString()).isEqualTo("operation-not-dead");
+        JsonNode audit = body(perform(get("/api/admin/audit").param("tenantId", tenant.toString())
+                .header("Authorization", bearer(admin)), 200));
+        assertThat(audit.findValuesAsString("action")).contains("operation.discarded");
+    }
+
+    @Test
+    void should_forbid_discard_when_role_only_reads_or_operation_is_of_another_tenant() {
+        UUID integration = createIntegration(fastPolicy());
+        Operation op = start(integration, "discard-2");
+
+        perform(post("/api/admin/operations/{id}/discard", op.id())
+                .header("Authorization", bearer(tokenFor(Role.VIEWER, tenant))), 403);
+        perform(post("/api/admin/operations/{id}/discard", op.id())
+                .header("Authorization", bearer(tokenFor(Role.OPERATOR, createTenant(admin)))), 404);
+    }
+
+    @Test
     void should_forbid_replay_when_role_only_reads() {
         UUID integration = createIntegration(fastPolicy());
         Operation op = start(integration, "replay-3");
