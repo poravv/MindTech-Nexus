@@ -1,0 +1,384 @@
+// ---- Facets (rendered inside the dark navigation rail) ----
+
+.facets {
+  // The rail is dark in both themes: status icons use the dark-theme hues here.
+  --color-ok: oklch(79% 0.13 160);
+  --color-info: oklch(78% 0.11 250);
+  --color-warn: oklch(83% 0.12 80);
+  --color-danger: oklch(76% 0.13 25);
+  --color-neutral: oklch(76% 0.014 255);
+  display: grid;
+  gap: var(--space-4);
+  padding-top: var(--space-3);
+  color: var(--color-rail-text);
+}
+
+.facet-title {
+  display: block;
+  padding: 0 var(--space-2) var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-rail-text-muted);
+}
+
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  color: var(--color-rail-text-muted);
+}
+
+.search-box app-icon {
+  position: absolute;
+  left: var(--space-2);
+}
+
+.search-input {
+  width: 100%;
+  min-height: 2rem;
+  padding: 0 1.75rem 0 1.875rem;
+  border: var(--border-width) solid var(--color-rail-border);
+  border-radius: var(--radius-md);
+  background: var(--color-rail-hover);
+  color: var(--color-rail-text-active);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.search-input::placeholder {
+  color: var(--color-rail-text-muted);
+}
+
+.search-input:focus-visible {
+  outline: var(--focus-width) solid var(--color-rail-text-active);
+  outline-offset: 0;
+}
+
+kbd {
+  position: absolute;
+  right: var(--space-2);
+  padding: 0 0.3rem;
+  border: var(--border-width) solid var(--color-rail-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+.facet {
+  display: grid;
+  gap: 1px;
+}
+
+.facet-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 1.875rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.facet-option:hover {
+  background: var(--color-rail-hover);
+}
+
+.facet-option:has(input:checked) {
+  background: var(--color-rail-active);
+  color: var(--color-rail-text-active);
+}
+
+.facet-option input {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+
+.facet-flow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+
+.facet-count {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-rail-text-muted);
+}
+
+.facet-clear {
+  justify-self: start;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--color-rail-text-active);
+  font: inherit;
+  font-size: var(--text-xs);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+// ---- Summary ----
+
+.text-danger {
+  color: var(--color-danger);
+  font-weight: var(--weight-semibold);
+}
+
+.health-bar {
+  display: flex;
+  gap: 2px;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.seg {
+  min-width: 0.5rem;
+}
+
+.h-HEALTHY { background: var(--chart-ok); }
+.h-PROGRESSING { background: var(--chart-info); }
+.h-DEGRADED { background: var(--chart-danger); }
+.h-IDLE { background: var(--chart-neutral); }
+.h-UNKNOWN { background: var(--color-border-strong); }
+
+.health {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.swatch {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 2px;
+}
+
+// ---- Rows / tiles ----
+
+.rows {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "id actions" "route route" "signal signal" "status status";
+  gap: var(--space-3) var(--space-4);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--duration) ease, border-color var(--duration) ease;
+}
+
+.row:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.skeleton {
+  height: 4.5rem;
+  background: linear-gradient(90deg, var(--color-surface) 0%, var(--color-surface-sunken) 50%, var(--color-surface) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@keyframes shimmer {
+  to { background-position: -200% 0; }
+}
+
+.identity {
+  grid-area: id;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.flow-icon {
+  --icon-size: 1.125rem;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-ink);
+}
+
+.names {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text);
+}
+
+.chips {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.chip {
+  padding: 0 0.375rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-neutral-soft);
+  color: var(--color-text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  line-height: 1.6;
+}
+
+.route {
+  grid-area: route;
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.route > div {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr);
+  align-items: center;
+}
+
+.route dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.route dd {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+}
+
+.signal {
+  grid-area: signal;
+  font-size: var(--text-xs);
+  min-width: 0;
+}
+
+.failing {
+  display: grid;
+  gap: 0.125rem;
+  color: var(--color-text);
+}
+
+.failing-what {
+  color: var(--color-danger);
+  font-weight: var(--weight-semibold);
+}
+
+.failing-why {
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.statuses {
+  grid-area: status;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+}
+
+.row-actions {
+  grid-area: actions;
+  flex-wrap: nowrap;
+}
+
+.page-actions {
+  margin-left: auto;
+}
+
+// ---- Empty state ----
+
+.empty-state {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-7) var(--space-4);
+  text-align: center;
+}
+
+.empty-icon {
+  --icon-size: 2rem;
+  color: var(--color-text-faint);
+  margin-bottom: var(--space-2);
+}
+
+.empty-title {
+  font-weight: var(--weight-semibold);
+}
+
+@media (min-width: 64rem) {
+  .rows:not(.tiles) .row {
+    grid-template-columns: minmax(12rem, 1.1fr) minmax(12rem, 1.3fr) minmax(10rem, 1fr) 9.5rem 6.5rem;
+    grid-template-areas: "id route signal status actions";
+  }
+
+  .rows:not(.tiles) .statuses {
+    display: grid;
+    gap: var(--space-1);
+  }
+}
+
+.tiles {
+  grid-template-columns: repeat(auto-fill, minmax(var(--tile-min), 1fr));
+  gap: var(--space-3);
+}
+
+.tiles .row {
+  align-content: start;
+}
+
+.tiles .statuses {
+  padding-top: var(--space-3);
+  border-top: var(--border-width) solid var(--color-border);
+}

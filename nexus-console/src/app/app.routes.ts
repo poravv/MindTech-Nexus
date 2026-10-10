@@ -35,6 +35,12 @@ export const routes: Routes = [
         loadComponent: () => import('./features/integrations/integrations-page'),
       },
       {
+        path: 'integraciones/:id',
+        title: 'Detalle de integración · Nexus',
+        canActivate: [roleGuard(SECTION_ROLES.integrations)],
+        loadComponent: () => import('./features/integrations/integration-detail-page'),
+      },
+      {
         path: 'conexiones',
         title: 'Conexiones · Nexus',
         canActivate: [roleGuard(SECTION_ROLES.connections)],
