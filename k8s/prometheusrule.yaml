@@ -1,0 +1,68 @@
+# Alertas de spec §13 sobre las métricas de /actuator/prometheus (sin tenant_id como label).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: nexus-api
+  namespace: nexus
+  labels:
+    app: nexus-api
+spec:
+  groups:
+    - name: nexus-api
+      rules:
+        - alert: NexusDeadLetterQueueNotEmpty
+          expr: max(nexus_queue_depth{namespace="nexus",status="DEAD"}) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Nexus: {{ $value }} operaciones en la DLQ hace 15 min"
+            description: "Reprocesar o descartar desde la consola (Operaciones → DEAD). La integración sigue DEGRADED hasta resolverlas."
+        - alert: NexusDeadLettersGrowing
+          expr: sum by (flow) (increase(nexus_dead_letters_total{namespace="nexus"}[15m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Nexus: nuevas operaciones DEAD en el flujo {{ $labels.flow }}"
+            description: "{{ $value }} operaciones terminaron DEAD en los últimos 15 min."
+        - alert: NexusOperationsStuck
+          expr: max by (flow) (nexus_operation_oldest_unfinished_age_seconds{namespace="nexus"}) > 86400
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Nexus: operación del flujo {{ $labels.flow }} sin terminar hace más de 24 h"
+            description: "En FISCAL suele ser un DE que SIFEN no decide (SUBMITTED); revisar la operación en la consola."
+        - alert: NexusQueueLag
+          expr: max(nexus_queue_lag_seconds{namespace="nexus"}) > 300
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Nexus: hay operaciones vencidas esperando worker hace {{ $value | humanizeDuration }}"
+            description: "El worker no reclama la cola: revisar el pod nexus-api (NEXUS_WORKER_ENABLED, leases, Postgres)."
+        - alert: NexusConnectorErrorRate
+          expr: |
+            sum by (connector) (rate(nexus_connector_latency_seconds_count{namespace="nexus",outcome=~"transient|uncertain|rate_limited|auth"}[10m]))
+              / sum by (connector) (rate(nexus_connector_latency_seconds_count{namespace="nexus"}[10m])) > 0.2
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Nexus: más del 20 % de las llamadas a {{ $labels.connector }} fallan"
+            description: "Errores de transporte, timeouts, 5xx, 429 o credenciales; los rechazos de negocio no cuentan."
+        - alert: NexusConnectorAuthErrors
+          expr: sum by (connector) (increase(nexus_connector_latency_seconds_count{namespace="nexus",outcome="auth"}[10m])) > 0
+          labels:
+            severity: critical
+          annotations:
+            summary: "Nexus: {{ $labels.connector }} rechaza las credenciales (401/403)"
+            description: "Las operaciones afectadas quedan DEAD(credentials): corregir la conexión y reprocesar."
+        - alert: NexusApiNotReady
+          expr: max(kube_deployment_status_replicas_available{namespace="nexus",deployment="nexus-api"}) < 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Nexus: nexus-api sin réplicas listas hace 5 min"
+            description: "Readiness incluye la DB: revisar el pod y Postgres del namespace nexus."

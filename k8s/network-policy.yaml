@@ -146,6 +146,30 @@ spec:
         - protocol: TCP
           port: 3000
 ---
+# Prometheus (namespace monitoring) scrapea /actuator/prometheus en 8081 (k8s/servicemonitor.yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nexus-api-metrics
+  namespace: nexus
+spec:
+  podSelector:
+    matchLabels:
+      app: nexus-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 8081
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
