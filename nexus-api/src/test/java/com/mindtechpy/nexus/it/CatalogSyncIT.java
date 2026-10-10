@@ -8,6 +8,7 @@ import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationStatus;
 import com.mindtechpy.nexus.domain.operation.OperationStep;
 import com.mindtechpy.nexus.domain.shared.TenantId;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +36,8 @@ class CatalogSyncIT extends AbstractConnectorIT {
 
     @Autowired
     private RunCatalogSync runCatalogSync;
+    @Autowired
+    private MeterRegistry meters;
 
     @Test
     void should_push_every_pos_page_as_one_gifthub_bulk_and_record_product_mappings() {
@@ -63,6 +66,10 @@ class CatalogSyncIT extends AbstractConnectorIT {
                 .containsExactly("1", "2", "3");
         assertThat(jdbc.sql("SELECT count(*) FROM entity_mappings WHERE tenant_id = :t AND entity_type = 'PRODUCT'")
                 .param("t", tenant).query(Long.class).single()).isEqualTo(1001);
+        assertThat(meters.find("nexus.connector.latency").tags("connector", "POS", "operation", "fetch_catalog", "outcome", "ok")
+                .timer().count()).isGreaterThanOrEqualTo(3);
+        assertThat(meters.find("nexus.connector.latency").tags("connector", "GIFTHUB", "operation", "upsert_products", "outcome", "ok")
+                .timer().count()).isGreaterThanOrEqualTo(3);
     }
 
     @Test
@@ -79,6 +86,8 @@ class CatalogSyncIT extends AbstractConnectorIT {
         Operation op = runNow(integration);
         drain();
         assertThat(reload(op.id()).status()).isEqualTo(OperationStatus.RETRY);
+        assertThat(meters.find("nexus.connector.latency").tags("connector", "GIFTHUB", "operation", "upsert_products",
+                "outcome", "transient").timer()).isNotNull();
         makeDue(op.id());
         drain();
 

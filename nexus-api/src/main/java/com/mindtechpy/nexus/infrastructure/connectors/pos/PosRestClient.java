@@ -40,69 +40,79 @@ class PosRestClient implements PosPort {
 
     @Override
     public String resolveCustomer(Endpoint pos, Duration readTimeout, String phoneE164, String name) {
-        Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.POST,
-                "/api/integration/customers/resolve", apiKey(pos), object("phoneE164", phoneE164, "name", name));
-        String customerId = text(requireSuccess(response, false), "customerId");
-        if (customerId == null) {
-            throw new ConnectorException(ConnectorHttp.error(ErrorKind.UNCERTAIN, "pos-invalid-response",
-                    "El POS no devolvió customerId", response));
-        }
-        return customerId;
+        return http.timed("POS", "resolve_customer", () -> {
+            Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.POST,
+                    "/api/integration/customers/resolve", apiKey(pos), object("phoneE164", phoneE164, "name", name));
+            String customerId = text(requireSuccess(response, false), "customerId");
+            if (customerId == null) {
+                throw new ConnectorException(ConnectorHttp.error(ErrorKind.UNCERTAIN, "pos-invalid-response",
+                        "El POS no devolvió customerId", response));
+            }
+            return customerId;
+        });
     }
 
     @Override
     public Order createOrder(Endpoint pos, Duration readTimeout, String idempotencyKey, NewOrder order) {
-        List<Object> items = new ArrayList<>();
-        order.items().forEach(item -> items.add(object("code", item.code(), "quantity", item.quantity())));
-        Object delivery = order.delivery() == null ? null : object("address", order.delivery().address(),
-                "contactName", order.delivery().contactName(), "contactPhone", order.delivery().contactPhone(),
-                "instructions", order.delivery().instructions());
-        Object body = object("channel", order.channel(), "externalRef", order.externalRef(), "customerId", order.customerId(),
-                "branchId", order.branchId(), "warehouseId", order.warehouseId(), "items", items, "delivery", delivery,
-                "shippingCost", order.shippingCost(), "discountAmount", order.discount(),
-                "paymentMethod", order.paymentMethod(), "notes", order.notes());
-        Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.POST, "/api/integration/orders",
-                apiKey(pos).andThen(headers -> headers.set("Idempotency-Key", idempotencyKey)), body);
-        return order(requireSuccess(response, true));
+        return http.timed("POS", "create_order", () -> {
+            List<Object> items = new ArrayList<>();
+            order.items().forEach(item -> items.add(object("code", item.code(), "quantity", item.quantity())));
+            Object delivery = order.delivery() == null ? null : object("address", order.delivery().address(),
+                    "contactName", order.delivery().contactName(), "contactPhone", order.delivery().contactPhone(),
+                    "instructions", order.delivery().instructions());
+            Object body = object("channel", order.channel(), "externalRef", order.externalRef(), "customerId", order.customerId(),
+                    "branchId", order.branchId(), "warehouseId", order.warehouseId(), "items", items, "delivery", delivery,
+                    "shippingCost", order.shippingCost(), "discountAmount", order.discount(),
+                    "paymentMethod", order.paymentMethod(), "notes", order.notes());
+            Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.POST, "/api/integration/orders",
+                    apiKey(pos).andThen(headers -> headers.set("Idempotency-Key", idempotencyKey)), body);
+            return order(requireSuccess(response, true));
+        });
     }
 
     @Override
     public Optional<Order> findOrder(Endpoint pos, Duration readTimeout, String channel, String externalRef) {
-        Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.GET, orderPath(channel, externalRef),
-                apiKey(pos), null);
-        return response.status() == 404 ? Optional.empty() : Optional.of(order(requireSuccess(response, false)));
+        return http.timed("POS", "find_order", () -> {
+            Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.GET, orderPath(channel, externalRef),
+                    apiKey(pos), null);
+            return response.status() == 404 ? Optional.empty() : Optional.of(order(requireSuccess(response, false)));
+        });
     }
 
     @Override
     public Optional<Order> cancelOrder(Endpoint pos, Duration readTimeout, String channel, String externalRef, String reason) {
-        Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.POST,
-                orderPath(channel, externalRef) + "/cancel", apiKey(pos), object("reason", reason));
-        if (response.status() == 404) {
-            return Optional.empty();
-        }
-        if (response.status() == 409) {
-            throw new ConnectorException(ConnectorHttp.error(ErrorKind.REJECTED, "pos-order-not-pending",
-                    text(response.body(), "message"), response));
-        }
-        return Optional.of(order(requireSuccess(response, false)));
+        return http.timed("POS", "cancel_order", () -> {
+            Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.POST,
+                    orderPath(channel, externalRef) + "/cancel", apiKey(pos), object("reason", reason));
+            if (response.status() == 404) {
+                return Optional.empty();
+            }
+            if (response.status() == 409) {
+                throw new ConnectorException(ConnectorHttp.error(ErrorKind.REJECTED, "pos-order-not-pending",
+                        text(response.body(), "message"), response));
+            }
+            return Optional.of(order(requireSuccess(response, false)));
+        });
     }
 
     @Override
     public CatalogPage fetchCatalog(Endpoint pos, Duration readTimeout, int page, int limit) {
-        Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.GET,
-                "/api/integration/catalog?page=" + page + "&limit=" + limit, apiKey(pos), null);
-        JsonNode body = requireSuccess(response, false);
-        if (!body.path("items").isArray() || !body.path("total").isNumber()) {
-            throw new ConnectorException(ConnectorHttp.error(ErrorKind.UNCERTAIN, "pos-invalid-response",
-                    "El catálogo del POS no trae items/total", response));
-        }
-        List<CatalogItem> items = new ArrayList<>();
-        for (JsonNode item : body.path("items")) {
-            items.add(new CatalogItem(text(item, "code"), text(item, "name"), item.path("price").decimalValue(),
-                    item.path("stockQty").decimalValue(), item.path("tracked").asBoolean(true), text(item, "category"),
-                    text(item, "imageUrl")));
-        }
-        return new CatalogPage(items, body.path("page").asInt(page), body.path("limit").asInt(limit), body.path("total").asLong());
+        return http.timed("POS", "fetch_catalog", () -> {
+            Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.GET,
+                    "/api/integration/catalog?page=" + page + "&limit=" + limit, apiKey(pos), null);
+            JsonNode body = requireSuccess(response, false);
+            if (!body.path("items").isArray() || !body.path("total").isNumber()) {
+                throw new ConnectorException(ConnectorHttp.error(ErrorKind.UNCERTAIN, "pos-invalid-response",
+                        "El catálogo del POS no trae items/total", response));
+            }
+            List<CatalogItem> items = new ArrayList<>();
+            for (JsonNode item : body.path("items")) {
+                items.add(new CatalogItem(text(item, "code"), text(item, "name"), item.path("price").decimalValue(),
+                        item.path("stockQty").decimalValue(), item.path("tracked").asBoolean(true), text(item, "category"),
+                        text(item, "imageUrl")));
+            }
+            return new CatalogPage(items, body.path("page").asInt(page), body.path("limit").asInt(limit), body.path("total").asLong());
+        });
     }
 
     private static JsonNode requireSuccess(Response response, boolean creatingOrder) {

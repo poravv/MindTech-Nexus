@@ -94,7 +94,7 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/admin/tenants
 - **Saga `ISSUE_INVOICE`** (`[NEXUS-FISCAL]`): `SUBMIT` → (`TRACK` si SIFEN quedó en `PENDIENTE_ENVIO`/`EN_PROCESO`: consultas a 1 m, 5 m, 15 m, 1 h y cada 6 h, máximo 72 h). Todo reenvío va precedido de una verificación `GET /facturas/{transactionId}`: si existe se adopta, solo un 404 reenvía y siempre con el mismo `transactionId`. Un DE emitido no se compensa: se anula con `CANCEL_INVOICE` (paso `SUBMIT_CANCEL`, mismo criterio de verificación).
 - **Errores SIFEN**: timeout o 5xx tras un `POST` → `UNCERTAIN`; 409 `EMISION_EN_CURSO` → espera `Retry-After` sin gastar intento; 409 `IDEMPOTENCY_CONFLICT` → `DEAD`; 401/403 → `DEAD credentials`; 400/402/404/409 `BUSINESS_RULE`/422 → `FAILED` con el mensaje de SIFEN; 429 → `Retry-After`; 200 `RECHAZADO` → `FAILED` y la factura queda `REJECTED` con `providerCode`/`providerMessage`.
 - **Webhook** `POST /api/v1/webhooks/sifen/{connectionId}` (registrar en SIFEN la URL pública): firma `X-Webhook-Signature` ±300 s, dedupe por `eventId` (`inbound_events`), cuerpo ≤ 256 KB. El evento solo adelanta la consulta a SIFEN de la operación en espera; el estado siempre se lee de SIFEN.
-- **Métrica**: `nexus_connector_latency_seconds{connector="SIFEN",operation,outcome}`.
+- **Métrica**: `nexus_connector_latency_seconds{connector="SIFEN",operation,outcome}`; POS y GiftHub registran la misma con `connector="POS"|"GIFTHUB"`, `operation` en snake_case (`fetch_catalog`, `create_order`, `upsert_products`…) y `outcome` = `ok` o el `ErrorKind` en minúsculas.
 
 Errores en `application/problem+json` con `type` `https://nexus.mindtechpy.net/problems/<code>`, `code` y `correlationId` (`X-Correlation-Id`).
 
