@@ -52,7 +52,8 @@ spec:
               name: http
             - containerPort: 8081
               name: management
-          # Todas las claves de nexus-secrets son NEXUS_* y la app las lee con ese nombre.
+          # Todas las claves de nexus-secrets son NEXUS_* y la app las lee con ese nombre. NEXUS_MASTER_KEY_PREVIOUS
+          # solo existe durante una rotación de la master key (ADR-006).
           envFrom:
             - secretRef:
                 name: nexus-secrets

@@ -27,5 +27,14 @@ public interface ConnectionRepository {
 
     List<Connection> findAll(TenantId tenantId);
 
+    /** Every connection of every tenant, only for the master-key rotation. */
+    List<Connection> findAllTenants();
+
+    /**
+     * Compare-and-set of the sealed credentials: writes {@code next} only while the row still holds
+     * {@code expected}, so a credential edited from the console meanwhile is never overwritten.
+     */
+    boolean replaceCredentials(TenantId tenantId, UUID id, byte[] expected, byte[] next);
+
     void recordTest(TenantId tenantId, UUID id, Instant testedAt, boolean ok);
 }

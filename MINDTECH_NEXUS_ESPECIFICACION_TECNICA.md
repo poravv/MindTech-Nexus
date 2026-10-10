@@ -135,7 +135,7 @@ MindTech-Nexus/
 
 ### 5.3 Secretos y credenciales de conexión
 - Secret K8s `nexus-secrets` (creado por CI desde GitHub Secrets, mismos nombres que el `.env` local gitignored): `NEXUS_DB_NAME`, `NEXUS_DB_USER`, `NEXUS_DB_PASSWORD`, `NEXUS_MASTER_KEY` (32 bytes base64), `NEXUS_JWT_SIGNING_KEY`, `NEXUS_BOOTSTRAP_ADMIN_EMAIL`, `NEXUS_BOOTSTRAP_ADMIN_PASSWORD`. El Deployment de Postgres toma `POSTGRES_DB/USER/PASSWORD` del mismo Secret.
-- `connections.credentials_enc`: JSON de credenciales (`accessKey`+`secretKey` SIFEN; `apiKey` GiftHub; `apiKey` POS) cifrado **AES-256-GCM** con `NEXUS_MASTER_KEY`, nonce de 12 bytes aleatorio por registro, AAD = `tenant_id:connection_id`. La consola nunca devuelve el valor; "probar conexión" ejecuta un `GET` inocuo del conector. Rotación: editar credencial = nuevo cifrado + audit.
+- `connections.credentials_enc`: JSON de credenciales (`accessKey`+`secretKey` SIFEN; `apiKey` GiftHub; `apiKey` POS) cifrado **AES-256-GCM** con `NEXUS_MASTER_KEY`, nonce de 12 bytes aleatorio por registro, AAD = `tenant_id:connection_id`. La consola nunca devuelve el valor; "probar conexión" ejecuta un `GET` inocuo del conector. Rotación: editar credencial = nuevo cifrado + audit. Rotación de la master key: `NEXUS_MASTER_KEY_PREVIOUS` opcional y recifrado al arrancar (ADR-006).
 - Logging con masking (`Authorization`, `X-Secret-Key`, `X-Signature`, `apiKey`, `secret`) vía `MaskingJsonLayout`; nunca se loguean cuerpos de credenciales ni PII completa (teléfono se trunca a los últimos 4 dígitos).
 
 ### 5.4 SSRF y entrada

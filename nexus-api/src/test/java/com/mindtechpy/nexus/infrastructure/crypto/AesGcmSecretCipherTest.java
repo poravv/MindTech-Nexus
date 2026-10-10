@@ -18,7 +18,7 @@ class AesGcmSecretCipherTest {
     private static final ConnectionCredentials CREDENTIALS =
             new ConnectionCredentials(Map.of("accessKey", "ak-123", "secretKey", "very-secret-value"));
 
-    private final AesGcmSecretCipher cipher = new AesGcmSecretCipher(randomKey(), JsonMapper.builder().build());
+    private final AesGcmSecretCipher cipher = new AesGcmSecretCipher(randomKey(), null, JsonMapper.builder().build());
 
     @Test
     void should_round_trip_when_aad_matches() {
@@ -48,7 +48,7 @@ class AesGcmSecretCipherTest {
     @Test
     void should_fail_when_key_differs() {
         byte[] sealed = cipher.seal(CREDENTIALS, "tenant-a:conn-1");
-        AesGcmSecretCipher otherKey = new AesGcmSecretCipher(randomKey(), JsonMapper.builder().build());
+        AesGcmSecretCipher otherKey = new AesGcmSecretCipher(randomKey(), null, JsonMapper.builder().build());
 
         assertThatThrownBy(() -> otherKey.open(sealed, "tenant-a:conn-1")).isInstanceOf(DomainException.class);
     }
@@ -62,8 +62,31 @@ class AesGcmSecretCipherTest {
     void should_reject_key_when_not_32_bytes() {
         String shortKey = Base64.getEncoder().encodeToString(new byte[16]);
 
-        assertThatThrownBy(() -> new AesGcmSecretCipher(shortKey, JsonMapper.builder().build()))
+        assertThatThrownBy(() -> new AesGcmSecretCipher(shortKey, null, JsonMapper.builder().build()))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void should_open_with_the_previous_key_during_a_rotation_and_seal_with_the_current_one() {
+        String oldKey = randomKey();
+        String newKey = randomKey();
+        byte[] sealedWithOld = new AesGcmSecretCipher(oldKey, null, JsonMapper.builder().build()).seal(CREDENTIALS, "a:b");
+        AesGcmSecretCipher rotating = new AesGcmSecretCipher(newKey, oldKey, JsonMapper.builder().build());
+
+        assertThat(rotating.open(sealedWithOld, "a:b")).isEqualTo(CREDENTIALS);
+        byte[] resealed = rotating.resealWithCurrentKey(sealedWithOld, "a:b").orElseThrow();
+        assertThat(new AesGcmSecretCipher(newKey, null, JsonMapper.builder().build()).open(resealed, "a:b")).isEqualTo(CREDENTIALS);
+        assertThat(rotating.resealWithCurrentKey(resealed, "a:b")).isEmpty();
+    }
+
+    @Test
+    void should_fail_to_reseal_when_no_configured_key_opens_the_credentials() {
+        byte[] foreign = new AesGcmSecretCipher(randomKey(), null, JsonMapper.builder().build()).seal(CREDENTIALS, "a:b");
+        AesGcmSecretCipher rotating = new AesGcmSecretCipher(randomKey(), randomKey(), JsonMapper.builder().build());
+
+        assertThatThrownBy(() -> rotating.resealWithCurrentKey(foreign, "a:b"))
+                .isInstanceOf(DomainException.class)
+                .hasFieldOrPropertyWithValue("code", "credentials-unreadable");
     }
 
     private static String randomKey() {

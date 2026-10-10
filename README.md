@@ -32,6 +32,7 @@ cd nexus-api && ./mvnw -B verify
 | `NEXUS_DB_NAME`, `NEXUS_DB_USER`, `NEXUS_DB_PASSWORD` | Base de datos (`SPRING_DATASOURCE_URL` la sobreescribe) |
 | `NEXUS_JWT_SIGNING_KEY` | base64, ≥ 256 bits. Firma HS256 de los tokens de Nexus |
 | `NEXUS_MASTER_KEY` | base64, 32 bytes. Cifra las credenciales de conexiones |
+| `NEXUS_MASTER_KEY_PREVIOUS` | Opcional, solo durante una rotación de la master key: la clave saliente (ver "Rotar la master key") |
 | `NEXUS_BOOTSTRAP_ADMIN_EMAIL`, `NEXUS_BOOTSTRAP_ADMIN_PASSWORD` | Primer `platform_admin` si no hay usuarios; debe cambiar la contraseña al entrar |
 | `NEXUS_WORKER_ENABLED` | `true` (default) corre el worker de operaciones y sus jobs en este proceso |
 | `NEXUS_CONNECTORS_ALLOWED_HOSTS` | Allowlist de hosts para `baseUrl` (default `*.svc.cluster.local`; perfil `local` agrega `localhost`, `host.docker.internal`) |
@@ -128,5 +129,12 @@ Errores en `application/problem+json` con `type` `https://nexus.mindtechpy.net/p
 - `k8s/` lo sincroniza Argo CD (Application `nexus` en `k8s-platforms/argocd/apps/nexus.yaml`), namespace `nexus`. Única entrada pública: `https://nexus.mindtechpy.net` → `nexus-console`; la consola hace proxy de `/api/admin/` y `/api/v1/webhooks/` a `nexus-api:8080`.
 - `.github/workflows/deploy.yml`: en PR corre tests y build sin push; en `main` publica `ghcr.io/poravv/mindtech-nexus-{api,console}:sha-<7>`, crea el Secret `nexus-secrets` y commitea el tag en `k8s/*-deployment.yaml` (`chore(deploy): nexus sha-<7> [skip ci]`). Rollback = revertir ese commit.
 - GitHub Secrets del repo: `NEXUS_DB_NAME`, `NEXUS_DB_USER`, `NEXUS_DB_PASSWORD`, `NEXUS_JWT_SIGNING_KEY`, `NEXUS_MASTER_KEY`, `NEXUS_BOOTSTRAP_ADMIN_EMAIL`, `NEXUS_BOOTSTRAP_ADMIN_PASSWORD`. El job `release` corre en el runner self-hosted del cluster (kubectl ya configurado): el repo necesita ese runner registrado.
+- `NEXUS_MASTER_KEY_PREVIOUS` es un GitHub Secret opcional: `deploy.yml` lo agrega a `nexus-secrets` solo si existe y, al quitarlo, el `kubectl apply` del Secret lo borra. El Deployment lo recibe por `envFrom`, sin cambios en el manifiesto.
+- **Rotar la master key** (ADR-006; sin downtime y sin perder credenciales):
+  1. `openssl rand -base64 32` → clave nueva. Guardar la actual: los backups previos solo se restauran con ella.
+  2. GitHub Secrets: `NEXUS_MASTER_KEY_PREVIOUS` = la clave actual, `NEXUS_MASTER_KEY` = la nueva (las dos en el mismo paso: con solo la nueva, nada descifra).
+  3. `gh workflow run deploy.yml -f deploy_api=true` reescribe el Secret. Si el tag no cambia no hay rollout: reiniciar el pod con `gh workflow run ops-runbook.yml -R poravv/k8s-platforms -f action=delete-pod -f namespace=nexus -f target=<pod nexus-api>`.
+  4. Al arrancar con `NEXUS_MASTER_KEY_PREVIOUS`, la API descifra con cualquiera de las dos y recifra con la nueva toda credencial que siga con la anterior (idempotente, compare-and-set por fila, audit `connection.credentials-recrypted` por conexión). Verificar el log `[NEXUS-RECRYPT] fin: Result[recrypted=…, alreadyCurrent=…, unreadable=0, changedMeanwhile=…]`.
+  5. Con `unreadable=0`: borrar `NEXUS_MASTER_KEY_PREVIOUS` de GitHub Secrets, correr el paso 3 otra vez. Con `unreadable > 0` no quitarla: esas filas (audit `connection.recrypt-failed`) no abren con ninguna de las dos claves y quedan intactas; se corrigen volviendo a cargar la credencial desde la consola.
 - **Primer despliegue**: el tag inicial de `k8s/*-deployment.yaml` no corresponde a una imagen publicada. El primer run de `deploy.yml` en `main` construye ambas imágenes y pinea el tag real; recién después se mergea la Application en `k8s-platforms` para que Argo sincronice. Luego hacer públicos los paquetes GHCR (`k8s-platforms/docs/ghcr-public-packages.md`).
 - Backups: CronJob `postgres-backup` (02:30) con dump local en `backup-pvc` y copia cifrada a R2 bajo `nexus/`; el Secret `backup-r2` lo crea `k8s-platforms` (`BACKUP_NAMESPACES`). Probar con `gh workflow run ops-runbook.yml -R poravv/k8s-platforms -f action=run-backup -f namespace=nexus -f target=postgres-backup` y revisar el tamaño del dump.
