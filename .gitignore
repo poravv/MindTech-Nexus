@@ -10,4 +10,5 @@ dist/
 .idea/
 .vscode/
 .DS_Store
-local-stack/
+local-stack/*
+!local-stack/punto-venta.override.yml

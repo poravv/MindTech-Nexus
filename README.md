@@ -107,6 +107,22 @@ Errores en `application/problem+json` con `type` `https://nexus.mindtechpy.net/p
 - **Webhook** `POST /api/v1/webhooks/gifthub/{connectionId}` (público, sin token): HMAC `v1=` con cualquiera de las firmas de rotación, ±300 s, dedupe por `X-GiftHub-Delivery` en `inbound_events`, cuerpo ≤ 256 KB (413), rate limit por conexión (429). Si la integración no acepta trabajo responde 429 para que GiftHub reintente.
 - **Alta (una vez)**: en GiftHub un super admin habilita `integrationsEnabled` del negocio; la dueña crea la integración, copia API key y secreto, y carga el webhook `https://nexus.mindtechpy.net/api/v1/webhooks/gifthub/{connectionId}` con eventos `order.created` y `order.cancelled` e "Incluir datos del cliente". En el POS se crea la API key de integración con los tres scopes, y el cliente m2m de Nexus del tenant necesita `orders:write`.
 
+## E2E local (POS + SIFEN + GiftHub reales)
+
+`scripts/e2e-local.sh [setup] [fiscal] [catalog] [order] [ops]` (sin argumentos, todas) recorre los cinco escenarios contra los stacks locales y sale ≠ 0 en el primero que falla. Tarda ~10-20 min: SIFEN en modo mock a veces deja el DE en `PENDIENTE_ENVIO` y lo reenvía cada 5 min.
+
+| Stack | Cómo levantarlo | URL |
+|---|---|---|
+| Nexus | `docker compose --env-file .env up -d --build` (postgres, `nexus-api`, `nexus-console`) | consola http://localhost:4200, API :8090 / :8091 |
+| POS (`feat/nexus-integration`) | `docker compose -p punto-venta -f ../punto-venta-nexus/docker-compose.yml -f local-stack/punto-venta.override.yml --project-directory ../punto-venta-nexus up -d --build` | http://localhost:5175, API :3001 |
+| GiftHub (`feat/nexus-external-order`) | `docker compose -p gift-hub up -d --build` en su worktree, con `SETTINGS_ENCRYPTION_KEY` y `WEBHOOKS_ALLOW_LOCAL_HTTP=true` en su `.env` | http://localhost:5173, API :3000 |
+| SIFEN (mock) | stack de `electronico-sifen` con `APP_WEBHOOKS_SSRF_GUARD_ENABLED=false` en su override local | http://localhost:5174, API :8083 |
+
+- Credenciales en `.env.local-stack` (gitignored): `NEXUS_E2E_ADMIN_*`, `POS_TENANT_ADMIN_*`, `SIFEN_API_*`, `GIFTHUB_OWNER_*`. Lo que el script crea (cliente m2m, API key del POS, integración de GiftHub) se agrega ahí la primera vez.
+- Los contenedores se ven por `host.docker.internal` (allowlist del perfil `local`). GiftHub solo llama a `http://` y redes privadas con `WEBHOOKS_ALLOW_LOCAL_HTTP=true`, que no arranca con `NODE_ENV=production`.
+- Una vez, como SUPER_ADMIN de SIFEN: webhook del emisor a `http://host.docker.internal:8090/api/v1/webhooks/sifen/{connectionId}` con el secreto `SIFEN_E2E_WEBHOOK_SECRET`. Sin él la emisión igual termina por consulta (1 m, 5 m).
+- El script ajusta datos de prueba del tenant del POS (punto de expedición mapeado a SIFEN, modo `ELECTRONIC`) y apaga mientras dura cada caso `posDeferPayment` (venta a crédito) y `allowNegativeStock` (pedido sin stock), restaurándolos.
+
 ## Despliegue (cluster mindtechpy, GitOps)
 
 - `k8s/` lo sincroniza Argo CD (Application `nexus` en `k8s-platforms/argocd/apps/nexus.yaml`), namespace `nexus`. Única entrada pública: `https://nexus.mindtechpy.net` → `nexus-console`; la consola hace proxy de `/api/admin/` y `/api/v1/webhooks/` a `nexus-api:8080`.

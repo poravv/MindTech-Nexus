@@ -1,0 +1,37 @@
+# Override LOCAL de punto-venta para el E2E de Nexus (versionado aca: docker-compose.override.yml no esta en el .gitignore del POS).
+# Uso (rama feat/nexus-integration en el worktree punto-venta-nexus; -p conserva volúmenes y datos):
+#   (desde la raíz de MindTech-Nexus) docker compose -p punto-venta -f ../punto-venta-nexus/docker-compose.yml -f local-stack/punto-venta.override.yml --project-directory ../punto-venta-nexus up -d --build
+# - 3000/5173 del host los usa gift-hub: backend -> 3001, frontend -> 5175.
+# - Electronica disponible en la instalacion; la emision va por Nexus (API en el host :8090). Cada tenant carga su cliente m2m de Nexus (PUT /fiscal-credentials).
+# - Mail al Mailpit local de electronico-sifen (nunca al SMTP real del .env del repo).
+services:
+  backend:
+    environment:
+      ELECTRONIC_INVOICE_ENABLED: "true"
+      NEXUS_BASE_URL: "http://host.docker.internal:8090"
+      CORS_ORIGINS: "http://localhost:5175"
+      FRONTEND_URL: "http://localhost:5175"
+      MAIL_HOST: mailpit
+      MAIL_PORT: "1025"
+      MAIL_USERNAME: local
+      MAIL_PASSWORD: local
+      MAIL_FROM: no-reply@pos.local
+      NODE_EXTRA_CA_CERTS: /certs/mailpit.crt
+    volumes:
+      - ../electronico-sifen/.local-stack/mailpit.crt:/certs/mailpit.crt:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports: !override
+      - "3001:3000"
+    networks:
+      - punto-venta-network
+      - sifen
+
+  frontend:
+    ports: !override
+      - "5175:5173"
+
+networks:
+  sifen:
+    external: true
+    name: electronico-sifen_default
