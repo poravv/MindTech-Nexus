@@ -1,0 +1,138 @@
+# Backup de Postgres de Nexus (copiado de punto-venta/k8s/backup-cronjobs.yaml): dump local en backup-pvc
+# (30 días) + copia off-site cifrada (rclone crypt) en R2 bajo r2:<bucket>/nexus.
+# El Secret backup-r2 lo crea k8s-platforms (platforms-deploy.yml, BACKUP_NAMESPACES). Sin él el Job falla
+# después de dejar el dump local, y Alertmanager avisa (KubeJobFailed).
+# El dump NO contiene credenciales de conexión en claro: van cifradas con NEXUS_MASTER_KEY (ADR-006);
+# restaurar en otro cluster exige la misma master key.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: nexus
+spec:
+  schedule: "30 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: backup
+            backup-target: postgres
+        spec:
+          restartPolicy: OnFailure
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            fsGroup: 70
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: pg-dump
+              image: postgres:16.10-alpine
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+              env:
+                - name: PGHOST
+                  value: postgres
+                - name: PGDATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: nexus-secrets
+                      key: NEXUS_DB_NAME
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: nexus-secrets
+                      key: NEXUS_DB_USER
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: nexus-secrets
+                      key: NEXUS_DB_PASSWORD
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  mkdir -p /backups/postgres
+                  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+                  file="/backups/postgres/nexus_${stamp}.dump"
+                  echo "pg_dump host=${PGHOST} db=${PGDATABASE} -> ${file}"
+                  if ! pg_dump -Fc -f "${file}"; then
+                    rm -f "${file}"; echo "ERROR: pg_dump fallo; NO se purgan backups viejos"; exit 1
+                  fi
+                  # Un dump con esquema Flyway y datos pesa decenas de KB; uno de pocos bytes es vacío o fallido.
+                  size="$(stat -c %s "${file}")"
+                  if [ "${size}" -le 10240 ]; then
+                    rm -f "${file}"; echo "ERROR: dump de ${size} bytes (mínimo 10240); NO se purgan backups viejos"; exit 1
+                  fi
+                  find /backups/postgres -type f -name 'nexus_*.dump' -mtime +30 -delete
+                  basename "${file}" > /backups/postgres/.latest
+                  echo "Backup local OK: $(basename "${file}") ${size} bytes"
+          containers:
+            - name: r2-offsite
+              image: rclone/rclone:1.68.2
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+              env:
+                - { name: HOME, value: /tmp }
+                - { name: RCLONE_CONFIG_R2_TYPE, value: s3 }
+                - { name: RCLONE_CONFIG_R2_PROVIDER, value: Cloudflare }
+                - { name: RCLONE_CONFIG_R2_ACL, value: private }
+                - name: RCLONE_CONFIG_R2_ACCESS_KEY_ID
+                  valueFrom: { secretKeyRef: { name: backup-r2, key: R2_ACCESS_KEY_ID, optional: true } }
+                - name: RCLONE_CONFIG_R2_SECRET_ACCESS_KEY
+                  valueFrom: { secretKeyRef: { name: backup-r2, key: R2_SECRET_ACCESS_KEY, optional: true } }
+                - name: RCLONE_CONFIG_R2_ENDPOINT
+                  valueFrom: { secretKeyRef: { name: backup-r2, key: R2_ENDPOINT, optional: true } }
+                - name: R2_BUCKET
+                  valueFrom: { secretKeyRef: { name: backup-r2, key: R2_BUCKET, optional: true } }
+                - name: BACKUP_ENCRYPTION_KEY
+                  valueFrom: { secretKeyRef: { name: backup-r2, key: BACKUP_ENCRYPTION_KEY, optional: true } }
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+                  readOnly: true
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  for v in R2_BUCKET RCLONE_CONFIG_R2_ACCESS_KEY_ID RCLONE_CONFIG_R2_SECRET_ACCESS_KEY RCLONE_CONFIG_R2_ENDPOINT BACKUP_ENCRYPTION_KEY; do
+                    eval "val=\${$v:-}"
+                    [ -n "$val" ] || { echo "ERROR: falta $v en backup-r2: sin copia off-site"; exit 1; }
+                  done
+                  export RCLONE_CONFIG_R2CRYPT_TYPE=crypt
+                  export RCLONE_CONFIG_R2CRYPT_DIRECTORY_NAME_ENCRYPTION=false
+                  export RCLONE_CONFIG_R2CRYPT_REMOTE="r2:${R2_BUCKET}/nexus"
+                  export RCLONE_CONFIG_R2CRYPT_PASSWORD="$(rclone obscure "$BACKUP_ENCRYPTION_KEY")"
+                  file="$(cat /backups/postgres/.latest)"
+                  # Tope de costo (plan gratis R2: 10 GB): un dump > 200 MiB no se sube y el Job falla.
+                  size="$(stat -c %s "/backups/postgres/${file}")"
+                  if [ "${size}" -gt 209715200 ]; then
+                    echo "ERROR: ${file} pesa ${size} bytes (> 200 MiB); no se sube a R2"; exit 1
+                  fi
+                  echo "Subiendo ${file} (${size} bytes) cifrado a r2:${R2_BUCKET}/nexus/postgres/ ..."
+                  rclone copy "/backups/postgres/${file}" r2crypt:postgres/ --s3-no-check-bucket
+                  # rclone copy puede salir 0 sin subir nada: se verifica el objeto cifrado contra el local.
+                  rclone cryptcheck /backups/postgres r2crypt:postgres --one-way --include "${file}"
+                  rclone delete r2crypt:postgres/ --min-age 14d
+                  echo "Copia off-site verificada: ${file}"
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: backup-pvc
