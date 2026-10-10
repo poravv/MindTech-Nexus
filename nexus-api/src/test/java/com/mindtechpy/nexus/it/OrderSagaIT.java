@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.Map;
 import java.util.UUID;
@@ -54,9 +55,14 @@ class OrderSagaIT extends AbstractConnectorIT {
         assertThat(sale.propertyNames()).containsExactlyInAnyOrder("channel", "externalRef", "customerId", "items",
                 "delivery", "paymentMethod", "notes");
         assertThat(sale.get("customerId").asString()).isEqualTo("c-maria");
+        assertThat(sale.get("items")).hasSize(2);
         assertThat(sale.get("items").get(0).get("code").asString()).isEqualTo("SKU-1001");
         assertThat(sale.get("items").get(0).get("quantity").asInt()).isEqualTo(2);
-        assertThat(sale.get("notes").asString()).contains("BH-7Q2K", "Sin cebolla", "Extra cheddar");
+        assertThat(sale.get("items").get(1).get("code").asString()).isEqualTo("SKU-2001");
+        assertThat(sale.get("items").get(1).get("quantity").asInt()).isEqualTo(2);
+        assertThat(sale.get("notes").asString()).contains("BH-7Q2K", "Sin cebolla", "Punto: A punto",
+                "Envío GiftHub: Gs. 10000", "Total GiftHub: Gs. 91000");
+        assertThat(done.result()).containsEntry("giftHubTotal", 91000).containsEntry("totalMismatch", false);
         assertThat(jsonOf(posRequests("POST", "/api/integration/customers/resolve").getFirst()).get("phoneE164").asString())
                 .isEqualTo("+595981123456");
 
@@ -95,6 +101,41 @@ class OrderSagaIT extends AbstractConnectorIT {
 
         assertThat(reload(UUID.fromString(received.get("operationId").asString())).status()).isEqualTo(OperationStatus.SUCCEEDED);
         assertThat(jsonOf(posRequests("POST", "/api/integration/orders").getFirst()).has("paymentMethod")).isFalse();
+    }
+
+    @Test
+    void should_create_the_sale_and_record_the_mismatch_when_the_pos_total_differs_from_gifthub() {
+        stubPos(post(urlPathEqualTo(pos("/api/integration/orders"))).willReturn(jsonResponse(
+                SALE.replace("\"total\":91000", "\"total\":81000"), 201)));
+
+        Operation op = receiveOrder(maria());
+        drain();
+
+        Operation done = reload(op.id());
+        assertThat(done.status()).isEqualTo(OperationStatus.SUCCEEDED);
+        assertThat(done.result()).containsEntry("total", 81000).containsEntry("giftHubTotal", 91000)
+                .containsEntry("totalMismatch", true);
+        assertThat(giftHubRequests("POST", "/orders/" + orderId + "/status")).hasSize(1);
+    }
+
+    @Test
+    void should_cancel_in_gifthub_without_calling_the_pos_when_a_topping_has_no_pos_code() {
+        stubGiftHub(get(urlPathEqualTo(gh("/orders/" + orderId))).willReturn(okJson(giftHubOrder(orderId, "PENDING", "PENDING", "DELIVERY"))));
+        String delivery = UUID.randomUUID().toString();
+        JsonNode event = json.readTree(orderCreated(delivery, orderId, maria()));
+        ((ObjectNode) event.at("/data/order/items/0/toppings/0")).remove("external_id");
+        JsonNode received = sendSigned(delivery, event.toString(), 200);
+
+        drain();
+
+        Operation failed = reload(UUID.fromString(received.get("operationId").asString()));
+        assertThat(failed.status()).isEqualTo(OperationStatus.FAILED);
+        assertThat(failed.lastError().code()).isEqualTo("unknown-product");
+        assertThat(failed.lastError().detail()).contains("Extra cheddar");
+        assertThat(posRequests("POST", "/api/integration/orders")).isEmpty();
+        var cancel = giftHubRequests("POST", "/orders/" + orderId + "/status");
+        assertThat(cancel).hasSize(1);
+        assertThat(jsonOf(cancel.getFirst()).get("status").asString()).isEqualTo("CANCELLED");
     }
 
     @Test

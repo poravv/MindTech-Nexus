@@ -23,16 +23,19 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import static java.lang.System.Logger.Level.INFO;
+import static java.lang.System.Logger.Level.WARNING;
 
 /**
  * {@code [NEXUS-ORDER]} GiftHub order → POS channel sale (spec §10.1). Steps:
  * {@code RESOLVE_CUSTOMER} (phone → POS customer, or the connection's {@code defaultCustomerId}) →
- * {@code CREATE_ORDER} (POS sale {@code PENDING}, {@code Idempotency-Key = GIFTHUB:{orderId}}; after an
- * uncertain attempt it first looks the sale up and adopts it) → {@code NOTIFY_GIFTHUB} ({@code CONFIRMED}
- * with the sale id and number). Compensation: a POS rejection (stock, unknown product) cancels the order in
- * GiftHub with the reason, unless it is already paid there (manual reconciliation); an order cancelled in
- * GiftHub before the confirmation cancels the pending POS sale. A NOTIFY that exhausts its attempts ends
- * DEAD without compensation: the sale exists and a replay only re-runs NOTIFY.
+ * {@code CREATE_ORDER} (POS sale {@code PENDING} with items and toppings as product lines,
+ * {@code Idempotency-Key = GIFTHUB:{orderId}}; after an uncertain attempt it first looks the sale up and adopts
+ * it; a POS total other than GiftHub's {@code total_pyg} is logged and kept as {@code totalMismatch}, never
+ * blocks) → {@code NOTIFY_GIFTHUB} ({@code CONFIRMED} with the sale id and number). Compensation: a POS
+ * rejection (stock, unknown product) cancels the order in GiftHub with the reason, unless it is already paid
+ * there (manual reconciliation); an order cancelled in GiftHub before the confirmation cancels the pending POS
+ * sale. A NOTIFY that exhausts its attempts ends DEAD without compensation: the sale exists and a replay only
+ * re-runs NOTIFY.
  */
 public class CreateOrderSaga implements Saga {
 
@@ -123,8 +126,28 @@ public class CreateOrderSaga implements Saga {
         mappings.saveAll(context.operation().tenantId(), endpoints.pos().connection().id(), EntityType.ORDER,
                 Map.of(order.orderId(), sale.saleId()));
         logStep(context, "venta POS " + sale.saleNumber() + " total=" + sale.total());
-        return new StepResult.Next(NOTIFY_GIFTHUB, null, sale.saleId(), merge(context,
-                Map.of("saleId", sale.saleId(), "saleNumber", sale.saleNumber(), "total", sale.total())));
+        Map<String, Object> result = new HashMap<>(Map.of("saleId", sale.saleId(), "saleNumber", sale.saleNumber(), "total", sale.total()));
+        if (order.totalPyg() != null) {
+            boolean mismatch = sale.total() != order.totalPyg();
+            result.put("giftHubTotal", order.totalPyg());
+            result.put("totalMismatch", mismatch);
+            if (mismatch) {
+                warnTotalMismatch(context, order, sale);
+            }
+        }
+        return new StepResult.Next(NOTIFY_GIFTHUB, null, sale.saleId(), merge(context, result));
+    }
+
+    /**
+     * The POS prices the sale itself and its integration API takes neither a delivery fee nor a discount, so
+     * its total can differ from what GiftHub charged. It does not block the order: the cashier settles it.
+     */
+    private static void warnTotalMismatch(StepContext context, ChannelOrder order, PosPort.Order sale) {
+        Operation op = context.operation();
+        log.log(WARNING, "[NEXUS-ORDER] op={0} tenant={1} step={2} total POS {3} distinto del total GiftHub {4} "
+                        + "(envío {5}, descuento {6}): se cobra en caja",
+                op.id(), op.tenantId(), op.currentStep(), String.valueOf(sale.total()), String.valueOf(order.totalPyg()),
+                String.valueOf(order.deliveryFeePyg()), String.valueOf(order.discountPyg()));
     }
 
     private StepResult notifyGiftHub(StepContext context, OrderEndpoints endpoints, ChannelOrder order) {
@@ -205,7 +228,7 @@ public class CreateOrderSaga implements Saga {
 
     private static PosPort.NewOrder newOrder(StepContext context, OrderEndpoints endpoints, ChannelOrder order) {
         Map<String, Object> settings = endpoints.pos().connection().settings();
-        List<PosPort.Item> items = order.items().stream().map(item -> new PosPort.Item(item.externalId(), item.quantity())).toList();
+        List<PosPort.Item> items = order.saleLines().stream().map(line -> new PosPort.Item(line.externalId(), line.quantity())).toList();
         PosPort.Delivery delivery = order.delivery() == null || order.delivery().address() == null ? null
                 : new PosPort.Delivery(truncate(order.delivery().address(), 500),
                         order.customer() == null ? null : truncate(order.customer().name(), 150),
@@ -216,14 +239,24 @@ public class CreateOrderSaga implements Saga {
                 setting(settings, "branchId"), setting(settings, "warehouseId"), items, delivery, paymentMethod, notes(order));
     }
 
+    /** Delivery fee, discount and GiftHub's total travel as text: the POS order API has no fields for them. */
     private static String notes(ChannelOrder order) {
         List<String> lines = new ArrayList<>();
         lines.add("Pedido GiftHub " + (order.number() == null ? order.orderId() : order.number()));
+        if (order.deliveryFeePyg() != null && order.deliveryFeePyg() > 0) {
+            lines.add("Envío GiftHub: Gs. " + order.deliveryFeePyg());
+        }
+        if (order.discountPyg() != null && order.discountPyg() > 0) {
+            lines.add("Descuento GiftHub: Gs. " + order.discountPyg());
+        }
+        if (order.totalPyg() != null) {
+            lines.add("Total GiftHub: Gs. " + order.totalPyg());
+        }
         if (order.notes() != null) {
             lines.add(order.notes());
         }
-        order.items().stream().filter(item -> item.details() != null)
-                .forEach(item -> lines.add(item.name() + ": " + item.details()));
+        order.items().stream().filter(item -> item.options() != null)
+                .forEach(item -> lines.add(item.name() + ": " + item.options()));
         return truncate(String.join("\n", lines), 1000);
     }
 

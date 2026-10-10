@@ -140,9 +140,15 @@ abstract class AbstractConnectorIT extends AbstractOperationIT {
         order.put("fulfillment", "DELIVERY");
         order.put("notes", "Sin cebolla");
         order.put("delivery", Map.of("address", "Av. España 1234", "reference", "Portón negro"));
+        order.put("subtotal_pyg", 81000);
+        order.put("discount_pyg", 0);
+        order.put("delivery_fee_pyg", 10000);
+        order.put("total_pyg", 91000);
         order.put("items", List.of(Map.of("external_id", "SKU-1001", "name", "Hamburguesa doble", "quantity", 2,
+                "unit_price_pyg", 38000, "line_total_pyg", 76000,
                 "options", List.of(Map.of("group", "Punto", "values", List.of("A punto"))),
-                "toppings", List.of(Map.of("name", "Extra cheddar", "quantity", 1)))));
+                "toppings", List.of(Map.of("external_id", "SKU-2001", "name", "Extra cheddar", "quantity", 2,
+                        "unit_price_pyg", 2500, "line_total_pyg", 5000)))));
         order.put("customer", customer);
         order.put("created_at", "2026-10-08T14:02:58.000Z");
         return toJson(Map.of("id", deliveryId, "type", "order.created",
