@@ -90,11 +90,31 @@ class InvoiceApiIT extends AbstractFiscalIT {
     }
 
     @Test
-    void should_reject_with_422_and_persist_nothing_when_a_line_discount_does_not_split_per_unit() {
+    void should_split_the_line_in_two_for_sifen_when_the_discount_does_not_divide_by_the_quantity() {
         String ref = newSourceRef();
+        stubSubmit(ref, document(ref, "APROBADO"));
         Map<String, Object> request = invoice(ref);
         request.put("items", List.of(Map.of("code", "PAN-001", "description", "Chipa", "quantity", "3",
-                "unitPrice", 10000, "discount", 2000, "vatRate", "10")));
+                "unitPrice", 10000, "discount", 1000, "vatRate", "10")));
+
+        issue(pos, request, 202);
+        drain();
+
+        assertThat(invoiceState(ref).get("status").asString()).isEqualTo("APPROVED");
+        assertThat(count(submitsOf(ref)
+                .withRequestBody(matchingJsonPath("$.detail.length()", equalTo("2")))
+                .withRequestBody(matchingJsonPath("$.detail[0].cantidad", equalTo("2")))
+                .withRequestBody(matchingJsonPath("$.detail[0].descuento", equalTo("333")))
+                .withRequestBody(matchingJsonPath("$.detail[1].cantidad", equalTo("1")))
+                .withRequestBody(matchingJsonPath("$.detail[1].descuento", equalTo("334"))))).isEqualTo(1);
+    }
+
+    @Test
+    void should_reject_with_422_and_persist_nothing_when_a_fractional_quantity_discount_does_not_split_per_unit() {
+        String ref = newSourceRef();
+        Map<String, Object> request = invoice(ref);
+        request.put("items", List.of(Map.of("code", "CAR-001", "description", "Carne", "quantity", "2.5",
+                "unitPrice", 10000, "discount", 1001, "vatRate", "10", "unit", "KG")));
 
         JsonNode problem = body(issue(pos, request, 422));
 

@@ -240,7 +240,7 @@ Request `POST /api/v1/invoices` (alineado 1:1 con `FacturarTransaccionRequest` d
   "globalDiscount": 0
 }
 ```
-`items[].discount` es el descuento **de la línea** (como lo calcula el POS), no por unidad: Nexus envía a SIFEN `descuento = discount / quantity` (SIFEN lo toma por unidad: total de línea = (precio − descuento) × cantidad). En PYG SIFEN imprime ese valor en guaraníes enteros; si `round(discount / quantity) × quantity` se aparta del descuento más de 0,8 (tolerancia de SIFEN), la emisión se rechaza con 422 `discount-not-divisible` antes de persistir nada.
+`items[].discount` es el descuento **de la línea** (como lo calcula el POS), no por unidad: Nexus envía a SIFEN `descuento = discount / quantity` (SIFEN lo toma por unidad: total de línea = (precio − descuento) × cantidad). En PYG SIFEN imprime ese valor en guaraníes enteros. Con cantidad entera, si el descuento no se reparte exacto, Nexus divide la línea en dos detalles con el mismo código, descripción y precio: `quantity − r` unidades con `⌊discount / quantity⌋` y `r` unidades con un guaraní más (`r = discount mod quantity`); la suma de los netos es exactamente `quantity × unitPrice − discount`. Con cantidad fraccionaria (kg) no se puede dividir: si `round(discount / quantity) × quantity` se aparta del descuento más de 0,8 (tolerancia de SIFEN), la emisión se rechaza con 422 `discount-not-divisible` antes de persistir nada.
 Response `202`:
 ```json
 { "operationId": "…", "sourceRef": "…", "status": "PENDING" }

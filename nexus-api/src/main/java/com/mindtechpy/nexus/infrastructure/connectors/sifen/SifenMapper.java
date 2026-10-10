@@ -6,6 +6,7 @@ import com.mindtechpy.nexus.domain.fiscal.SifenDocument;
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.stream.Stream;
 
 /**
  * Canonical invoice ↔ electronico-sifen ({@code FacturarTransaccionRequest} / {@code FacturaComercialResponse}).
@@ -54,7 +55,7 @@ final class SifenMapper {
         putIfPresent(receptor, "email", request.customer().email());
         body.put("receptor", receptor);
 
-        body.put("detail", request.items().stream().map(SifenMapper::toDetail).toList());
+        body.put("detail", request.items().stream().flatMap(SifenMapper::toDetails).toList());
         if (request.credit() != null) {
             body.put("credito", toCredito(request.credit(), request.header().currency()));
         }
@@ -94,19 +95,39 @@ final class SifenMapper {
         return credito;
     }
 
-    private static Map<String, Object> toDetail(InvoiceRequest.Item item) {
+    /**
+     * SIFEN takes the discount per unit, in whole guaraníes. When the line discount of a whole quantity does not
+     * divide evenly, the line is split in two with the same code and price: {@code quantity − r} units at
+     * {@code ⌊discount / quantity⌋} and {@code r} units at one guaraní more, so the net totals add up to
+     * {@code quantity × unitPrice − discount} exactly.
+     */
+    private static Stream<Map<String, Object>> toDetails(InvoiceRequest.Item item) {
+        if (item.discount() == null || !item.hasWholeQuantity()) {
+            return Stream.of(toDetail(item, new BigDecimal(item.quantity()), perUnit(item)));
+        }
+        long quantity = new BigDecimal(item.quantity()).longValueExact();
+        long base = item.discount() / quantity;
+        long remainder = item.discount() % quantity;
+        if (remainder == 0) {
+            return Stream.of(toDetail(item, new BigDecimal(item.quantity()), base));
+        }
+        return Stream.of(toDetail(item, BigDecimal.valueOf(quantity - remainder), base),
+                toDetail(item, BigDecimal.valueOf(remainder), base + 1));
+    }
+
+    private static Map<String, Object> toDetail(InvoiceRequest.Item item, BigDecimal quantity, Object unitDiscount) {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("codigo", item.code());
         detail.put("descripcion", item.description());
-        detail.put("cantidad", new BigDecimal(item.quantity()));
+        detail.put("cantidad", quantity);
         detail.put("precioUnitario", item.unitPrice());
-        putIfPresent(detail, "descuento", perUnit(item));
+        putIfPresent(detail, "descuento", unitDiscount);
         detail.put("ivaTipo", item.vatRate());
         putIfPresent(detail, "unidadMedida", item.unit());
         return detail;
     }
 
-    /** SIFEN's {@code descuento} is per unit; a whole amount stays an integer so the payload bytes do not change. */
+    /** A fractional quantity keeps the per-unit discount; a whole amount stays an integer so the payload bytes do not change. */
     private static Object perUnit(InvoiceRequest.Item item) {
         BigDecimal unitDiscount = item.unitDiscount();
         if (unitDiscount == null) {

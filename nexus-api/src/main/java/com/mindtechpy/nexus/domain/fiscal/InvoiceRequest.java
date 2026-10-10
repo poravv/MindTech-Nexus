@@ -42,6 +42,10 @@ public record InvoiceRequest(String sourceRef, String documentType, String issue
     public record Item(String code, String description, String quantity, Long unitPrice, Long discount,
                        String vatRate, String unit) {
 
+        public boolean hasWholeQuantity() {
+            return new BigDecimal(quantity).stripTrailingZeros().scale() <= 0;
+        }
+
         /** The line discount spread per unit, with the 8 decimals SIFEN keeps; null without discount. */
         public BigDecimal unitDiscount() {
             return discount == null ? null
@@ -96,8 +100,10 @@ public record InvoiceRequest(String sourceRef, String documentType, String issue
     }
 
     /**
-     * SIFEN prints the per-unit discount rounded (whole guaraníes in PYG) and rebuilds the line from it; the
-     * line it gets must match the POS line within its tolerance, or the document total would not be the sale's.
+     * SIFEN prints the per-unit discount rounded (whole guaraníes in PYG) and rebuilds the line from it. A whole
+     * quantity always fits: the SIFEN adapter splits the line in two when the discount does not divide evenly. A
+     * fractional quantity (kg) cannot be split, so its line must match the POS line within SIFEN's tolerance, or the
+     * document total would not be the sale's.
      */
     private static void validateDiscount(Item item, String currency) {
         BigDecimal quantity = new BigDecimal(item.quantity());
@@ -105,10 +111,13 @@ public record InvoiceRequest(String sourceRef, String documentType, String issue
         if (discount.compareTo(quantity.multiply(BigDecimal.valueOf(item.unitPrice()))) > 0) {
             throw DomainException.invalid("invalid-invoice", "discount del item " + item.code() + " supera quantity × unitPrice");
         }
+        if (item.hasWholeQuantity()) {
+            return;
+        }
         BigDecimal printed = "PYG".equals(currency) ? item.unitDiscount().setScale(0, RoundingMode.HALF_UP) : item.unitDiscount();
         if (printed.multiply(quantity).subtract(discount).abs().compareTo(SIFEN_TOLERANCE) > 0) {
             throw DomainException.invalid("discount-not-divisible", "El descuento " + discount.toPlainString() + " del item "
-                    + item.code() + " no se reparte por unidad entre " + item.quantity() + " sin desviarse más de "
+                    + item.code() + " no se reparte por unidad entre la cantidad fraccionaria " + item.quantity() + " sin desviarse más de "
                     + SIFEN_TOLERANCE.toPlainString() + " (SIFEN lo expresa por unidad); el más cercano es "
                     + printed.multiply(quantity).stripTrailingZeros().toPlainString());
         }

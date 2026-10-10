@@ -37,22 +37,52 @@ class SifenMapperTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"2, 2000, 1000", "3, 3000, 1000", "3, 2001, 667", "1, 2000, 2000"})
-    void should_send_the_line_discount_per_unit_when_mapping_an_item(String quantity, long lineDiscount, long perUnit) {
-        JsonNode detail = json.readTree(json.writeValueAsString(SifenMapper.toFacturarRequest(invoiceWith(
-                new InvoiceRequest.Item("PAN-001", "Chipa", quantity, 10000L, lineDiscount, "10", "UNI"))))).get("detail").get(0);
+    @CsvSource({"2, 2000, 1000", "3, 3000, 1000", "3, 2001, 667", "1, 2000, 2000", "3, 0, 0"})
+    void should_send_one_line_with_the_discount_per_unit_when_it_divides_evenly(String quantity, long lineDiscount,
+                                                                                 long perUnit) {
+        JsonNode detail = detailOf(new InvoiceRequest.Item("PAN-001", "Chipa", quantity, 10000L, lineDiscount, "10", "UNI"));
 
-        assertThat(detail.get("descuento").isIntegralNumber()).isTrue();
-        assertThat(detail.get("descuento").asLong()).isEqualTo(perUnit);
-        long sifenLine = (10000 - detail.get("descuento").asLong()) * Long.parseLong(quantity);
-        assertThat(sifenLine).isEqualTo(10000 * Long.parseLong(quantity) - lineDiscount);
+        assertThat(detail).hasSize(1);
+        assertThat(detail.get(0).get("cantidad").asLong()).isEqualTo(Long.parseLong(quantity));
+        assertThat(detail.get(0).get("descuento").isIntegralNumber()).isTrue();
+        assertThat(detail.get(0).get("descuento").asLong()).isEqualTo(perUnit);
+        assertThat(netTotal(detail)).isEqualTo(10000L * Long.parseLong(quantity) - lineDiscount);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"3, 1000, 2, 333, 1, 334", "7, 100, 5, 14, 2, 15", "3, 2000, 1, 666, 2, 667", "4, 39999, 1, 9999, 3, 10000"})
+    void should_split_the_line_in_two_when_the_discount_does_not_divide_by_a_whole_quantity(
+            String quantity, long lineDiscount, long baseUnits, long baseDiscount, long extraUnits, long extraDiscount) {
+        JsonNode detail = detailOf(new InvoiceRequest.Item("PAN-001", "Chipa", quantity, 10000L, lineDiscount, "10", "UNI"));
+
+        assertThat(detail).hasSize(2);
+        assertThat(detail.get(0).get("cantidad").asLong()).isEqualTo(baseUnits);
+        assertThat(detail.get(0).get("descuento").asLong()).isEqualTo(baseDiscount);
+        assertThat(detail.get(1).get("cantidad").asLong()).isEqualTo(extraUnits);
+        assertThat(detail.get(1).get("descuento").asLong()).isEqualTo(extraDiscount);
+        for (JsonNode line : detail) {
+            assertThat(line.get("codigo").asString()).isEqualTo("PAN-001");
+            assertThat(line.get("descripcion").asString()).isEqualTo("Chipa");
+            assertThat(line.get("precioUnitario").asLong()).isEqualTo(10000L);
+            assertThat(line.get("ivaTipo").asString()).isEqualTo("10");
+        }
+        assertThat(netTotal(detail)).isEqualTo(10000L * Long.parseLong(quantity) - lineDiscount);
     }
 
     @Test
-    void should_reject_a_line_discount_that_does_not_split_into_whole_guaranies_per_unit() {
-        assertThatThrownBy(() -> invoiceWith(new InvoiceRequest.Item("PAN-001", "Chipa", "3", 10000L, 2000L, "10", "UNI")))
+    void should_keep_one_line_with_the_per_unit_discount_when_a_fractional_quantity_fits_sifen_tolerance() {
+        JsonNode detail = detailOf(new InvoiceRequest.Item("CAR-001", "Carne", "1.5", 10000L, 1500L, "10", "KG"));
+
+        assertThat(detail).hasSize(1);
+        assertThat(detail.get(0).get("cantidad").decimalValue()).isEqualByComparingTo("1.5");
+        assertThat(detail.get(0).get("descuento").asLong()).isEqualTo(1000L);
+    }
+
+    @Test
+    void should_reject_a_fractional_quantity_whose_discount_does_not_split_into_whole_guaranies_per_unit() {
+        assertThatThrownBy(() -> invoiceWith(new InvoiceRequest.Item("CAR-001", "Carne", "2.5", 10000L, 1001L, "10", "KG")))
                 .isInstanceOf(DomainException.class)
-                .hasMessageContaining("el más cercano es 2001")
+                .hasMessageContaining("cantidad fraccionaria 2.5")
                 .extracting("code").isEqualTo("discount-not-divisible");
     }
 
@@ -74,6 +104,19 @@ class SifenMapperTest {
         assertThat(mapped).isEqualTo(json.readTree(fixture(sifenFixture)));
         assertThat(mapped.has("emisor")).isFalse();
         assertThat(mapped.has("emisorId")).isFalse();
+    }
+
+    private JsonNode detailOf(InvoiceRequest.Item item) {
+        return json.readTree(json.writeValueAsString(SifenMapper.toFacturarRequest(invoiceWith(item)))).get("detail");
+    }
+
+    /** How SIFEN rebuilds the document: (precioUnitario − descuento) × cantidad per line. */
+    private static long netTotal(JsonNode detail) {
+        long total = 0;
+        for (JsonNode line : detail) {
+            total += (line.get("precioUnitario").asLong() - line.get("descuento").asLong()) * line.get("cantidad").asLong();
+        }
+        return total;
     }
 
     private static InvoiceRequest invoiceWith(InvoiceRequest.Item item) {
