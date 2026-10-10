@@ -13,6 +13,9 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.JsonNode;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -190,6 +193,34 @@ class CatalogSyncIT extends AbstractConnectorIT {
     }
 
     @Test
+    void should_double_the_wait_after_dead_runs_and_go_back_to_normal_after_a_success() {
+        UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+        Instant now = Instant.now();
+        finishedRun(integration, "DEAD", now.minus(Duration.ofMinutes(6)));
+        finishedRun(integration, "DEAD", now.minus(Duration.ofMinutes(5)));
+
+        runCatalogSync.scheduleDue();
+        assertThat(scheduledRuns(integration)).as("two DEAD in a row: 4 × 5 min since the last one").isZero();
+
+        jdbc.sql("UPDATE operations SET finished_at = finished_at - interval '16 minutes' WHERE integration_id = :i")
+                .param("i", integration).update();
+        runCatalogSync.scheduleDue();
+        assertThat(scheduledRuns(integration)).isEqualTo(1);
+    }
+
+    @Test
+    void should_schedule_normally_when_the_last_run_succeeded_after_dead_ones() {
+        UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+        Instant now = Instant.now();
+        finishedRun(integration, "DEAD", now.minus(Duration.ofMinutes(3)));
+        finishedRun(integration, "SUCCEEDED", now.minus(Duration.ofMinutes(2)));
+
+        runCatalogSync.scheduleDue();
+
+        assertThat(scheduledRuns(integration)).isEqualTo(1);
+    }
+
+    @Test
     void should_not_start_a_second_run_to_the_same_gifthub_while_one_is_unfinished() {
         UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
         UUID sameGiftHub = createIntegration("CATALOG", posConnection, giftHubConnection);
@@ -226,6 +257,21 @@ class CatalogSyncIT extends AbstractConnectorIT {
         JsonNode started = body(perform(MockMvcRequestBuilders.post("/api/admin/integrations/{id}/run", integration).param("tenantId", tenant.toString())
                 .header("Authorization", bearer(admin)), 202));
         return reload(UUID.fromString(started.get("operationId").asString()));
+    }
+
+    /** A finished manual run of the integration, inserted directly with the given outcome. */
+    private void finishedRun(UUID integration, String status, Instant finishedAt) {
+        jdbc.sql("""
+                INSERT INTO operations (id, tenant_id, integration_id, flow, kind, idempotency_key, request_hash, status,
+                                        attempts, max_attempts, next_run_at, payload, created_at, updated_at, finished_at)
+                VALUES (gen_random_uuid(), :t, :i, 'CATALOG', 'CATALOG_SYNC', :key, 'h', :status, 1, 5, :at, '{}', :at, :at, :at)""")
+                .param("t", tenant).param("i", integration).param("key", integration + ":manual:" + UUID.randomUUID())
+                .param("status", status).param("at", finishedAt.atOffset(ZoneOffset.UTC)).update();
+    }
+
+    private long scheduledRuns(UUID integration) {
+        return jdbc.sql("SELECT count(*) FROM operations WHERE integration_id = :i AND idempotency_key LIKE :key")
+                .param("i", integration).param("key", integration + ":2%").query(Long.class).single();
     }
 
     private void insertProductMapping(String code) {

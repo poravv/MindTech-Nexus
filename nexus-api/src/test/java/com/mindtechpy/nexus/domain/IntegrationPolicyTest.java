@@ -63,4 +63,16 @@ class IntegrationPolicyTest {
         assertThatThrownBy(() -> new IntegrationPolicy(null, null, null, null, null, null, 280_001, null))
                 .isInstanceOf(DomainException.class).hasMessageContaining("readTimeoutMs");
     }
+
+    @Test
+    void should_double_the_catalog_interval_per_dead_run_in_a_row_up_to_24_hours() {
+        IntegrationPolicy everyMinute = new IntegrationPolicy(null, null, null, null, null, null, null, 60);
+
+        assertThat(policy.catalogInterval(0)).isEqualTo(Duration.ofMinutes(5));
+        assertThat(everyMinute.catalogInterval(0)).isEqualTo(Duration.ofMinutes(1));
+        assertThat(everyMinute.catalogInterval(1)).isEqualTo(Duration.ofMinutes(2));
+        assertThat(everyMinute.catalogInterval(3)).isEqualTo(Duration.ofMinutes(8));
+        assertThat(everyMinute.catalogInterval(11)).isEqualTo(Duration.ofHours(24));
+        assertThat(policy.catalogInterval(50)).isEqualTo(Duration.ofHours(24));
+    }
 }

@@ -33,6 +33,9 @@ public interface OperationRepository {
     record BucketCount(Instant bucket, OperationStatus status, long count) {
     }
 
+    record FinishedRun(OperationStatus status, Instant finishedAt) {
+    }
+
     Optional<Operation> findByKey(TenantId tenantId, OperationKind kind, String idempotencyKey);
 
     /** Inserts unless {@code (tenant, kind, key)} already exists; false means another request won the race. */
@@ -63,6 +66,9 @@ public interface OperationRepository {
 
     /** Per integration id, its newest failure among the operations created since {@code from}. */
     Map<UUID, LastFailure> lastFailuresSince(TenantId tenantId, Instant from);
+
+    /** The latest {@code limit} finished operations of {@code kind} of an integration, newest finish first. */
+    List<FinishedRun> latestFinished(TenantId tenantId, UUID integrationId, OperationKind kind, int limit);
 
     /** Operations created since {@code from} (a bucket boundary), counted per {@code bucket}-wide bin and status. */
     List<BucketCount> countByBucket(Optional<TenantId> tenantId, Instant from, Duration bucket);

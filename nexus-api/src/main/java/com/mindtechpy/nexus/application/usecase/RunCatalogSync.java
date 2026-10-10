@@ -9,14 +9,17 @@ import com.mindtechpy.nexus.domain.identity.Actor;
 import com.mindtechpy.nexus.domain.identity.Permission;
 import com.mindtechpy.nexus.domain.integration.Flow;
 import com.mindtechpy.nexus.domain.integration.Integration;
+import com.mindtechpy.nexus.domain.integration.IntegrationPolicy;
 import com.mindtechpy.nexus.domain.integration.IntegrationState;
 import com.mindtechpy.nexus.domain.operation.OperationKind;
+import com.mindtechpy.nexus.domain.operation.OperationStatus;
 import com.mindtechpy.nexus.domain.shared.DomainException;
 import com.mindtechpy.nexus.domain.shared.TenantId;
 
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -25,13 +28,16 @@ import static java.lang.System.Logger.Level.WARNING;
 
 /**
  * Creates {@code CATALOG_SYNC} operations: on demand from the console, and every {@code scheduleEverySeconds}
- * (default {@value #DEFAULT_EVERY_SECONDS}) for each ENABLED CATALOG integration. The scheduled key is the
- * start of the current window ({@code {integrationId}:{yyyyMMddHHmm}}), so calling {@link #scheduleDue} more
- * often than the window, or from a restarted worker, never creates a second run for the same window.
+ * (default 300) for each ENABLED CATALOG integration. The scheduled key is the start of the current window
+ * ({@code {integrationId}:{yyyyMMddHHmm}}), so calling {@link #scheduleDue} more often than the window, or from a
+ * restarted worker, never creates a second run for the same window. After runs that ended DEAD in a row the next
+ * one waits {@link IntegrationPolicy#catalogInterval} since the last one finished; the run history in
+ * {@code operations} is the only state, so the first run that does not end DEAD resets the interval.
  */
 public class RunCatalogSync {
 
-    static final int DEFAULT_EVERY_SECONDS = 300;
+    /** Enough runs to reach the 24 h cap from the 60 s minimum interval (60·2^11 s). */
+    private static final int BACKOFF_LOOKBACK = 11;
     private static final DateTimeFormatter MINUTE = DateTimeFormatter.ofPattern("yyyyMMddHHmm").withZone(ZoneOffset.UTC);
     private static final DateTimeFormatter SECOND = DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneOffset.UTC);
     private static final System.Logger log = System.getLogger(RunCatalogSync.class.getName());
@@ -78,11 +84,10 @@ public class RunCatalogSync {
     public void scheduleDue() {
         Instant now = clock.now();
         for (Integration integration : integrations.findAllByFlow(Flow.CATALOG)) {
-            if (integration.state() != IntegrationState.ENABLED || isRunning(integration)) {
+            if (integration.state() != IntegrationState.ENABLED || isRunning(integration) || isBackingOff(integration, now)) {
                 continue;
             }
-            int every = integration.policy().scheduleEverySeconds() == null ? DEFAULT_EVERY_SECONDS
-                    : integration.policy().scheduleEverySeconds();
+            long every = integration.policy().catalogInterval(0).toSeconds();
             Instant window = Instant.ofEpochSecond(now.getEpochSecond() / every * every);
             try {
                 StartOperation.Started started = startOperation.execute(new StartOperation.Command(integration.tenantId(),
@@ -97,6 +102,23 @@ public class RunCatalogSync {
                         integration.code(), e.getMessage());
             }
         }
+    }
+
+    /** True while the last runs ended DEAD in a row and their doubled interval has not passed since the last one. */
+    private boolean isBackingOff(Integration integration, Instant now) {
+        List<OperationRepository.FinishedRun> runs = operations.latestFinished(integration.tenantId(), integration.id(),
+                OperationKind.CATALOG_SYNC, BACKOFF_LOOKBACK);
+        int deadInARow = 0;
+        while (deadInARow < runs.size() && isDead(runs.get(deadInARow).status())) {
+            deadInARow++;
+        }
+        return deadInARow > 0
+                && now.isBefore(runs.getFirst().finishedAt().plus(integration.policy().catalogInterval(deadInARow)));
+    }
+
+    /** A discarded run ended DEAD too: discarding it clears the DLQ, not the reason the target was unreachable. */
+    private static boolean isDead(OperationStatus status) {
+        return status == OperationStatus.DEAD || status == OperationStatus.DISCARDED;
     }
 
     /**
