@@ -63,6 +63,8 @@ class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/admin/auth/login", "/api/admin/auth/refresh",
                                 "/api/admin/auth/logout").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/error").permitAll()
+                        // Webhooks carry no token: each controller verifies the sender's HMAC signature.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/**").permitAll()
                         .requestMatchers("/api/v1/**").hasAuthority(CLIENT_AUTHORITY)
                         .requestMatchers("/api/admin/**").hasAuthority(USER_AUTHORITY)
                         .anyRequest().denyAll())

@@ -2,6 +2,7 @@ package com.mindtechpy.nexus.infrastructure.config;
 
 import com.mindtechpy.nexus.application.port.out.ClockPort;
 import com.mindtechpy.nexus.application.port.out.ConnectionRepository;
+import com.mindtechpy.nexus.application.port.out.InboundEventRepository;
 import com.mindtechpy.nexus.application.port.out.IntegrationRepository;
 import com.mindtechpy.nexus.application.port.out.OperationRepository;
 import com.mindtechpy.nexus.application.port.out.SecretCipherPort;
@@ -11,6 +12,7 @@ import com.mindtechpy.nexus.application.saga.fiscal.IssueInvoiceSaga;
 import com.mindtechpy.nexus.application.usecase.CancelInvoice;
 import com.mindtechpy.nexus.application.usecase.InvoiceQueries;
 import com.mindtechpy.nexus.application.usecase.IssueInvoice;
+import com.mindtechpy.nexus.application.usecase.ReceiveSifenEvent;
 import com.mindtechpy.nexus.application.usecase.StartOperation;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -44,5 +46,12 @@ class FiscalConfig {
     InvoiceQueries invoiceQueries(OperationRepository operations, IntegrationRepository integrations,
                                   ConnectionRepository connections, SecretCipherPort cipher, SifenPort sifen) {
         return new InvoiceQueries(operations, integrations, connections, cipher, sifen);
+    }
+
+    @Bean
+    ReceiveSifenEvent receiveSifenEvent(ConnectionRepository connections, SecretCipherPort cipher,
+                                        InboundEventRepository inboundEvents, OperationRepository operations,
+                                        ClockPort clock) {
+        return new ReceiveSifenEvent(connections, cipher, inboundEvents, operations, clock);
     }
 }

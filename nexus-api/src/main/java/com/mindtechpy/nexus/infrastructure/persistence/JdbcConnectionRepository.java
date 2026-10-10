@@ -81,6 +81,11 @@ class JdbcConnectionRepository implements ConnectionRepository {
     }
 
     @Override
+    public Optional<Connection> findForWebhook(UUID id) {
+        return jdbc.sql("SELECT * FROM connections WHERE id = :id").param("id", id).query(row).optional();
+    }
+
+    @Override
     public List<Connection> findAll(TenantId tenantId) {
         return jdbc.sql("SELECT * FROM connections WHERE tenant_id = :tenantId ORDER BY connector, name")
                 .param("tenantId", tenantId.value()).query(row).list();

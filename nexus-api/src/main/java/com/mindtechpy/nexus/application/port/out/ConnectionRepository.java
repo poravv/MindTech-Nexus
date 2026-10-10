@@ -19,6 +19,12 @@ public interface ConnectionRepository {
 
     Optional<Connection> findById(TenantId tenantId, UUID id);
 
+    /**
+     * Lookup without tenant, only for inbound webhooks: the path carries the connection id and the request
+     * is authenticated afterwards with that connection's secret.
+     */
+    Optional<Connection> findForWebhook(UUID id);
+
     List<Connection> findAll(TenantId tenantId);
 
     void recordTest(TenantId tenantId, UUID id, Instant testedAt, boolean ok);

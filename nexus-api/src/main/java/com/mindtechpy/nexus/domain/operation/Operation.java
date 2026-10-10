@@ -56,6 +56,11 @@ public record Operation(UUID id, TenantId tenantId, UUID integrationId, Operatio
         return next(OperationStatus.RETRY, currentStep, attempts - 1, runAt, result, lastError, null, null);
     }
 
+    /** Same state, due at {@code runAt}: a remote system announced a change worth checking now. */
+    public Operation dueAt(Instant runAt) {
+        return next(status, currentStep, attempts, runAt, result, lastError, deadReason, finishedAt);
+    }
+
     public Operation retrying(ConnectorError error, Instant runAt, boolean countsAttempt) {
         return next(OperationStatus.RETRY, currentStep, countsAttempt ? attempts : attempts - 1, runAt, result, error,
                 null, null);
