@@ -12,7 +12,7 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * Platform configuration. Secrets come from the {@code nexus-api-secrets} Secret / local {@code .env};
+ * Platform configuration. Secrets come from the {@code nexus-secrets} Secret / local {@code .env};
  * startup fails fast if any of them is missing.
  */
 @Validated
