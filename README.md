@@ -68,3 +68,11 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/admin/tenants
 - OpenAPI: `/v3/api-docs`, `/swagger-ui.html`. Management (puerto 8081): `/actuator/health/{liveness,readiness}`, `/actuator/prometheus`.
 
 Errores en `application/problem+json` con `type` `https://nexus.mindtechpy.net/problems/<code>`, `code` y `correlationId` (`X-Correlation-Id`).
+
+## Despliegue (cluster mindtechpy, GitOps)
+
+- `k8s/` lo sincroniza Argo CD (Application `nexus` en `k8s-platforms/argocd/apps/nexus.yaml`), namespace `nexus`. Única entrada pública: `https://nexus.mindtechpy.net` → `nexus-console`; la consola hace proxy de `/api/admin/` y `/api/v1/webhooks/` a `nexus-api:8080`.
+- `.github/workflows/deploy.yml`: en PR corre tests y build sin push; en `main` publica `ghcr.io/poravv/mindtech-nexus-{api,console}:sha-<7>`, crea el Secret `nexus-secrets` y commitea el tag en `k8s/*-deployment.yaml` (`chore(deploy): nexus sha-<7> [skip ci]`). Rollback = revertir ese commit.
+- GitHub Secrets del repo: `NEXUS_DB_NAME`, `NEXUS_DB_USER`, `NEXUS_DB_PASSWORD`, `NEXUS_JWT_SIGNING_KEY`, `NEXUS_MASTER_KEY`, `NEXUS_BOOTSTRAP_ADMIN_EMAIL`, `NEXUS_BOOTSTRAP_ADMIN_PASSWORD`. El job `release` corre en el runner self-hosted del cluster (kubectl ya configurado): el repo necesita ese runner registrado.
+- **Primer despliegue**: el tag inicial de `k8s/*-deployment.yaml` no corresponde a una imagen publicada. El primer run de `deploy.yml` en `main` construye ambas imágenes y pinea el tag real; recién después se mergea la Application en `k8s-platforms` para que Argo sincronice. Luego hacer públicos los paquetes GHCR (`k8s-platforms/docs/ghcr-public-packages.md`).
+- Backups: CronJob `postgres-backup` (02:30) con dump local en `backup-pvc` y copia cifrada a R2 bajo `nexus/`; el Secret `backup-r2` lo crea `k8s-platforms` (`BACKUP_NAMESPACES`). Probar con `gh workflow run ops-runbook.yml -R poravv/k8s-platforms -f action=run-backup -f namespace=nexus -f target=postgres-backup` y revisar el tamaño del dump.
