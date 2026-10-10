@@ -66,7 +66,7 @@ export default class OperationDetailPage {
     const op = this.operation.hasValue() ? this.operation.value() : null;
     return op && (op.status === 'PENDING' || op.status === 'RETRY') ? op.nextRunAt : null;
   });
-  protected readonly confirming = signal(false);
+  protected readonly pending = signal<'replay' | 'discard' | null>(null);
   protected readonly busy = signal(false);
 
   protected replay(): void {
@@ -74,14 +74,31 @@ export default class OperationDetailPage {
     this.api.replay(this.id(), this.tenant()).subscribe({
       next: () => {
         this.busy.set(false);
-        this.confirming.set(false);
+        this.pending.set(null);
         this.notifier.success('Operación reencolada con la misma clave de idempotencia.');
         this.operation.reload();
       },
       error: (error) => {
         this.busy.set(false);
-        this.confirming.set(false);
+        this.pending.set(null);
         this.notifier.error(problemMessage(error));
+      },
+    });
+  }
+
+  protected discard(): void {
+    this.busy.set(true);
+    this.api.discard(this.id(), this.tenant()).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.pending.set(null);
+        this.notifier.success('Operación descartada.');
+        this.operation.reload();
+      },
+      error: (error) => {
+        this.busy.set(false);
+        this.pending.set(null);
+        this.notifier.error(problemMessage(error, 'No se pudo descartar la operación.'));
       },
     });
   }

@@ -92,6 +92,11 @@ export class OperationsApi {
     return this.http.post<Operation>(`${this.url}/${id}/replay`, {}, { params: this.scope.params({}, tenantId) });
   }
 
+  /** Only DEAD operations: drops it from the DLQ for good (DEAD → DISCARDED). */
+  discard(id: string, tenantId = this.scope.tenantId()): Observable<Operation> {
+    return this.http.post<Operation>(`${this.url}/${id}/discard`, {}, { params: this.scope.params({}, tenantId) });
+  }
+
   summary(from: string): Observable<OperationSummary> {
     return this.http.get<OperationSummary>(`${this.url}/summary`, { params: this.scope.params({ from }) });
   }
