@@ -1,12 +1,14 @@
 package com.mindtechpy.nexus.infrastructure.config;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -16,7 +18,8 @@ import java.util.List;
 @Validated
 @ConfigurationProperties("nexus")
 public record NexusProperties(@Valid @NotNull Security security, @Valid @NotNull Connectors connectors,
-                              @Valid @NotNull Bootstrap bootstrap) {
+                              @Valid @NotNull Bootstrap bootstrap, @Valid @NotNull Worker worker,
+                              @Valid @NotNull Queue queue) {
 
     /** @param jwtSecret base64, ≥ 256 bits. @param masterKey base64, exactly 32 bytes (AES-256). */
     public record Security(@NotBlank String jwtSecret, @NotBlank String masterKey) {
@@ -28,6 +31,18 @@ public record NexusProperties(@Valid @NotNull Security security, @Valid @NotNull
 
     /** @param allowedHosts host allowlist for connection base URLs ({@code *.suffix} or exact). */
     public record Connectors(@NotEmpty List<String> allowedHosts) {
+    }
+
+    /**
+     * @param enabled         runs the operation worker and its jobs in this process
+     * @param batchSize       maximum steps running at once
+     * @param shutdownTimeout how long a shutdown waits for running steps
+     */
+    public record Worker(boolean enabled, @Min(1) int batchSize, @NotNull Duration shutdownTimeout) {
+    }
+
+    /** @param maxUnfinishedPerTenant unfinished operations a tenant may have before new ones get 429. */
+    public record Queue(@Min(1) long maxUnfinishedPerTenant) {
     }
 
     /** First platform_admin, created only when the users table is empty. Blank values skip the bootstrap. */

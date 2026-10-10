@@ -38,3 +38,9 @@ nexus:
   bootstrap:
     admin-email: ${NEXUS_BOOTSTRAP_ADMIN_EMAIL:}
     admin-password: ${NEXUS_BOOTSTRAP_ADMIN_PASSWORD:}
+  worker:
+    enabled: ${NEXUS_WORKER_ENABLED:true}
+    batch-size: 10
+    shutdown-timeout: 25s
+  queue:
+    max-unfinished-per-tenant: 1000

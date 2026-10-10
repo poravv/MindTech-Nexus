@@ -1,10 +1,13 @@
 package com.mindtechpy.nexus.infrastructure.config;
 
 import com.mindtechpy.nexus.application.port.out.*;
+import com.mindtechpy.nexus.application.saga.Saga;
+import com.mindtechpy.nexus.application.saga.SagaRunner;
 import com.mindtechpy.nexus.application.usecase.*;
 import com.mindtechpy.nexus.domain.connection.BaseUrlPolicy;
 import com.mindtechpy.nexus.infrastructure.crypto.AesGcmSecretCipher;
 import com.mindtechpy.nexus.infrastructure.security.HmacJwtSupport;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import tools.jackson.databind.json.JsonMapper;
@@ -130,5 +133,49 @@ class UseCaseConfig {
     @Bean
     ListAuditEvents listAuditEvents(AuditRepository audit) {
         return new ListAuditEvents(audit);
+    }
+
+    /** Every {@link Saga} bean is registered by its kind; S3 and S5 plug in by declaring theirs. */
+    @Bean
+    SagaRunner sagaRunner(ObjectProvider<Saga> sagas, OperationRepository operations, IntegrationRepository integrations,
+                          ConnectionRepository connections, SecretCipherPort cipher, RateLimiterPort rateLimiter,
+                          OperationMetrics metrics, AuditRepository audit, ClockPort clock, TransactionRunner tx) {
+        return new SagaRunner(sagas.orderedStream().toList(), operations, integrations, connections, cipher, rateLimiter,
+                metrics, audit, clock, tx);
+    }
+
+    @Bean
+    StartOperation startOperation(OperationRepository operations, IntegrationRepository integrations,
+                                  ConnectionRepository connections, SecretCipherPort cipher, OperationMetrics metrics,
+                                  ClockPort clock, TransactionRunner tx, NexusProperties properties) {
+        return new StartOperation(operations, integrations, connections, cipher, metrics, clock, tx,
+                properties.queue().maxUnfinishedPerTenant());
+    }
+
+    @Bean
+    OperationQueries operationQueries(OperationRepository operations, ClockPort clock) {
+        return new OperationQueries(operations, clock);
+    }
+
+    @Bean
+    ReplayOperation replayOperation(OperationRepository operations, AuditRepository audit, ClockPort clock, TransactionRunner tx) {
+        return new ReplayOperation(operations, audit, clock, tx);
+    }
+
+    @Bean
+    UpsertIntegration upsertIntegration(IntegrationRepository integrations, ConnectionRepository connections,
+                                        TenantRepository tenants, AuditRepository audit, ClockPort clock, TransactionRunner tx) {
+        return new UpsertIntegration(integrations, connections, tenants, audit, clock, tx);
+    }
+
+    @Bean
+    IntegrationQueries integrationQueries(IntegrationRepository integrations) {
+        return new IntegrationQueries(integrations);
+    }
+
+    @Bean
+    ChangeIntegrationState changeIntegrationState(IntegrationRepository integrations, AuditRepository audit, ClockPort clock,
+                                                  TransactionRunner tx) {
+        return new ChangeIntegrationState(integrations, audit, clock, tx);
     }
 }

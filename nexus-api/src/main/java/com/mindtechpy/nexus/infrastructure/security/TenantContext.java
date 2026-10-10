@@ -2,12 +2,14 @@ package com.mindtechpy.nexus.infrastructure.security;
 
 import com.mindtechpy.nexus.domain.identity.Actor;
 import com.mindtechpy.nexus.domain.identity.Role;
+import com.mindtechpy.nexus.domain.identity.Scope;
 import com.mindtechpy.nexus.domain.shared.DomainException;
 import com.mindtechpy.nexus.domain.shared.TenantId;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 
+import java.util.Arrays;
 import java.util.UUID;
 
 /** Builds the {@link Actor} from the validated JWT. The tenant comes only from the {@code tenant_id} claim. */
@@ -28,6 +30,16 @@ public final class TenantContext {
     /** Current console user, allowed even before the mandatory password change (me, password). */
     public static Actor currentUserAllowingPasswordChange() {
         return toActor(currentJwt());
+    }
+
+    /** Current machine client; 403 {@code insufficient-scope} unless its token carries {@code required}. */
+    public static Actor currentClient(Scope required) {
+        Jwt jwt = currentJwt();
+        String scopes = jwt.getClaimAsString("scope");
+        if (scopes == null || !Arrays.asList(scopes.split(" ")).contains(required.value())) {
+            throw DomainException.forbidden("insufficient-scope", "El token no tiene el scope " + required.value());
+        }
+        return Actor.client(jwt.getSubject(), new TenantId(UUID.fromString(jwt.getClaimAsString("tenant_id"))));
     }
 
     private static Actor toActor(Jwt jwt) {
