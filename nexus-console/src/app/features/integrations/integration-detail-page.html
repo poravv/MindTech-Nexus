@@ -19,7 +19,7 @@
         <app-icon name="info" />Detalles
       </button>
       @if (canRun() && integration.flow === 'CATALOG') {
-        <button type="button" class="action" (click)="run(integration)"><app-icon name="play" />Ejecutar</button>
+        <button type="button" class="action" (click)="run(integration)"><app-icon name="play" />Sincronizar ahora</button>
       }
       @if (canChangeState()) {
         @if (integration.state === 'ENABLED') {
