@@ -38,19 +38,21 @@ export class ConnectionsApi {
   private readonly scope = inject(TenantScope);
   private readonly url = '/api/admin/connections';
 
-  list(): Observable<Connection[]> {
-    return this.http.get<Connection[]>(this.url, { params: this.scope.params() });
+  list(tenantId = this.scope.tenantId()): Observable<Connection[]> {
+    return this.http.get<Connection[]>(this.url, { params: this.scope.params({}, tenantId) });
   }
 
   create(connector: Connector, draft: ConnectionDraft): Observable<Connection> {
     return this.http.post<Connection>(this.url, { connector, ...draft }, { params: this.scope.params() });
   }
 
-  update(id: string, draft: ConnectionDraft): Observable<Connection> {
-    return this.http.put<Connection>(`${this.url}/${id}`, draft, { params: this.scope.params() });
+  update(connection: Connection, draft: ConnectionDraft): Observable<Connection> {
+    return this.http.put<Connection>(`${this.url}/${connection.id}`, draft, { params: this.scope.params({}, connection.tenantId) });
   }
 
-  test(id: string): Observable<ConnectionTestResult> {
-    return this.http.post<ConnectionTestResult>(`${this.url}/${id}/test`, {}, { params: this.scope.params() });
+  test(connection: Connection): Observable<ConnectionTestResult> {
+    return this.http.post<ConnectionTestResult>(`${this.url}/${connection.id}/test`, {}, {
+      params: this.scope.params({}, connection.tenantId),
+    });
   }
 }

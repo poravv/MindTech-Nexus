@@ -1,16 +1,17 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
+import { map } from 'rxjs';
 import { FormsModule } from '@angular/forms';
 import { Connection, ConnectionDraft, ConnectionsApi, Connector } from '../../api/connections.api';
 import { AuthService } from '../../core/auth/auth.service';
 import { Notifier } from '../../core/notifier.service';
 import { problemMessage } from '../../core/problem';
 import { canManageTenantConfig } from '../../core/roles';
+import { tenantFanOut } from '../../core/tenant-fan-out';
 import { TenantScope } from '../../core/tenant-scope.service';
 import { Icon } from '../../shared/ui/icon';
 import { Modal } from '../../shared/ui/modal';
-import { TenantRequired } from '../../shared/ui/tenant-required';
 
 interface FieldSpec {
   key: string;
@@ -59,7 +60,7 @@ interface ConnectionForm {
 @Component({
   selector: 'app-connections-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, FormsModule, Modal, TenantRequired, Icon],
+  imports: [DatePipe, FormsModule, Modal, Icon],
   templateUrl: './connections-page.html',
 })
 export default class ConnectionsPage {
@@ -68,9 +69,14 @@ export default class ConnectionsPage {
   private readonly auth = inject(AuthService);
   protected readonly scope = inject(TenantScope);
 
+  private readonly fanOut = tenantFanOut();
+  /** On "Todos los tenants" every tenant's connections, with a tenant column. */
   protected readonly connections = rxResource({
-    params: () => (this.scope.needsTenant() ? undefined : { tenantId: this.scope.tenantId() }),
-    stream: () => this.api.list(),
+    params: () => ({ tenantId: this.scope.tenantId() }),
+    stream: () =>
+      this.fanOut((tenantId) => this.api.list(tenantId)).pipe(
+        map(({ tenants, parts }) => ({ tenantNames: new Map(tenants.map((t) => [t.id, t.name])), items: parts.flat() })),
+      ),
   });
   protected readonly canManage = computed(() => {
     const role = this.auth.role();
@@ -133,7 +139,7 @@ export default class ConnectionsPage {
       settings: mergeSettings(target.original?.settings ?? {}, this.form),
     };
     this.busy.set(true);
-    const request = target.id ? this.api.update(target.id, draft) : this.api.create(this.form.connector, draft);
+    const request = target.id ? this.api.update(target.original!, draft) : this.api.create(this.form.connector, draft);
     request.subscribe({
       next: (connection) => {
         this.busy.set(false);
@@ -150,7 +156,7 @@ export default class ConnectionsPage {
 
   protected test(connection: Connection): void {
     this.testing.set(connection.id);
-    this.api.test(connection.id).subscribe({
+    this.api.test(connection).subscribe({
       next: (result) => {
         this.testing.set(null);
         const message = `${connection.name}: ${result.ok ? 'conexión correcta' : 'falló'}${result.detail ? ` — ${result.detail}` : ''}`;

@@ -5,14 +5,12 @@
       <p>Credenciales con las que otros sistemas (p. ej. el POS) obtienen tokens para la API de Nexus.</p>
     </div>
     @if (canManage()) {
-      <button type="button" class="btn btn-primary" (click)="openCreate()" [disabled]="scope.needsTenant()">Nuevo cliente</button>
+      <button type="button" class="btn btn-primary" (click)="openCreate()" [disabled]="scope.needsTenant()"
+              [attr.title]="scope.needsTenant() ? 'Elegí un tenant arriba para crear un cliente en él' : null">Nuevo cliente</button>
     }
   </header>
 
-  @if (scope.needsTenant()) {
-    <app-tenant-required />
-  } @else {
-    @if (clients.error(); as error) {
+  @if (clients.error(); as error) {
       <p class="alert" role="alert">{{ errorOf(error) }}</p>
     }
     <div class="panel">
@@ -20,7 +18,9 @@
         <table class="data">
           <thead>
             <tr>
-              <th scope="col">Nombre</th><th scope="col">Client ID</th><th scope="col">Scopes</th>
+              <th scope="col">Nombre</th>
+              @if (scope.needsTenant()) { <th scope="col">Tenant</th> }
+              <th scope="col">Client ID</th><th scope="col">Scopes</th>
               <th scope="col">Estado</th><th scope="col">Último uso</th>
               @if (canManage()) {
                 <th scope="col"><span class="visually-hidden">Acciones</span></th>
@@ -29,9 +29,10 @@
           </thead>
           <tbody>
             @if (clients.hasValue()) {
-              @for (client of clients.value(); track client.id) {
+              @for (client of clients.value().items; track client.id) {
                 <tr>
                   <td>{{ client.name }}</td>
+                  @if (scope.needsTenant()) { <td>{{ clients.value().tenantNames.get(client.tenantId) ?? '—' }}</td> }
                   <td class="mono">{{ client.clientId }}</td>
                   <td class="mono">{{ client.scopes.join(' ') }}</td>
                   <td><app-status-badge [status]="client.status" /></td>
@@ -50,16 +51,15 @@
                   }
                 </tr>
               } @empty {
-                <tr><td colspan="6" class="empty">No hay clientes m2m en este tenant.</td></tr>
+                <tr><td colspan="7" class="empty">{{ scope.needsTenant() ? 'Todavía no hay clientes m2m.' : 'No hay clientes m2m en este tenant.' }}</td></tr>
               }
             } @else if (clients.isLoading()) {
-              <tr><td colspan="6" class="empty">Cargando…</td></tr>
+              <tr><td colspan="7" class="empty">Cargando…</td></tr>
             }
           </tbody>
         </table>
       </div>
     </div>
-  }
 </section>
 
 <app-modal heading="Nuevo cliente m2m" [open]="creating()" (closed)="creating.set(false)">

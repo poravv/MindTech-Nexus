@@ -2,24 +2,24 @@ import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { Observable } from 'rxjs';
+import { map, Observable } from 'rxjs';
 import { ApiClient, ApiClientsApi, IssuedSecret, SCOPES } from '../../api/api-clients.api';
 import { AuthService } from '../../core/auth/auth.service';
 import { Notifier } from '../../core/notifier.service';
 import { problemMessage } from '../../core/problem';
 import { canManageTenantConfig } from '../../core/roles';
+import { tenantFanOut } from '../../core/tenant-fan-out';
 import { TenantScope } from '../../core/tenant-scope.service';
 import { ConfirmDialog } from '../../shared/ui/confirm-dialog';
 import { Modal } from '../../shared/ui/modal';
 import { StatusBadge } from '../../shared/ui/status-badge';
-import { TenantRequired } from '../../shared/ui/tenant-required';
 
 type PendingAction = { kind: 'rotate' | 'revoke'; client: ApiClient };
 
 @Component({
   selector: 'app-api-clients-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, FormsModule, Modal, ConfirmDialog, StatusBadge, TenantRequired],
+  imports: [DatePipe, FormsModule, Modal, ConfirmDialog, StatusBadge],
   templateUrl: './api-clients-page.html',
 })
 export default class ApiClientsPage {
@@ -28,9 +28,14 @@ export default class ApiClientsPage {
   private readonly auth = inject(AuthService);
   protected readonly scope = inject(TenantScope);
 
+  private readonly fanOut = tenantFanOut();
+  /** On "Todos los tenants" every tenant's clients, with a tenant column. */
   protected readonly clients = rxResource({
-    params: () => (this.scope.needsTenant() ? undefined : { tenantId: this.scope.tenantId() }),
-    stream: () => this.api.list(),
+    params: () => ({ tenantId: this.scope.tenantId() }),
+    stream: () =>
+      this.fanOut((tenantId) => this.api.list(tenantId)).pipe(
+        map(({ tenants, parts }) => ({ tenantNames: new Map(tenants.map((t) => [t.id, t.name])), items: parts.flat() })),
+      ),
   });
   protected readonly canManage = computed(() => {
     const role = this.auth.role();
@@ -90,7 +95,7 @@ export default class ApiClientsPage {
     }
     this.busy.set(true);
     const request: Observable<unknown> =
-      action.kind === 'rotate' ? this.api.rotate(action.client.id) : this.api.revoke(action.client.id);
+      action.kind === 'rotate' ? this.api.rotate(action.client) : this.api.revoke(action.client);
     request.subscribe({
       next: (response) => {
         this.busy.set(false);

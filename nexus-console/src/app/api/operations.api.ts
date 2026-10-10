@@ -77,8 +77,8 @@ export class OperationsApi {
   private readonly scope = inject(TenantScope);
   private readonly url = '/api/admin/operations';
 
-  list(filter: OperationFilter): Observable<Operation[]> {
-    return this.http.get<Operation[]>(this.url, { params: this.scope.params({ ...filter }) });
+  list(filter: OperationFilter, tenantId = this.scope.tenantId()): Observable<Operation[]> {
+    return this.http.get<Operation[]>(this.url, { params: this.scope.params({ ...filter }, tenantId) });
   }
 
   get(id: string): Observable<OperationDetail> {
@@ -95,7 +95,7 @@ export class OperationsApi {
   }
 
   /** Dense series (empty buckets included) from the bucket containing `from` up to now; at most 500 points. */
-  timeseries(from: string, bucket: TimeseriesBucket = 'PT1H'): Observable<TimeseriesPoint[]> {
-    return this.http.get<TimeseriesPoint[]>(`${this.url}/timeseries`, { params: this.scope.params({ from, bucket }) });
+  timeseries(from: string, bucket: TimeseriesBucket = 'PT1H', tenantId = this.scope.tenantId()): Observable<TimeseriesPoint[]> {
+    return this.http.get<TimeseriesPoint[]>(`${this.url}/timeseries`, { params: this.scope.params({ from, bucket }, tenantId) });
   }
 }

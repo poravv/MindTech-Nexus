@@ -33,11 +33,13 @@ export class TenantScope {
     }
   }
 
-  /** Query params with the tenant (when applicable) plus the given non-empty values. */
-  params(extra: Record<string, ParamValue> = {}): HttpParams {
+  /**
+   * Query params with the tenant plus the given non-empty values. `tenantId` overrides the selected one for a
+   * platform_admin acting on a row of another tenant while looking at "Todos los tenants".
+   */
+  params(extra: Record<string, ParamValue> = {}, tenantId: string | null = this.tenantId()): HttpParams {
     let params = new HttpParams();
-    const tenantId = this.tenantId();
-    if (tenantId) {
+    if (tenantId && this.isPlatformAdmin()) {
       params = params.set('tenantId', tenantId);
     }
     for (const [key, value] of Object.entries(extra)) {

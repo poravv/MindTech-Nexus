@@ -5,14 +5,12 @@
       <p>Sistemas externos con los que habla Nexus. Las credenciales se guardan cifradas y nunca se vuelven a mostrar.</p>
     </div>
     @if (canManage()) {
-      <button type="button" class="btn btn-primary" (click)="openCreate()" [disabled]="scope.needsTenant()"><app-icon name="plus" />Nueva conexión</button>
+      <button type="button" class="btn btn-primary" (click)="openCreate()" [disabled]="scope.needsTenant()"
+              [attr.title]="scope.needsTenant() ? 'Elegí un tenant arriba para crear una conexión en él' : null"><app-icon name="plus" />Nueva conexión</button>
     }
   </header>
 
-  @if (scope.needsTenant()) {
-    <app-tenant-required />
-  } @else {
-    @if (connections.error(); as error) {
+  @if (connections.error(); as error) {
       <p class="alert" role="alert">{{ errorOf(error) }}</p>
     }
     <div class="panel">
@@ -20,7 +18,9 @@
         <table class="data">
           <thead>
             <tr>
-              <th scope="col">Nombre</th><th scope="col">Sistema</th><th scope="col">URL base</th>
+              <th scope="col">Nombre</th>
+              @if (scope.needsTenant()) { <th scope="col">Tenant</th> }
+              <th scope="col">Sistema</th><th scope="col">URL base</th>
               <th scope="col">Credenciales</th><th scope="col">Última prueba</th>
               @if (canManage()) {
                 <th scope="col"><span class="visually-hidden">Acciones</span></th>
@@ -29,9 +29,10 @@
           </thead>
           <tbody>
             @if (connections.hasValue()) {
-              @for (connection of connections.value(); track connection.id) {
+              @for (connection of connections.value().items; track connection.id) {
                 <tr>
                   <td>{{ connection.name }}</td>
+                  @if (scope.needsTenant()) { <td>{{ connections.value().tenantNames.get(connection.tenantId) ?? '—' }}</td> }
                   <td>{{ connection.connector }}</td>
                   <td class="mono">{{ connection.baseUrl }}</td>
                   <td>
@@ -63,16 +64,15 @@
                   }
                 </tr>
               } @empty {
-                <tr><td colspan="6" class="empty">No hay conexiones en este tenant.</td></tr>
+                <tr><td colspan="7" class="empty">{{ scope.needsTenant() ? 'Todavía no hay conexiones.' : 'No hay conexiones en este tenant.' }}</td></tr>
               }
             } @else if (connections.isLoading()) {
-              <tr><td colspan="6" class="empty">Cargando…</td></tr>
+              <tr><td colspan="7" class="empty">Cargando…</td></tr>
             }
           </tbody>
         </table>
       </div>
     </div>
-  }
 </section>
 
 <app-modal [heading]="editing()?.id ? 'Editar conexión' : 'Nueva conexión'" [open]="editing() !== null"
