@@ -1,0 +1,16 @@
+{
+  "sourceRef": "MI-POS-01:NC:000007",
+  "documentType": "CREDIT_NOTE",
+  "issuedAt": "2026-09-24T09:00:00-03:00",
+  "branchRef": null,
+  "pointOfSaleRef": null,
+  "referenceCdc": "01800987654001001000012312026092311234567898",
+  "issueReasonCode": "2",
+  "header": { "currency": "PYG", "paymentCondition": "CASH", "paymentMethod": "EFECTIVO" },
+  "customer": { "documentType": "RUC", "documentNumber": "80098765-4", "name": "CLIENTE EJEMPLO SA", "email": null },
+  "items": [
+    { "code": "CAF-001", "description": "Devolucion cafe expreso", "quantity": "1", "unitPrice": 3500, "discount": 0,
+      "vatRate": "10", "unit": "UNI" }
+  ],
+  "globalDiscount": 500
+}

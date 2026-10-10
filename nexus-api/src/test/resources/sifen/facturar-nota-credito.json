@@ -1,0 +1,29 @@
+{
+  "transactionId": "MI-POS-01:NC:000007",
+  "fechaEmision": "2026-09-24T09:00:00-03:00",
+  "tipoDocumento": "NOTA_CREDITO",
+  "cdcReferencia": "01800987654001001000012312026092311234567898",
+  "motivoEmision": 2,
+  "header": {
+    "moneda": "PYG",
+    "condicionPago": "CONTADO",
+    "formaPago": "EFECTIVO"
+  },
+  "receptor": {
+    "tipoDocumento": "RUC",
+    "numeroDocumento": "80098765-4",
+    "razonSocial": "CLIENTE EJEMPLO SA"
+  },
+  "detail": [
+    {
+      "codigo": "CAF-001",
+      "descripcion": "Devolucion cafe expreso",
+      "cantidad": 1,
+      "precioUnitario": 3500,
+      "descuento": 0,
+      "ivaTipo": "10",
+      "unidadMedida": "UNI"
+    }
+  ],
+  "descuentoGlobal": { "tipo": "MONTO", "valor": 500 }
+}

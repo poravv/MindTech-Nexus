@@ -1,0 +1,15 @@
+{
+  "sourceRef": "MI-POS-01:VENTA:000102",
+  "documentType": "INVOICE",
+  "issuedAt": "2026-09-23T10:35:00-03:00",
+  "branchRef": "SUC-001",
+  "pointOfSaleRef": "CAJA-01",
+  "referenceCdc": null,
+  "issueReasonCode": null,
+  "header": { "currency": "PYG", "paymentCondition": "CASH", "paymentMethod": "EFECTIVO" },
+  "customer": { "documentType": "INNOMINADO", "documentNumber": "0", "name": "Sin Nombre", "email": null },
+  "items": [
+    { "code": "PAN-001", "description": "Chipa (unidad)", "quantity": "4", "unitPrice": 1100, "vatRate": "10" }
+  ],
+  "globalDiscount": 0
+}
