@@ -1,6 +1,7 @@
 # Consola Angular servida por nginx-unprivileged (uid 101). Su nginx hace proxy SOLO de /api/admin/ y
 # /api/v1/webhooks/ a nexus-api:8080; el runtime m2m no tiene ruta pública.
-# El tag lo escribe deploy.yml (GitOps). /tmp es emptyDir: nginx-unprivileged guarda ahí pid y temporales.
+# El tag lo escribe deploy.yml (GitOps). Con readOnlyRootFilesystem, dos emptyDir: /tmp (pid y temporales de
+# nginx-unprivileged) y /etc/nginx/conf.d (el entrypoint renderiza ahí el template con envsubst al arrancar).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -72,6 +73,10 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
       volumes:
         - name: tmp
+          emptyDir: {}
+        - name: nginx-conf
           emptyDir: {}
