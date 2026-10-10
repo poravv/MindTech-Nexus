@@ -27,7 +27,10 @@ spec:
         tier: backend
     spec:
       automountServiceAccountToken: false
-      terminationGracePeriodSeconds: 30
+      # Apagado: Spring drena HTTP (hasta 30 s, timeout-per-shutdown-phase) y luego el worker espera 25 s los pasos
+      # en curso (medido: 26 s con una llamada SIFEN colgada). 60 s cubre ambos sin SIGKILL. Una llamada SIFEN más
+      # larga (readTimeout hasta 150 s) no se espera: su lease se rescata y la saga verifica en SIFEN antes de reenviar.
+      terminationGracePeriodSeconds: 60
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
