@@ -1,0 +1,83 @@
+<section class="page">
+  <header class="page-head">
+    <div>
+      <h1>Resumen</h1>
+      <p>Actividad de las últimas 24 horas{{ scope.isPlatformAdmin() && !scope.tenantId() ? ' en todos los tenants' : '' }}.</p>
+    </div>
+  </header>
+
+  <section class="panel panel-body page" aria-labelledby="dlq-heading">
+    <div class="dlq">
+      <div>
+        <h2 id="dlq-heading">Cola de errores (DLQ)</h2>
+        <p class="muted">Operaciones que necesitan revisión humana.</p>
+      </div>
+      @if (summary.hasValue()) {
+        <p class="big" [class.alarm]="summary.value().dead > 0">{{ summary.value().dead }}</p>
+        <a class="btn" routerLink="/operaciones" [queryParams]="{ status: 'DEAD' }">Ver DLQ</a>
+      } @else if (summary.error(); as error) {
+        <p class="muted">{{ unavailable(error) }}</p>
+      }
+    </div>
+  </section>
+
+  <div class="grid">
+    <section class="panel panel-body page" aria-labelledby="status-heading">
+      <h2 id="status-heading">Operaciones por estado</h2>
+      @if (summary.hasValue()) {
+        <ul class="counts">
+          @for (status of statuses; track status) {
+            <li>
+              <a routerLink="/operaciones" [queryParams]="{ status }"><app-status-badge [status]="status" /></a>
+              <span class="count">{{ summary.value().byStatus[status] ?? 0 }}</span>
+            </li>
+          }
+        </ul>
+      } @else if (summary.error(); as error) {
+        <p class="muted">{{ unavailable(error) }}</p>
+      } @else {
+        <p class="muted">Cargando…</p>
+      }
+    </section>
+
+    <section class="panel panel-body page" aria-labelledby="flow-heading">
+      <h2 id="flow-heading">Operaciones por flujo</h2>
+      @if (summary.hasValue()) {
+        <ul class="counts">
+          @for (flow of flows; track flow) {
+            <li>
+              <a routerLink="/operaciones" [queryParams]="{ flow }">{{ flowLabels[flow] }}</a>
+              <span class="count">{{ summary.value().byFlow[flow] ?? 0 }}</span>
+            </li>
+          }
+        </ul>
+      } @else if (summary.error(); as error) {
+        <p class="muted">{{ unavailable(error) }}</p>
+      } @else {
+        <p class="muted">Cargando…</p>
+      }
+    </section>
+
+    @if (showIntegrations()) {
+      <section class="panel panel-body page" aria-labelledby="int-heading">
+        <h2 id="int-heading">Integraciones por estado</h2>
+        @if (scope.needsTenant()) {
+          <p class="muted">Elegí un tenant para verlas.</p>
+        } @else if (integrations.hasValue()) {
+          <ul class="counts">
+            @for (state of states; track state) {
+              <li>
+                <app-status-badge [status]="state" />
+                <span class="count">{{ integrationCounts().get(state) ?? 0 }}</span>
+              </li>
+            }
+          </ul>
+        } @else if (integrations.error(); as error) {
+          <p class="muted">{{ unavailable(error) }}</p>
+        } @else {
+          <p class="muted">Cargando…</p>
+        }
+      </section>
+    }
+  </div>
+</section>

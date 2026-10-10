@@ -1,0 +1,59 @@
+<section class="page">
+  <header class="page-head">
+    <div>
+      <h1>Auditoría</h1>
+      <p>Quién hizo qué y cuándo. Los secretos nunca aparecen en el registro.</p>
+    </div>
+  </header>
+
+  @if (events.error(); as error) {
+    <p class="alert" role="alert">{{ errorOf(error) }}</p>
+  }
+
+  <div class="panel">
+    <div class="table-wrap" role="region" aria-label="Eventos de auditoría" tabindex="0">
+      <table class="data">
+        <thead>
+          <tr>
+            <th scope="col">Fecha</th><th scope="col">Acción</th><th scope="col">Recurso</th>
+            <th scope="col">Actor</th><th scope="col">Cambios</th>
+          </tr>
+        </thead>
+        <tbody>
+          @if (events.hasValue()) {
+            @for (event of events.value(); track event.id) {
+              <tr>
+                <td class="nowrap">{{ event.happenedAt | date: 'dd/MM/yyyy HH:mm:ss' }}</td>
+                <td class="mono">{{ event.action }}</td>
+                <td><span class="mono">{{ event.resourceType }}</span> <span class="muted mono">{{ event.resourceId }}</span></td>
+                <td><span class="muted">{{ event.actorType }}</span> <span class="mono">{{ event.actorId }}</span></td>
+                <td>
+                  @if (event.before || event.after) {
+                    <details>
+                      <summary>Ver</summary>
+                      @if (event.before) {
+                        <p class="hint">Antes</p>
+                        <pre class="json">{{ event.before | json }}</pre>
+                      }
+                      @if (event.after) {
+                        <p class="hint">Después</p>
+                        <pre class="json">{{ event.after | json }}</pre>
+                      }
+                    </details>
+                  } @else {
+                    <span class="muted">—</span>
+                  }
+                </td>
+              </tr>
+            } @empty {
+              <tr><td colspan="5" class="empty">Sin eventos.</td></tr>
+            }
+          } @else if (events.isLoading()) {
+            <tr><td colspan="5" class="empty">Cargando…</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <app-pager [page]="page()" [hasNext]="hasNext()" (pageChange)="page.set($event)" />
+  </div>
+</section>

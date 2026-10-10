@@ -1,0 +1,130 @@
+<section class="page">
+  <header class="page-head">
+    <div>
+      <h1>Clientes m2m</h1>
+      <p>Credenciales con las que otros sistemas (p. ej. el POS) obtienen tokens para la API de Nexus.</p>
+    </div>
+    @if (canManage()) {
+      <button type="button" class="btn btn-primary" (click)="openCreate()" [disabled]="scope.needsTenant()">Nuevo cliente</button>
+    }
+  </header>
+
+  @if (scope.needsTenant()) {
+    <app-tenant-required />
+  } @else {
+    @if (clients.error(); as error) {
+      <p class="alert" role="alert">{{ errorOf(error) }}</p>
+    }
+    <div class="panel">
+      <div class="table-wrap" role="region" aria-label="Clientes m2m" tabindex="0">
+        <table class="data">
+          <thead>
+            <tr>
+              <th scope="col">Nombre</th><th scope="col">Client ID</th><th scope="col">Scopes</th>
+              <th scope="col">Estado</th><th scope="col">Último uso</th>
+              @if (canManage()) {
+                <th scope="col"><span class="visually-hidden">Acciones</span></th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @if (clients.hasValue()) {
+              @for (client of clients.value(); track client.id) {
+                <tr>
+                  <td>{{ client.name }}</td>
+                  <td class="mono">{{ client.clientId }}</td>
+                  <td class="mono">{{ client.scopes.join(' ') }}</td>
+                  <td><app-status-badge [status]="client.status" /></td>
+                  <td class="nowrap">{{ (client.lastUsedAt | date: 'dd/MM/yyyy HH:mm') ?? 'Nunca' }}</td>
+                  @if (canManage()) {
+                    <td>
+                      @if (client.status === 'ACTIVE') {
+                        <div class="row-actions">
+                          <button type="button" class="btn btn-sm" (click)="pending.set({ kind: 'rotate', client })"
+                                  [attr.aria-label]="'Rotar secreto de ' + client.name">Rotar</button>
+                          <button type="button" class="btn btn-sm" (click)="pending.set({ kind: 'revoke', client })"
+                                  [attr.aria-label]="'Revocar ' + client.name">Revocar</button>
+                        </div>
+                      }
+                    </td>
+                  }
+                </tr>
+              } @empty {
+                <tr><td colspan="6" class="empty">No hay clientes m2m en este tenant.</td></tr>
+              }
+            } @else if (clients.isLoading()) {
+              <tr><td colspan="6" class="empty">Cargando…</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+</section>
+
+<app-modal heading="Nuevo cliente m2m" [open]="creating()" (closed)="creating.set(false)">
+  <form class="form" (ngSubmit)="create()" #form="ngForm">
+    @if (formError(); as message) {
+      <p class="alert" role="alert">{{ message }}</p>
+    }
+    <div class="field">
+      <label for="client-name">Nombre</label>
+      <input id="client-name" name="name" class="input" required maxlength="200" [(ngModel)]="name"
+             placeholder="POS sucursal centro" />
+    </div>
+    <fieldset>
+      <legend>Scopes</legend>
+      <div class="checks">
+        @for (option of allScopes; track option) {
+          <label class="check mono">
+            <input type="checkbox" [checked]="scopes().has(option)"
+                   (change)="toggleScope(option, $any($event.target).checked)" />{{ option }}
+          </label>
+        }
+      </div>
+    </fieldset>
+    <div class="form-actions">
+      <button type="button" class="btn" (click)="creating.set(false)">Cancelar</button>
+      <button type="submit" class="btn btn-primary" [disabled]="busy() || form.invalid || scopes().size === 0">Crear</button>
+    </div>
+  </form>
+</app-modal>
+
+<app-modal heading="Guardá el secreto ahora" [open]="issued() !== null" (closed)="issued.set(null)">
+  @if (issued(); as secret) {
+    <div class="form">
+      <p class="alert alert-warn" role="status">
+        Este secreto se muestra una única vez. Si lo perdés, rotalo para obtener uno nuevo.
+      </p>
+      <div class="field">
+        <label for="issued-id">Client ID</label>
+        <div class="toolbar">
+          <input id="issued-id" class="input mono" readonly [value]="secret.client.clientId" />
+          <button type="button" class="btn btn-sm" (click)="copy(secret.client.clientId)">Copiar</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="issued-secret">Client secret</label>
+        <div class="toolbar">
+          <input id="issued-secret" class="input mono" readonly [value]="secret.clientSecret" />
+          <button type="button" class="btn btn-sm" (click)="copy(secret.clientSecret)">Copiar</button>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-primary" (click)="issued.set(null)">Ya lo guardé</button>
+      </div>
+    </div>
+  }
+</app-modal>
+
+<app-confirm-dialog
+  [open]="pending() !== null"
+  [busy]="busy()"
+  [danger]="pending()?.kind === 'revoke'"
+  [heading]="pending()?.kind === 'rotate' ? 'Rotar secreto' : 'Revocar cliente'"
+  [message]="pending()?.kind === 'rotate'
+    ? 'Se genera un secreto nuevo. El anterior sigue válido 24 horas para que actualices el sistema que lo usa.'
+    : 'El cliente ' + (pending()?.client?.name ?? '') + ' no podrá obtener nuevos tokens. No se puede deshacer.'"
+  [confirmLabel]="pending()?.kind === 'rotate' ? 'Rotar' : 'Revocar'"
+  (confirmed)="confirmPending()"
+  (cancelled)="pending.set(null)" />

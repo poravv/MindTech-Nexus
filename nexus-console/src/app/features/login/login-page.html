@@ -1,0 +1,29 @@
+<main class="auth">
+  <section class="brand" aria-hidden="true">
+    <p class="mark">N</p>
+    <p class="name">MindTech Nexus</p>
+    <p class="tag">Integraciones entre punto de venta, facturación electrónica y canales de pedido.</p>
+  </section>
+
+  <section class="card panel">
+    <h1>Ingresar a la consola</h1>
+    <form class="form" (ngSubmit)="submit()" #form="ngForm">
+      @if (error(); as message) {
+        <p class="alert" role="alert">{{ message }}</p>
+      }
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" class="input" autocomplete="username" required
+               [(ngModel)]="email" />
+      </div>
+      <div class="field">
+        <label for="password">Contraseña</label>
+        <input id="password" name="password" type="password" class="input" autocomplete="current-password" required
+               [(ngModel)]="password" />
+      </div>
+      <button type="submit" class="btn btn-primary" [disabled]="busy() || form.invalid">
+        {{ busy() ? 'Ingresando…' : 'Ingresar' }}
+      </button>
+    </form>
+  </section>
+</main>

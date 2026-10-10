@@ -1,0 +1,71 @@
+<section class="page">
+  <header class="page-head">
+    <div>
+      <h1>Usuarios</h1>
+      <p>Personas con acceso a la consola. La contraseña inicial se cambia en el primer ingreso.</p>
+    </div>
+    <button type="button" class="btn btn-primary" (click)="openCreate()" [disabled]="!canCreate()"
+            [attr.title]="canCreate() ? null : 'Elegí un tenant para crear usuarios'">Nuevo usuario</button>
+  </header>
+
+  @if (users.error(); as error) {
+    <p class="alert" role="alert">{{ errorOf(error) }}</p>
+  }
+
+  <div class="panel">
+    <div class="table-wrap" role="region" aria-label="Usuarios" tabindex="0">
+      <table class="data">
+        <thead>
+          <tr><th scope="col">Email</th><th scope="col">Rol</th><th scope="col">Estado</th><th scope="col">Contraseña</th></tr>
+        </thead>
+        <tbody>
+          @if (users.hasValue()) {
+            @for (user of users.value(); track user.id) {
+              <tr>
+                <td>{{ user.email }}</td>
+                <td>{{ roleLabels[user.role] }}</td>
+                <td><app-status-badge [status]="user.status" /></td>
+                <td class="muted">{{ user.mustChangePassword ? 'Pendiente de cambio' : 'Definida' }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="4" class="empty">No hay usuarios.</td></tr>
+            }
+          } @else if (users.isLoading()) {
+            <tr><td colspan="4" class="empty">Cargando…</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<app-modal heading="Nuevo usuario" [open]="creating()" (closed)="creating.set(false)">
+  <form class="form" (ngSubmit)="create()" #form="ngForm">
+    @if (formError(); as message) {
+      <p class="alert" role="alert">{{ message }}</p>
+    }
+    <div class="field">
+      <label for="user-email">Email</label>
+      <input id="user-email" name="email" type="email" class="input" required maxlength="320" autocomplete="off"
+             [(ngModel)]="email" />
+    </div>
+    <div class="field">
+      <label for="user-role">Rol</label>
+      <select id="user-role" name="role" class="select" [(ngModel)]="role">
+        @for (option of roles; track option) {
+          <option [value]="option">{{ roleLabels[option] }}</option>
+        }
+      </select>
+    </div>
+    <div class="field">
+      <label for="user-password">Contraseña inicial</label>
+      <input id="user-password" name="password" type="password" class="input" required autocomplete="new-password"
+             [minlength]="minPassword" maxlength="200" [(ngModel)]="password" aria-describedby="user-password-hint" />
+      <span id="user-password-hint" class="hint">Mínimo {{ minPassword }} caracteres. Compartila por un canal seguro.</span>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn" (click)="creating.set(false)">Cancelar</button>
+      <button type="submit" class="btn btn-primary" [disabled]="busy() || form.invalid">Crear</button>
+    </div>
+  </form>
+</app-modal>

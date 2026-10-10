@@ -1,0 +1,176 @@
+<section class="page">
+  <header class="page-head">
+    <div>
+      <h1>Integraciones</h1>
+      <p>Cada integración une una conexión de origen con una de destino para un flujo, con su política de ritmo y reintentos.</p>
+    </div>
+    @if (canManage()) {
+      <button type="button" class="btn btn-primary" (click)="openCreate()" [disabled]="scope.needsTenant()">Nueva integración</button>
+    }
+  </header>
+
+  @if (scope.needsTenant()) {
+    <app-tenant-required />
+  } @else {
+    @if (data.error(); as error) {
+      <p class="alert" role="alert">{{ errorOf(error) }}</p>
+    }
+    <div class="panel">
+      <div class="table-wrap" role="region" aria-label="Integraciones" tabindex="0">
+        <table class="data">
+          <thead>
+            <tr>
+              <th scope="col">Código</th><th scope="col">Flujo</th><th scope="col">Origen → destino</th>
+              <th scope="col">Estado</th><th scope="col">Versión</th>
+              <th scope="col"><span class="visually-hidden">Acciones</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            @if (data.hasValue()) {
+              @for (integration of data.value().integrations; track integration.id) {
+                <tr>
+                  <td class="mono nowrap">{{ integration.code }}</td>
+                  <td>{{ flows[integration.flow].label }}</td>
+                  <td>
+                    {{ connectionNames().get(integration.sourceConnectionId) ?? '—' }} →
+                    {{ connectionNames().get(integration.targetConnectionId) ?? '—' }}
+                  </td>
+                  <td><app-status-badge [status]="integration.state" /></td>
+                  <td class="num">v{{ integration.version }}</td>
+                  <td>
+                    <div class="row-actions">
+                      @if (states().length) {
+                        <button type="button" class="btn btn-sm" (click)="openStateChange(integration)"
+                                [attr.aria-label]="'Cambiar estado de ' + integration.code">Cambiar estado</button>
+                      }
+                      @if (canRun() && integration.flow === 'CATALOG') {
+                        <button type="button" class="btn btn-sm" (click)="run(integration)"
+                                [attr.aria-label]="'Sincronizar ahora ' + integration.code">Sincronizar</button>
+                      }
+                      @if (canManage()) {
+                        <button type="button" class="btn btn-sm" (click)="openEdit(integration)"
+                                [attr.aria-label]="'Editar ' + integration.code">Editar</button>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="6" class="empty">No hay integraciones en este tenant.</td></tr>
+              }
+            } @else if (data.isLoading()) {
+              <tr><td colspan="6" class="empty">Cargando…</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+</section>
+
+<app-modal [heading]="editing()?.id ? 'Editar integración' : 'Nueva integración'" [open]="editing() !== null"
+           (closed)="editing.set(null)">
+  <form class="form" (ngSubmit)="save()" #ngForm="ngForm">
+    @if (formError(); as message) {
+      <p class="alert" role="alert">{{ message }}</p>
+    }
+    <div class="form-grid">
+      <div class="field">
+        <label for="int-flow">Flujo</label>
+        <select id="int-flow" name="flow" class="select" [ngModel]="form.flow" (ngModelChange)="changeFlow($event)"
+                [disabled]="!!editing()?.id">
+          @for (flow of flowTypes; track flow) {
+            <option [value]="flow">{{ flows[flow].label }}</option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label for="int-code">Código</label>
+        <input id="int-code" name="code" class="input mono" required maxlength="100" [(ngModel)]="form.code"
+               [readonly]="!!editing()?.id" placeholder="fiscal-pos-centro" />
+      </div>
+      <div class="field">
+        <label for="int-source">Origen ({{ flows[form.flow].source }})</label>
+        <select id="int-source" name="source" class="select" required [(ngModel)]="form.sourceConnectionId">
+          <option value="" disabled>Elegí una conexión</option>
+          @for (c of connectionsFor(flows[form.flow].source); track c.id) {
+            <option [value]="c.id">{{ c.name }}</option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label for="int-target">Destino ({{ flows[form.flow].target }})</label>
+        <select id="int-target" name="target" class="select" required [(ngModel)]="form.targetConnectionId">
+          <option value="" disabled>Elegí una conexión</option>
+          @for (c of connectionsFor(flows[form.flow].target); track c.id) {
+            <option [value]="c.id">{{ c.name }}</option>
+          }
+        </select>
+      </div>
+    </div>
+
+    <fieldset>
+      <legend>Política</legend>
+      <div class="form-grid">
+        @for (field of policyFields; track field.key) {
+          <div class="field">
+            <label [for]="'pol-' + field.key">{{ field.label }}</label>
+            <input [id]="'pol-' + field.key" [name]="'pol-' + field.key" type="number" min="1" required class="input"
+                   [(ngModel)]="form.policy[field.key]" />
+          </div>
+        }
+        @if (form.flow === 'CATALOG') {
+          <div class="field">
+            <label for="pol-schedule">Sincronizar cada (s)</label>
+            <input id="pol-schedule" name="pol-schedule" type="number" min="60" required class="input"
+                   [(ngModel)]="form.policy.scheduleEverySeconds" />
+          </div>
+        }
+      </div>
+    </fieldset>
+
+    <div class="form-actions">
+      <button type="button" class="btn" (click)="editing.set(null)">Cancelar</button>
+      <button type="submit" class="btn btn-primary" [disabled]="busy() || ngForm.invalid">Guardar</button>
+    </div>
+  </form>
+</app-modal>
+
+<app-modal heading="Cambiar estado" [open]="stateTarget() !== null" (closed)="stateTarget.set(null)">
+  @if (stateTarget(); as integration) {
+    <form class="form" (ngSubmit)="changeState()" #stateForm="ngForm">
+      @if (formError(); as message) {
+        <p class="alert" role="alert">{{ message }}</p>
+      }
+      <p>
+        <span class="mono">{{ integration.code }}</span> está en
+        <app-status-badge [status]="integration.state" />.
+      </p>
+      <fieldset>
+        <legend>Nuevo estado</legend>
+        <div class="form">
+          @for (state of states(); track state) {
+            <label class="check">
+              <input type="radio" name="state" [value]="state" [(ngModel)]="nextState"
+                     [disabled]="state === integration.state" />
+              <span><app-status-badge [status]="state" /> <span class="hint">{{ stateHelp[state] }}</span></span>
+            </label>
+          }
+        </div>
+      </fieldset>
+      <div class="field">
+        <label for="state-reason">Motivo</label>
+        <textarea id="state-reason" name="reason" class="textarea" required maxlength="500" [(ngModel)]="reason"
+                  aria-describedby="state-reason-hint"></textarea>
+        <span id="state-reason-hint" class="hint">Obligatorio. Queda registrado en la auditoría.</span>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn" (click)="stateTarget.set(null)">Cancelar</button>
+        <button type="submit" class="btn" [class.btn-danger]="nextState === 'EMERGENCY_STOP'"
+                [class.btn-primary]="nextState !== 'EMERGENCY_STOP'"
+                [disabled]="busy() || stateForm.invalid || !reason.trim() || nextState === integration.state">
+          Confirmar cambio
+        </button>
+      </div>
+    </form>
+  }
+</app-modal>

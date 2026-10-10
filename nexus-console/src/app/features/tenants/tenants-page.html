@@ -1,0 +1,61 @@
+<section class="page">
+  <header class="page-head">
+    <div>
+      <h1>Tenants</h1>
+      <p>Cada tenant agrupa un comercio: su POS, su emisor SIFEN y su tienda GiftHub.</p>
+    </div>
+    <button type="button" class="btn btn-primary" (click)="openCreate()">Nuevo tenant</button>
+  </header>
+
+  @if (tenants.error(); as error) {
+    <p class="alert" role="alert">{{ errorOf(error) }}</p>
+  }
+
+  <div class="panel">
+    <div class="table-wrap" role="region" aria-label="Tenants" tabindex="0">
+      <table class="data">
+        <thead>
+          <tr><th scope="col">Nombre</th><th scope="col">Slug</th><th scope="col">Estado</th><th scope="col">Alta</th></tr>
+        </thead>
+        <tbody>
+          @if (tenants.hasValue()) {
+            @for (tenant of tenants.value(); track tenant.id) {
+              <tr>
+                <td>{{ tenant.name }}</td>
+                <td class="mono">{{ tenant.slug }}</td>
+                <td><app-status-badge [status]="tenant.status" /></td>
+                <td class="nowrap">{{ tenant.createdAt | date: 'dd/MM/yyyy HH:mm' }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="4" class="empty">Todavía no hay tenants.</td></tr>
+            }
+          } @else if (tenants.isLoading()) {
+            <tr><td colspan="4" class="empty">Cargando…</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<app-modal heading="Nuevo tenant" [open]="creating()" (closed)="creating.set(false)">
+  <form class="form" (ngSubmit)="create()" #form="ngForm">
+    @if (formError(); as message) {
+      <p class="alert" role="alert">{{ message }}</p>
+    }
+    <div class="field">
+      <label for="tenant-name">Nombre</label>
+      <input id="tenant-name" name="name" class="input" required maxlength="200" [(ngModel)]="name" />
+    </div>
+    <div class="field">
+      <label for="tenant-slug">Slug</label>
+      <input id="tenant-slug" name="slug" class="input mono" required maxlength="63" pattern="[a-z0-9][a-z0-9-]*"
+             [(ngModel)]="slug" aria-describedby="tenant-slug-hint" />
+      <span id="tenant-slug-hint" class="hint">Minúsculas, números y guiones. No se puede cambiar después.</span>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn" (click)="creating.set(false)">Cancelar</button>
+      <button type="submit" class="btn btn-primary" [disabled]="busy() || form.invalid">Crear</button>
+    </div>
+  </form>
+</app-modal>
