@@ -6,16 +6,25 @@ import { Notifier } from '../../core/notifier.service';
 import { problemMessage } from '../../core/problem';
 import { Role, ROLE_LABELS } from '../../core/roles';
 import { TenantScope } from '../../core/tenant-scope.service';
+import { FormSection } from '../../shared/ui/form-section';
+import { Icon } from '../../shared/ui/icon';
 import { Modal } from '../../shared/ui/modal';
+import { SecretInput } from '../../shared/ui/secret-input';
 import { StatusBadge } from '../../shared/ui/status-badge';
 
 const ASSIGNABLE_ROLES: Role[] = ['tenant_admin', 'operator', 'auditor', 'viewer'];
 const MIN_PASSWORD = 12;
+const ROLE_HELP: Partial<Record<Role, string>> = {
+  tenant_admin: 'Configura conexiones, integraciones y usuarios.',
+  operator: 'Opera integraciones y reintenta operaciones.',
+  auditor: 'Lee todo, incluida la auditoría.',
+  viewer: 'Solo consulta el estado.',
+};
 
 @Component({
   selector: 'app-users-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Modal, StatusBadge],
+  imports: [FormsModule, FormSection, Icon, Modal, SecretInput, StatusBadge],
   templateUrl: './users-page.html',
 })
 export default class UsersPage {
@@ -29,6 +38,7 @@ export default class UsersPage {
   });
   protected readonly roleLabels = ROLE_LABELS;
   protected readonly roles = ASSIGNABLE_ROLES;
+  protected readonly roleHelp = ROLE_HELP;
   protected readonly minPassword = MIN_PASSWORD;
   /** A platform_admin creates users inside the tenant chosen in the top bar. */
   protected readonly canCreate = computed(() => !this.scope.needsTenant());

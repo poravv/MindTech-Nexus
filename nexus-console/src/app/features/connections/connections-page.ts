@@ -3,15 +3,17 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { rxResource } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs';
 import { FormsModule } from '@angular/forms';
-import { Connection, ConnectionDraft, ConnectionsApi, Connector } from '../../api/connections.api';
+import { Connection, ConnectionDraft, ConnectionsApi, ConnectionTestResult, Connector } from '../../api/connections.api';
 import { AuthService } from '../../core/auth/auth.service';
 import { Notifier } from '../../core/notifier.service';
 import { problemMessage } from '../../core/problem';
 import { canManageTenantConfig } from '../../core/roles';
 import { tenantFanOut } from '../../core/tenant-fan-out';
 import { TenantScope } from '../../core/tenant-scope.service';
-import { Icon } from '../../shared/ui/icon';
+import { FormSection } from '../../shared/ui/form-section';
+import { Icon, IconName } from '../../shared/ui/icon';
 import { Modal } from '../../shared/ui/modal';
+import { SecretInput } from '../../shared/ui/secret-input';
 
 interface FieldSpec {
   key: string;
@@ -19,10 +21,25 @@ interface FieldSpec {
   hint?: string;
 }
 
+interface ConnectorSpec {
+  label: string;
+  note: string;
+  icon: IconName;
+  namePlaceholder: string;
+  urlPlaceholder: string;
+  credentials: FieldSpec[];
+  settings: FieldSpec[];
+  flags: FieldSpec[];
+}
+
 /** Credential keys and settings each connector expects (spec §5.3 and §17). */
-const CONNECTORS: Record<Connector, { label: string; credentials: FieldSpec[]; settings: FieldSpec[]; flags: FieldSpec[] }> = {
+const CONNECTORS: Record<Connector, ConnectorSpec> = {
   SIFEN: {
-    label: 'SIFEN (facturación electrónica)',
+    label: 'SIFEN',
+    note: 'Facturación electrónica',
+    icon: 'file-text',
+    namePlaceholder: 'SIFEN Farmacia Centro',
+    urlPlaceholder: 'http://backend.sifen.svc.cluster.local:8081',
     credentials: [
       { key: 'accessKey', label: 'Access key' },
       { key: 'secretKey', label: 'Secret key' },
@@ -32,6 +49,10 @@ const CONNECTORS: Record<Connector, { label: string; credentials: FieldSpec[]; s
   },
   POS: {
     label: 'Punto de venta',
+    note: 'Ventas, pedidos y catálogo',
+    icon: 'store',
+    namePlaceholder: 'POS Farmacia Centro',
+    urlPlaceholder: 'http://backend.punto-venta.svc.cluster.local:3000/api',
     credentials: [{ key: 'apiKey', label: 'API key', hint: 'Formato pv_live_…' }],
     settings: [
       { key: 'branchRef', label: 'Sucursal para pedidos' },
@@ -42,6 +63,10 @@ const CONNECTORS: Record<Connector, { label: string; credentials: FieldSpec[]; s
   },
   GIFTHUB: {
     label: 'GiftHub',
+    note: 'Tienda online y pedidos',
+    icon: 'gift',
+    namePlaceholder: 'GiftHub Farmacia Centro',
+    urlPlaceholder: 'http://api.comercio-central.svc.cluster.local:3000',
     credentials: [{ key: 'apiKey', label: 'API key', hint: 'Formato gh_live_…' }],
     settings: [],
     flags: [{ key: 'dryRun', label: 'Modo prueba (dry run) en la sincronización de catálogo' }],
@@ -60,8 +85,23 @@ interface ConnectionForm {
 @Component({
   selector: 'app-connections-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, FormsModule, Modal, Icon],
+  imports: [DatePipe, FormsModule, FormSection, Modal, Icon, SecretInput],
   templateUrl: './connections-page.html',
+  styles: `
+    .test-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+    .test-result {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-2);
+      padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius-md);
+      background: var(--color-surface-sunken);
+      overflow-wrap: anywhere;
+    }
+    .test-result app-icon { flex: none; color: var(--tone); }
+    .tone-ok.test-result { background: var(--color-ok-soft); }
+    .tone-danger.test-result { background: var(--color-danger-soft); }
+  `,
 })
 export default class ConnectionsPage {
   private readonly api = inject(ConnectionsApi);
@@ -91,6 +131,8 @@ export default class ConnectionsPage {
   protected readonly busy = signal(false);
   protected readonly testing = signal<string | null>(null);
   protected readonly formError = signal<string | null>(null);
+  /** Result of "Probar conexión" inside the edit form, shown inline. */
+  protected readonly formTest = signal<ConnectionTestResult | null>(null);
 
   protected openCreate(): void {
     this.form = emptyForm('POS');
@@ -115,6 +157,7 @@ export default class ConnectionsPage {
   /** Drops whatever credentials were typed when the dialog closes without saving. */
   protected close(): void {
     this.editing.set(null);
+    this.formTest.set(null);
     this.form = emptyForm('POS');
   }
 
@@ -170,6 +213,22 @@ export default class ConnectionsPage {
       error: (error) => {
         this.testing.set(null);
         this.notifier.error(problemMessage(error));
+      },
+    });
+  }
+
+  protected testInForm(connection: Connection): void {
+    this.testing.set(connection.id);
+    this.formTest.set(null);
+    this.api.test(connection).subscribe({
+      next: (result) => {
+        this.testing.set(null);
+        this.formTest.set(result);
+        this.connections.reload();
+      },
+      error: (error) => {
+        this.testing.set(null);
+        this.formTest.set({ ok: false, detail: problemMessage(error), testedAt: new Date().toISOString() });
       },
     });
   }
