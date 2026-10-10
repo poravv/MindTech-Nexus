@@ -40,6 +40,19 @@ class GiftHubWebhookIT extends AbstractConnectorIT {
     }
 
     @Test
+    void should_accept_a_signed_delivery_when_unsigned_requests_exceeded_the_rate_limit_of_the_connection() {
+        String now = String.valueOf(Instant.now().getEpochSecond());
+        for (int i = 0; i < 120; i++) {
+            String spam = orderCreated("spam-" + i, UUID.randomUUID().toString(), maria());
+            postWebhook(giftHubConnection, "spam-" + i, spam, "v1=00", now, 401);
+        }
+
+        JsonNode received = sendSigned("d-after-spam", orderCreated("d-after-spam", UUID.randomUUID().toString(), maria()), 200);
+
+        assertThat(received.get("outcome").asString()).isEqualTo("ACCEPTED");
+    }
+
+    @Test
     void should_answer_401_when_timestamp_is_older_than_five_minutes() {
         String body = orderCreated("d-old", UUID.randomUUID().toString(), maria());
         String old = String.valueOf(Instant.now().getEpochSecond() - 301);

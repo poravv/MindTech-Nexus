@@ -6,12 +6,14 @@ import com.mindtechpy.nexus.application.port.out.InboundEventRepository;
 import com.mindtechpy.nexus.application.port.out.InboundEventRepository.InboundEvent;
 import com.mindtechpy.nexus.application.port.out.IntegrationRepository;
 import com.mindtechpy.nexus.application.port.out.OperationRepository;
+import com.mindtechpy.nexus.application.port.out.RateLimiterPort;
 import com.mindtechpy.nexus.application.port.out.SecretCipherPort;
 import com.mindtechpy.nexus.application.port.out.TransactionRunner;
 import com.mindtechpy.nexus.domain.connection.Connection;
 import com.mindtechpy.nexus.domain.connection.ConnectorType;
 import com.mindtechpy.nexus.domain.integration.Flow;
 import com.mindtechpy.nexus.domain.integration.Integration;
+import com.mindtechpy.nexus.domain.integration.IntegrationPolicy;
 import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationKind;
 import com.mindtechpy.nexus.domain.order.ChannelOrder;
@@ -40,6 +42,7 @@ import static java.lang.System.Logger.Level.INFO;
 public class ReceiveGiftHubEvent {
 
     static final Duration RETRY_AFTER = Duration.ofSeconds(60);
+    private static final IntegrationPolicy PER_CONNECTION = new IntegrationPolicy(10.0, 50, 10, null, null, null, null, null);
     private static final System.Logger log = System.getLogger(ReceiveGiftHubEvent.class.getName());
 
     /**
@@ -62,25 +65,32 @@ public class ReceiveGiftHubEvent {
     private final InboundEventRepository inboundEvents;
     private final StartOperation startOperation;
     private final SecretCipherPort cipher;
+    private final RateLimiterPort rateLimiter;
     private final ClockPort clock;
     private final TransactionRunner tx;
 
     public ReceiveGiftHubEvent(ConnectionRepository connections, IntegrationRepository integrations,
                                OperationRepository operations, InboundEventRepository inboundEvents,
-                               StartOperation startOperation, SecretCipherPort cipher, ClockPort clock, TransactionRunner tx) {
+                               StartOperation startOperation, SecretCipherPort cipher, RateLimiterPort rateLimiter,
+                               ClockPort clock, TransactionRunner tx) {
         this.connections = connections;
         this.integrations = integrations;
         this.operations = operations;
         this.inboundEvents = inboundEvents;
         this.startOperation = startOperation;
         this.cipher = cipher;
+        this.rateLimiter = rateLimiter;
         this.clock = clock;
         this.tx = tx;
     }
 
     /**
+     * The per-connection rate limit applies only after the signature is verified, so unsigned traffic
+     * cannot use up the quota of the real GiftHub deliveries.
+     *
      * @throws DomainException 404 unknown connection, 401 bad signature or stale timestamp, 422 malformed
-     *                         event, 429 ({@link RetryLaterException}) when the integration does not take work
+     *                         event, 429 ({@link RetryLaterException}) when the connection exceeds its rate
+     *                         limit or the integration does not take work
      */
     public Received execute(Delivery delivery) {
         Connection connection = connections.findForWebhook(delivery.connectionId())
@@ -90,6 +100,17 @@ public class ReceiveGiftHubEvent {
         if (secret == null || !delivery.signedWith().test(secret)) {
             throw DomainException.unauthorized("invalid-signature", "Firma o timestamp del webhook inválidos");
         }
+        if (!rateLimiter.tryAcquire(connection.id(), PER_CONNECTION)) {
+            throw new RetryLaterException("rate-limited", "Demasiados webhooks para esta conexión", Duration.ofSeconds(1));
+        }
+        try {
+            return process(connection, delivery);
+        } finally {
+            rateLimiter.release(connection.id());
+        }
+    }
+
+    private Received process(Connection connection, Delivery delivery) {
         if (!(delivery.event().get("type") instanceof String type)) {
             throw DomainException.invalid("invalid-event", "El cuerpo no es un evento de GiftHub");
         }

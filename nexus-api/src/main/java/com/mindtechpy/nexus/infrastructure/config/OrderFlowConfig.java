@@ -34,9 +34,10 @@ class OrderFlowConfig {
     @Bean
     ReceiveGiftHubEvent receiveGiftHubEvent(ConnectionRepository connections, IntegrationRepository integrations,
                                             OperationRepository operations, InboundEventRepository inboundEvents,
-                                            StartOperation startOperation, SecretCipherPort cipher, ClockPort clock,
-                                            TransactionRunner tx) {
-        return new ReceiveGiftHubEvent(connections, integrations, operations, inboundEvents, startOperation, cipher, clock, tx);
+                                            StartOperation startOperation, SecretCipherPort cipher,
+                                            RateLimiterPort rateLimiter, ClockPort clock, TransactionRunner tx) {
+        return new ReceiveGiftHubEvent(connections, integrations, operations, inboundEvents, startOperation, cipher,
+                rateLimiter, clock, tx);
     }
 
     @Bean
