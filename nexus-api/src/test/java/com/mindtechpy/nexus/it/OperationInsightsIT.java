@@ -1,7 +1,9 @@
 package com.mindtechpy.nexus.it;
 
 import com.mindtechpy.nexus.domain.identity.Role;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import tools.jackson.databind.JsonNode;
 
@@ -19,6 +21,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 /** Per-integration health and the operations time series of the console, both computed in Postgres. */
 class OperationInsightsIT extends AbstractOperationIT {
+
+    @Autowired
+    private MeterRegistry meters;
 
     @Test
     void should_report_each_health_from_state_and_operations_of_the_window() {
@@ -214,6 +219,18 @@ class OperationInsightsIT extends AbstractOperationIT {
         assertThat(succeeded).isEqualTo(1);
         assertThat(dead).isZero();
         timeseries(tenantB, adminA, null, "PT1H", 403);
+    }
+
+    @Test
+    void should_expose_queue_lag_and_age_of_the_oldest_unfinished_operation_for_the_alerts() {
+        UUID waiting = start(createIntegration(fastPolicy()), "waiting").id();
+        Instant tenMinutesAgo = Instant.now().minus(Duration.ofMinutes(10));
+        jdbc.sql("UPDATE operations SET created_at = :at, next_run_at = :at WHERE id = :id")
+                .param("at", tenMinutesAgo.atOffset(ZoneOffset.UTC)).param("id", waiting).update();
+
+        assertThat(meters.get("nexus.queue.lag").gauge().value()).isGreaterThanOrEqualTo(600);
+        assertThat(meters.get("nexus.operation.oldest.unfinished.age").tag("flow", "CATALOG").gauge().value())
+                .isGreaterThanOrEqualTo(600);
     }
 
     private UUID integrationWith(String... statuses) {

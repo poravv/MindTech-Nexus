@@ -18,7 +18,10 @@ import java.util.List;
  * Prometheus metrics of spec §13 ({@code nexus_operations_total}, {@code nexus_operation_duration_seconds},
  * {@code nexus_step_duration_seconds}, {@code nexus_queue_depth}, {@code nexus_dead_letters_total},
  * {@code nexus_rate_limited_total}). No tenant label. {@code nexus_connector_latency_seconds} belongs to the
- * connectors (S3/S5). Queue depth is read from the table on each scrape.
+ * connectors. Queue depth, queue lag ({@code nexus_queue_lag_seconds}: how long the oldest due PENDING/RETRY operation
+ * has waited for a worker) and {@code nexus_operation_oldest_unfinished_age_seconds{flow}} (age of the oldest operation
+ * not finished, the "stuck" signal) are read from the table on each scrape, for the alerts of
+ * {@code k8s/prometheusrule.yaml}.
  */
 @Component
 class MicrometerOperationMetrics implements OperationMetrics {
@@ -35,6 +38,22 @@ class MicrometerOperationMetrics implements OperationMetrics {
                             .param("status", status.name()).query(Long.class).single())
                     .tag("status", status.name())
                     .description("Operaciones por estado")
+                    .register(registry);
+        }
+        Gauge.builder("nexus.queue.lag", () -> jdbc.sql("""
+                        SELECT COALESCE(EXTRACT(EPOCH FROM now() - min(next_run_at)), 0) FROM operations
+                        WHERE status IN ('PENDING', 'RETRY') AND next_run_at <= now()""").query(Double.class).single())
+                .baseUnit("seconds")
+                .description("Espera de la operación vencida más antigua sin worker")
+                .register(registry);
+        for (Flow flow : Flow.values()) {
+            Gauge.builder("nexus.operation.oldest.unfinished.age", () -> jdbc.sql("""
+                            SELECT COALESCE(EXTRACT(EPOCH FROM now() - min(created_at)), 0) FROM operations
+                            WHERE status IN ('PENDING', 'RETRY', 'RUNNING') AND flow = :flow""")
+                            .param("flow", flow.name()).query(Double.class).single())
+                    .tag("flow", flow.name())
+                    .baseUnit("seconds")
+                    .description("Antigüedad de la operación sin terminar más vieja")
                     .register(registry);
         }
     }
