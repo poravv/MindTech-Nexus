@@ -14,8 +14,11 @@ public record IntegrationPolicy(Double ratePerSecond, Integer burst, Integer max
                                 Integer scheduleEverySeconds) {
 
     private static final double JITTER = 0.2;
-    /** Below the 10 min lease of a claimed operation: a step still waiting on a read never loses its lease. */
-    private static final int MAX_READ_TIMEOUT_MS = 540_000;
+    /**
+     * A step makes at most two remote calls (VERIFY + SUBMIT, catalog read + push): two reads at this cap still
+     * end inside the 10 min lease of a claimed operation.
+     */
+    private static final int MAX_READ_TIMEOUT_MS = 280_000;
 
     public IntegrationPolicy {
         ratePerSecond = ratePerSecond == null ? 2.0 : ratePerSecond;
@@ -31,7 +34,7 @@ public record IntegrationPolicy(Double ratePerSecond, Integer burst, Integer max
         require(baseDelaySeconds >= 1, "baseDelaySeconds debe ser al menos 1");
         require(maxDelaySeconds >= baseDelaySeconds, "maxDelaySeconds no puede ser menor que baseDelaySeconds");
         require(readTimeoutMs == null || readTimeoutMs >= 1000 && readTimeoutMs <= MAX_READ_TIMEOUT_MS,
-                "readTimeoutMs debe estar entre 1000 y 540000");
+                "readTimeoutMs debe estar entre 1000 y 280000");
         require(scheduleEverySeconds == null || scheduleEverySeconds >= 60, "scheduleEverySeconds debe ser al menos 60");
     }
 

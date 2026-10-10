@@ -6,6 +6,8 @@ import com.mindtechpy.nexus.domain.connection.ConnectorType;
 import com.mindtechpy.nexus.domain.identity.Role;
 import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationStatus;
+import com.mindtechpy.nexus.domain.operation.OperationStep;
+import com.mindtechpy.nexus.domain.shared.TenantId;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -117,6 +119,27 @@ class CatalogSyncIT extends AbstractConnectorIT {
         assertThat(archived).hasSize(1);
         assertThat(archived.get(0).get("external_id").asString()).isEqualTo("P-RETIRADO");
         assertThat(archived.get(0).get("archived").asBoolean()).isTrue();
+        assertThat(productMappings()).containsExactly("P-0001");
+    }
+
+    @Test
+    void should_archive_one_chunk_per_step_until_every_missing_product_is_off_sale() {
+        UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+        insertProductMapping("P-0001");
+        IntStream.rangeClosed(1, 501).forEach(n -> insertProductMapping("P-RETIRADO-%03d".formatted(n)));
+        stubPos(get(urlPathEqualTo(pos("/api/integration/catalog"))).willReturn(okJson(catalogPage(1, 1, 1))));
+        stubGiftHub(put(urlPathEqualTo(gh("/products/bulk"))).willReturn(okJson(bulkResponse()).withTransformers("response-template")));
+
+        Operation op = runNow(integration);
+        drain();
+
+        Operation done = reload(op.id());
+        assertThat(done.status()).isEqualTo(OperationStatus.SUCCEEDED);
+        assertThat(done.result()).containsEntry("archived", 501).containsEntry("archiveErrors", 0);
+        assertThat(giftHubRequests("PUT", "/products/bulk")).extracting(r -> jsonOf(r).get("products").size())
+                .containsExactly(1, 500, 1);
+        assertThat(operations.findSteps(new TenantId(tenant), op.id())).extracting(OperationStep::step)
+                .filteredOn("ARCHIVE_MISSING"::equals).hasSize(2);
         assertThat(productMappings()).containsExactly("P-0001");
     }
 

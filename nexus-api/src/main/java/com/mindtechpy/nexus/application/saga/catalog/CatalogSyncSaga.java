@@ -114,29 +114,37 @@ public class CatalogSyncSaga implements Saga {
     }
 
     /**
-     * Archives in chunks of {@value #PAGE_SIZE}; each chunk forgets the mappings GiftHub applied, so a retry
-     * only resends what is left. Rows GiftHub rejects keep their mapping and are counted in {@code archiveErrors}.
+     * Archives one chunk of {@value #PAGE_SIZE} per step, so a step makes one GiftHub call and stays well inside
+     * the lease; it moves on while more remain. A chunk forgets the mappings GiftHub archived; the rows it did not
+     * archive keep their mapping, count in {@code archiveErrors} and are marked seen by this run, so the next
+     * chunk does not pick them again (the next run retries them).
      */
     private StepResult archiveMissing(StepContext context, Map<String, Object> result) {
         Operation op = context.operation();
         UUID giftHubId = context.target().connection().id();
         Duration readTimeout = Duration.ofMillis(context.integration().policy().readTimeoutMs());
         List<String> missing = mappings.findNotSeenSince(op.tenantId(), giftHubId, EntityType.PRODUCT, op.createdAt());
-        try {
-            for (int from = 0; from < missing.size(); from += PAGE_SIZE) {
-                List<String> chunk = missing.subList(from, Math.min(from + PAGE_SIZE, missing.size()));
+        List<String> chunk = missing.subList(0, Math.min(PAGE_SIZE, missing.size()));
+        if (!chunk.isEmpty()) {
+            try {
                 GiftHubPort.BulkResult archived = giftHub.archiveProducts(context.target(), readTimeout, chunk);
                 mappings.deleteAll(op.tenantId(), giftHubId, EntityType.PRODUCT, archived.productIds().keySet());
+                mappings.markSeen(op.tenantId(), giftHubId, EntityType.PRODUCT,
+                        chunk.stream().filter(code -> !archived.productIds().containsKey(code)).toList(), op.createdAt());
                 add(result, "archived", archived.productIds().size());
-                add(result, "archiveErrors", archived.errors().size());
+                add(result, "archiveErrors", chunk.size() - archived.productIds().size());
+            } catch (ConnectorException e) {
+                return new StepResult.Failed(e.error());
             }
-        } catch (ConnectorException e) {
-            return new StepResult.Failed(e.error());
         }
-        log.log(INFO, "[NEXUS-CATALOG] op={0} tenant={1} {2} productos que el POS ya no lista: archivados={3} errores={4}",
-                op.id(), op.tenantId(), missing.size(), result.getOrDefault("archived", 0), result.getOrDefault("archiveErrors", 0));
+        log.log(INFO, "[NEXUS-CATALOG] op={0} tenant={1} {2} productos que el POS ya no lista en este tramo: archivados={3} errores={4}",
+                op.id(), op.tenantId(), chunk.size(), result.getOrDefault("archived", 0), result.getOrDefault("archiveErrors", 0));
         result.putIfAbsent("archived", 0L);
-        return new StepResult.Completed("archived-" + missing.size(), result);
+        result.putIfAbsent("archiveErrors", 0L);
+        if (missing.size() > chunk.size()) {
+            return new StepResult.Next(ARCHIVE_MISSING, null, "archived-" + chunk.size(), result);
+        }
+        return new StepResult.Completed("archived-" + chunk.size(), result);
     }
 
     /**

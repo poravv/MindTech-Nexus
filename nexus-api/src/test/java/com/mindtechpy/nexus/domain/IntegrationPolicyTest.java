@@ -59,8 +59,8 @@ class IntegrationPolicyTest {
 
     @Test
     void should_reject_read_timeout_that_outlasts_the_job_lease() {
-        assertThat(new IntegrationPolicy(null, null, null, null, null, null, 540_000, null).readTimeoutMs()).isEqualTo(540_000);
-        assertThatThrownBy(() -> new IntegrationPolicy(null, null, null, null, null, null, 540_001, null))
+        assertThat(new IntegrationPolicy(null, null, null, null, null, null, 280_000, null).readTimeoutMs()).isEqualTo(280_000);
+        assertThatThrownBy(() -> new IntegrationPolicy(null, null, null, null, null, null, 280_001, null))
                 .isInstanceOf(DomainException.class).hasMessageContaining("readTimeoutMs");
     }
 }

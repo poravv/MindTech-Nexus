@@ -161,7 +161,7 @@ Todas las tablas de negocio llevan `tenant_id uuid NOT NULL` y `created_at/updat
 | `inbound_events` | `id, tenant_id, connection_id, source(GIFTHUB\|SIFEN), event_id, event_type, received_at, operation_id NULL` | `UNIQUE(connection_id, event_id)` |
 | `audit_events` | `id, tenant_id NULL, actor_type(USER\|CLIENT\|SYSTEM), actor_id, action, resource_type, resource_id, before jsonb, after jsonb, correlation_id, happened_at` | idx `(tenant_id, happened_at desc)` |
 
-`policy` de integración (jsonb tipado en `IntegrationPolicy`): `{ "ratePerSecond": 2, "burst": 5, "maxInFlight": 2, "maxAttempts": 5, "baseDelaySeconds": 5, "maxDelaySeconds": 300, "readTimeoutMs": 150000, "scheduleEverySeconds": 300 }` (el último solo para `CATALOG`; `readTimeoutMs` por defecto 200000 en `FISCAL`). `readTimeoutMs` máximo 540 000: por debajo del lease de 10 min de la cola.
+`policy` de integración (jsonb tipado en `IntegrationPolicy`): `{ "ratePerSecond": 2, "burst": 5, "maxInFlight": 2, "maxAttempts": 5, "baseDelaySeconds": 5, "maxDelaySeconds": 300, "readTimeoutMs": 150000, "scheduleEverySeconds": 300 }` (el último solo para `CATALOG`; `readTimeoutMs` por defecto 200000 en `FISCAL`). `readTimeoutMs` máximo 280 000: un paso hace a lo sumo dos llamadas (VERIFY + SUBMIT, lectura + push de catálogo; `ARCHIVE_MISSING` archiva un tramo de 500 por paso) y ambas caben en el lease de 10 min de la cola.
 
 Retención: `operations.payload` de operaciones `SUCCEEDED` se vacía a `null` 30 días después de `finished_at` (job diario), `result` queda; `FAILED` y `DEAD` conservan el payload para poder reprocesarlas. `inbound_events` 90 días.
 
