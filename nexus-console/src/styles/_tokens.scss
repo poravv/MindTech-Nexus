@@ -7,25 +7,25 @@
 :root {
   color-scheme: light;
 
-  --font-sans: "Heebo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 
-  // Large on purpose: 16 px body, 14 px floor for labels, 13 px only for age pills.
+  // Argo-sized on purpose: 17 px body, 16 px tables and lists, 32 px page titles, 13 px floor for labels.
   --text-2xs: 0.8125rem;
   --text-xs: 0.875rem;
-  --text-sm: 0.9375rem;
-  --text-md: 1rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.25rem;
-  --text-2xl: 1.75rem;
-  --text-status: 2rem;
-  --text-kpi: 2.75rem;
+  --text-sm: 1rem;
+  --text-md: 1.0625rem;
+  --text-lg: 1.1875rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 2rem;
+  --text-status: 2.25rem;
+  --text-kpi: 2.5rem;
   --weight-light: 300;
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
-  --leading: 1.5;
+  --leading: 1.55;
   --tracking-tight: -0.01em;
   --tracking-caps: 0.05em;
 

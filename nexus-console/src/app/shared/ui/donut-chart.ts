@@ -72,9 +72,10 @@ const GAP = 1.6;
     .donut text { transform: rotate(90deg); transform-origin: 50px 50px; text-anchor: middle; fill: var(--color-text); }
     .total { font-size: 22px; font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }
     .caption { font-size: 7.5px; fill: var(--color-text-muted) !important; }
-    .legend { flex: 1 1 15rem; border-collapse: collapse; font-size: var(--text-md); }
+    .legend { flex: 1 1 15rem; border-collapse: collapse; font-size: var(--text-sm); }
     .legend th, .legend td { padding: var(--space-2) var(--space-2); text-align: left; font-weight: var(--weight-regular); }
     .legend tr + tr th, .legend tr + tr td { border-top: var(--border-width) solid var(--color-border); }
+    .legend th { white-space: nowrap; }
     .legend td { text-align: right; width: 1%; white-space: nowrap; }
     .share { color: var(--color-text-muted); }
     .zero { color: var(--color-text-faint); }
