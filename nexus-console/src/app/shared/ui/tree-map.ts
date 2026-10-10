@@ -22,8 +22,8 @@ import { layoutTree, MapAction, MapNode, NODE_HEIGHT, NODE_WIDTH } from './tree-
 
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 2;
-/** The first view never shrinks below this, so node titles stay readable. */
-const MIN_FIRST_VIEW = 0.6;
+/** The first view shows the whole tree, down to this zoom; the user zooms in from there. */
+const MIN_FIRST_VIEW = 0.4;
 /** Room on the left for the root's circle, which overhangs its card. */
 const ROOT_OVERHANG = 64;
 const MARGIN = 24;
