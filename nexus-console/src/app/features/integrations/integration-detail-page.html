@@ -83,7 +83,7 @@
           <dl class="policy">
             @for (field of policyFields; track field.key) {
               @if (integration.policy[field.key] !== undefined) {
-                <div><dt>{{ field.label }}</dt><dd class="num">{{ integration.policy[field.key] }}</dd></div>
+                <div><dt>{{ field.label }}</dt><dd class="num">{{ integration.policy[field.key] }}{{ field.unit ? ' ' + field.unit : '' }}</dd></div>
               }
             }
           </dl>

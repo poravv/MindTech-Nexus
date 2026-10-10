@@ -131,7 +131,7 @@ export default class IntegrationDetailPage {
   protected readonly flowMeta = FLOW_META;
   protected readonly connectorMeta = CONNECTOR_META;
   protected readonly statusMeta = STATUS_META;
-  protected readonly policyFields = [...POLICY_FIELDS, { key: 'scheduleEverySeconds' as const, label: 'Sincronizar cada (s)' }];
+  protected readonly policyFields = [...POLICY_FIELDS, { key: 'scheduleEverySeconds' as const, label: 'Sincronizar cada', unit: 's' }];
   protected readonly connectionSignals = connectionSignals;
 
   protected openState(integration: Integration, suggested: IntegrationState | null = null): void {
