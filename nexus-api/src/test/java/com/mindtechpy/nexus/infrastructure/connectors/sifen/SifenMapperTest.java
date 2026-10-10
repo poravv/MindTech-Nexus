@@ -27,6 +27,11 @@ class SifenMapperTest {
     }
 
     @Test
+    void should_send_installments_in_the_header_currency_and_the_down_payment_when_mapping_a_credit_invoice() {
+        assertMapsTo("invoice-credito-cuotas.json", "facturar-credito-cuotas.json");
+    }
+
+    @Test
     void should_compose_the_full_document_number_when_sifen_reports_establishment_and_point() {
         SifenDocument document = SifenMapper.toDocument(new SifenMapper.FacturaResponse("0180", "APROBADO", "001", "002",
                 "0000123", "0260", "Aprobado", new BigDecimal("4400.00"), "2026-10-10T17:05:00Z"));

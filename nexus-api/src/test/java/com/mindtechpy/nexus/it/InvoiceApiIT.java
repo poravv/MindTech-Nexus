@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.JsonNode;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -68,6 +69,47 @@ class InvoiceApiIT extends AbstractFiscalIT {
         assertThat(problem.get("code").asString()).isEqualTo("invalid-invoice");
         assertThat(jdbc.sql("SELECT count(*) FROM operations WHERE idempotency_key = :k").param("k", ref)
                 .query(Long.class).single()).isZero();
+    }
+
+    @Test
+    void should_send_the_credit_term_to_sifen_when_the_invoice_is_a_credit_sale() {
+        String ref = newSourceRef();
+        stubSubmit(ref, document(ref, "APROBADO"));
+        Map<String, Object> creditSale = creditSale(ref);
+        creditSale.put("credit", Map.of("termDays", 30));
+
+        issue(pos, creditSale, 202);
+        drain();
+
+        assertThat(invoiceState(ref).get("status").asString()).isEqualTo("APPROVED");
+        assertThat(count(submitsOf(ref)
+                .withRequestBody(matchingJsonPath("$.header.condicionPago", equalTo("CREDITO")))
+                .withRequestBody(matchingJsonPath("$.credito.condicion", equalTo("1")))
+                .withRequestBody(matchingJsonPath("$.credito.plazo", equalTo("30 dias"))))).isEqualTo(1);
+    }
+
+    @Test
+    void should_reject_with_422_and_persist_nothing_when_a_credit_sale_has_no_credit_block() {
+        String ref = newSourceRef();
+
+        JsonNode problem = body(issue(pos, creditSale(ref), 422));
+
+        assertThat(problem.get("code").asString()).isEqualTo("invalid-invoice");
+        assertThat(problem.get("detail").asString()).contains("credit es obligatorio");
+        assertThat(operationCount(ref)).isZero();
+    }
+
+    @Test
+    void should_reject_with_422_and_persist_nothing_when_a_cash_sale_carries_a_credit_block() {
+        String ref = newSourceRef();
+        Map<String, Object> cashSale = invoice(ref);
+        cashSale.put("credit", Map.of("installments", List.of(Map.of("amount", 4400, "dueDate", "2026-11-10"))));
+
+        JsonNode problem = body(issue(pos, cashSale, 422));
+
+        assertThat(problem.get("code").asString()).isEqualTo("invalid-invoice");
+        assertThat(problem.get("detail").asString()).contains("credit solo se admite");
+        assertThat(operationCount(ref)).isZero();
     }
 
     @Test
@@ -147,6 +189,17 @@ class InvoiceApiIT extends AbstractFiscalIT {
 
         assertThat(result.getResponse().getContentType()).isEqualTo("application/pdf");
         assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(pdf);
+    }
+
+    private static Map<String, Object> creditSale(String ref) {
+        Map<String, Object> request = invoice(ref);
+        request.put("header", Map.of("currency", "PYG", "paymentCondition", "CREDIT", "paymentMethod", "EFECTIVO"));
+        return request;
+    }
+
+    private long operationCount(String ref) {
+        return jdbc.sql("SELECT count(*) FROM operations WHERE idempotency_key = :k").param("k", ref)
+                .query(Long.class).single();
     }
 
     private String approvedInvoice() {

@@ -1,0 +1,17 @@
+{
+  "sourceRef": "MI-POS-01:VENTA:000103",
+  "documentType": "INVOICE",
+  "issuedAt": "2026-03-03T09:00:00-03:00",
+  "header": { "currency": "PYG", "paymentCondition": "CREDIT", "paymentMethod": "EFECTIVO" },
+  "customer": { "documentType": "RUC", "documentNumber": "80012345-6", "name": "Cliente SA" },
+  "items": [
+    { "code": "SRV-001", "description": "Servicio", "quantity": "1", "unitPrice": 9000, "vatRate": "10" }
+  ],
+  "credit": {
+    "installments": [
+      { "amount": 3000, "dueDate": "2026-04-03" },
+      { "amount": 3000, "dueDate": "2026-05-03" }
+    ],
+    "downPayment": 3000
+  }
+}

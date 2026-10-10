@@ -3,6 +3,7 @@ package com.mindtechpy.nexus.domain.fiscal;
 import com.mindtechpy.nexus.domain.shared.DomainException;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
@@ -13,11 +14,12 @@ import java.util.regex.Pattern;
  * Canonical request to issue a fiscal document (spec §8.1). Money in whole PYG, VAT included.
  * {@code sourceRef} is the idempotency key in Nexus and the {@code transactionId} in SIFEN; the issuer
  * never travels: SIFEN takes it from the credential. Invalid requests fail here, before anything is
- * persisted or sent, so they never consume SIFEN numbering.
+ * persisted or sent, so they never consume SIFEN numbering. A credit invoice carries {@code credit}: a term in
+ * days or the installments, plus the optional down payment; SIFEN checks that installments cover the balance.
  */
 public record InvoiceRequest(String sourceRef, String documentType, String issuedAt, String branchRef,
                              String pointOfSaleRef, String referenceCdc, String issueReasonCode, Header header,
-                             Customer customer, List<Item> items, Long globalDiscount) {
+                             Customer customer, List<Item> items, Long globalDiscount, Credit credit) {
 
     public static final Pattern SOURCE_REF = Pattern.compile("^[A-Za-z0-9:_-]{1,100}$");
     private static final Set<String> DOCUMENT_TYPES = Set.of("INVOICE", "CREDIT_NOTE", "DEBIT_NOTE");
@@ -32,6 +34,14 @@ public record InvoiceRequest(String sourceRef, String documentType, String issue
 
     public record Item(String code, String description, String quantity, Long unitPrice, Long discount,
                        String vatRate, String unit) {
+    }
+
+    /** Exactly one of {@code termDays} or {@code installments}. */
+    public record Credit(Integer termDays, List<Installment> installments, Long downPayment) {
+    }
+
+    /** {@code dueDate} is an ISO date (yyyy-MM-dd), optional as in SIFEN. */
+    public record Installment(Long amount, String dueDate) {
     }
 
     public InvoiceRequest {
@@ -52,6 +62,12 @@ public record InvoiceRequest(String sourceRef, String documentType, String issue
         items.forEach(InvoiceRequest::validate);
         require(globalDiscount == null || globalDiscount >= 0, "globalDiscount no puede ser negativo");
         items = List.copyOf(items);
+        if (documentType.equals("INVOICE") && header.paymentCondition().equals("CREDIT")) {
+            require(credit != null, "credit es obligatorio en facturas con paymentCondition CREDIT");
+            validate(credit);
+        } else {
+            require(credit == null, "credit solo se admite en facturas (INVOICE) con paymentCondition CREDIT");
+        }
     }
 
     private static void validate(Item item) {
@@ -61,6 +77,30 @@ public record InvoiceRequest(String sourceRef, String documentType, String issue
         require(item.unitPrice() != null && item.unitPrice() > 0, "unitPrice debe ser mayor a 0");
         require(item.discount() == null || item.discount() >= 0, "discount no puede ser negativo");
         require(VAT_RATES.contains(item.vatRate()), "vatRate debe ser 0, 5 o 10");
+    }
+
+    private static void validate(Credit credit) {
+        require((credit.termDays() == null) != (credit.installments() == null),
+                "credit requiere termDays o installments (uno de los dos)");
+        require(credit.termDays() == null || (credit.termDays() >= 1 && credit.termDays() <= 999),
+                "termDays debe estar entre 1 y 999");
+        require(credit.installments() == null || (!credit.installments().isEmpty() && credit.installments().size() <= 999),
+                "installments debe tener entre 1 y 999 cuotas");
+        if (credit.installments() != null) {
+            credit.installments().forEach(installment -> require(installment != null && installment.amount() != null
+                    && installment.amount() > 0 && (installment.dueDate() == null || isDate(installment.dueDate())),
+                    "cada cuota requiere amount mayor a 0 y dueDate opcional yyyy-MM-dd"));
+        }
+        require(credit.downPayment() == null || credit.downPayment() >= 0, "downPayment no puede ser negativo");
+    }
+
+    private static boolean isDate(String value) {
+        try {
+            LocalDate.parse(value);
+            return true;
+        } catch (DateTimeParseException e) {
+            return false;
+        }
     }
 
     private static boolean isOffsetDateTime(String value) {

@@ -1,0 +1,32 @@
+{
+  "transactionId": "MI-POS-01:VENTA:000103",
+  "fechaEmision": "2026-03-03T09:00:00-03:00",
+  "tipoDocumento": "FACTURA",
+  "header": {
+    "moneda": "PYG",
+    "condicionPago": "CREDITO",
+    "formaPago": "EFECTIVO"
+  },
+  "receptor": {
+    "tipoDocumento": "RUC",
+    "numeroDocumento": "80012345-6",
+    "razonSocial": "Cliente SA"
+  },
+  "detail": [
+    {
+      "codigo": "SRV-001",
+      "descripcion": "Servicio",
+      "cantidad": 1,
+      "precioUnitario": 9000,
+      "ivaTipo": "10"
+    }
+  ],
+  "credito": {
+    "condicion": 2,
+    "cuotas": [
+      { "moneda": "PYG", "monto": 3000, "vencimiento": "2026-04-03" },
+      { "moneda": "PYG", "monto": 3000, "vencimiento": "2026-05-03" }
+    ],
+    "montoEntrega": 3000
+  }
+}

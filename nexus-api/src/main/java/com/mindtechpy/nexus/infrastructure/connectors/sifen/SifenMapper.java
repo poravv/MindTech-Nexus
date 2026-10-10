@@ -12,7 +12,9 @@ import java.util.Map;
  * The issuer is never sent: SIFEN takes it, with its timbrado and numbering, from the API key. Branch and
  * point of issue come only from the request ({@code branchRef} → {@code sucursalId}, {@code pointOfSaleRef} →
  * {@code puntoExpedicionId}); when absent SIFEN uses the issuer's default ones. Null fields are omitted, so
- * the same canonical request always produces the same bytes (SIFEN dedupes by payload hash).
+ * the same canonical request always produces the same bytes (SIFEN dedupes by payload hash). {@code credit} becomes
+ * the top-level {@code credito}: {@code termDays} → condición 1 (plazo), {@code installments} → condición 2 (cuotas
+ * in the header currency, as SIFEN requires).
  */
 final class SifenMapper {
 
@@ -53,6 +55,9 @@ final class SifenMapper {
         body.put("receptor", receptor);
 
         body.put("detail", request.items().stream().map(SifenMapper::toDetail).toList());
+        if (request.credit() != null) {
+            body.put("credito", toCredito(request.credit(), request.header().currency()));
+        }
         if (request.globalDiscount() != null && request.globalDiscount() > 0) {
             body.put("descuentoGlobal", Map.of("tipo", "MONTO", "valor", request.globalDiscount()));
         }
@@ -68,6 +73,25 @@ final class SifenMapper {
         return new SifenDocument(response.cdc(), response.estado(), documentNumber, response.codigoRespuesta(),
                 response.mensajeRespuesta(), response.total() == null ? null : response.total().longValue(),
                 response.actualizadoEn());
+    }
+
+    private static Map<String, Object> toCredito(InvoiceRequest.Credit credit, String currency) {
+        Map<String, Object> credito = new LinkedHashMap<>();
+        if (credit.termDays() != null) {
+            credito.put("condicion", 1);
+            credito.put("plazo", credit.termDays() + " dias");
+        } else {
+            credito.put("condicion", 2);
+            credito.put("cuotas", credit.installments().stream().map(installment -> {
+                Map<String, Object> cuota = new LinkedHashMap<>();
+                cuota.put("moneda", currency);
+                cuota.put("monto", installment.amount());
+                putIfPresent(cuota, "vencimiento", installment.dueDate());
+                return cuota;
+            }).toList());
+        }
+        putIfPresent(credito, "montoEntrega", credit.downPayment());
+        return credito;
     }
 
     private static Map<String, Object> toDetail(InvoiceRequest.Item item) {
