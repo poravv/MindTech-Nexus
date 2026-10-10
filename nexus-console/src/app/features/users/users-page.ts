@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
+import { map } from 'rxjs';
+import { TenantsApi } from '../../api/tenants.api';
 import { UsersApi } from '../../api/users.api';
 import { Notifier } from '../../core/notifier.service';
 import { problemMessage } from '../../core/problem';
@@ -35,6 +37,13 @@ export default class UsersPage {
   protected readonly users = rxResource({
     params: () => ({ tenantId: this.scope.tenantId() }),
     stream: () => this.api.list(),
+  });
+  private readonly tenantsApi = inject(TenantsApi);
+  /** On "Todos los tenants" the list spans tenants: names for the Tenant column, from the tenants list. */
+  protected readonly tenantNames = rxResource({
+    params: () => (this.scope.needsTenant() ? {} : undefined),
+    stream: () => this.tenantsApi.list().pipe(map((tenants) => new Map(tenants.map((t) => [t.id, t.name])))),
+    defaultValue: new Map<string, string>(),
   });
   protected readonly roleLabels = ROLE_LABELS;
   protected readonly roles = ASSIGNABLE_ROLES;

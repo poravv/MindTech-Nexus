@@ -16,22 +16,28 @@
     <div class="table-wrap" role="region" aria-label="Usuarios" tabindex="0">
       <table class="data">
         <thead>
-          <tr><th scope="col">Email</th><th scope="col">Rol</th><th scope="col">Estado</th><th scope="col">Contraseña</th></tr>
+          <tr>
+            <th scope="col">Email</th>
+            @if (scope.needsTenant()) { <th scope="col">Tenant</th> }
+            <th scope="col">Rol</th><th scope="col">Estado</th><th scope="col">Contraseña</th></tr>
         </thead>
         <tbody>
           @if (users.hasValue()) {
             @for (user of users.value(); track user.id) {
               <tr>
                 <td>{{ user.email }}</td>
+                @if (scope.needsTenant()) {
+                  <td>{{ user.tenantId ? (tenantNames.value().get(user.tenantId) ?? '—') : 'Plataforma' }}</td>
+                }
                 <td>{{ roleLabels[user.role] }}</td>
                 <td><app-status-badge [status]="user.status" /></td>
                 <td class="muted">{{ user.mustChangePassword ? 'Pendiente de cambio' : 'Definida' }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="4" class="empty">No hay usuarios.</td></tr>
+              <tr><td colspan="5" class="empty">No hay usuarios.</td></tr>
             }
           } @else if (users.isLoading()) {
-            <tr><td colspan="4" class="empty">Cargando…</td></tr>
+            <tr><td colspan="5" class="empty">Cargando…</td></tr>
           }
         </tbody>
       </table>
