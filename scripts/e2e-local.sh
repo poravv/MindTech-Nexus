@@ -180,8 +180,9 @@ setup() {
   CONN_GH=$(upsert_connection GIFTHUB "GiftHub mindtechpy" "$GH_FROM_DOCKER" \
     "{\"apiKey\":\"$GIFTHUB_E2E_API_KEY\",\"webhookSecret\":\"$GIFTHUB_E2E_WEBHOOK_SECRET\"}")
   INT_FISCAL=$(upsert_integration FISCAL fiscal null "$CONN_SIFEN")
-  INT_ORDER=$(upsert_integration ORDER pedidos-gifthub "\"$CONN_GH\"" "$CONN_POS")
+  # CATALOG antes que ORDER: Nexus rechaza (422) un ORDER sin el catálogo del mismo POS hacia ese GiftHub.
   INT_CATALOG=$(upsert_integration CATALOG catalogo-gifthub "\"$CONN_POS\"" "$CONN_GH" '{"scheduleEverySeconds":3600}')
+  INT_ORDER=$(upsert_integration ORDER pedidos-gifthub "\"$CONN_GH\"" "$CONN_POS")
   gh PATCH "/api/admin/integrations/$GIFTHUB_E2E_INTEGRATION_ID" \
     "{\"enabled\":true,\"webhookUrl\":\"$NEXUS_FROM_DOCKER/api/v1/webhooks/gifthub/$CONN_GH\",\"webhookEvents\":[\"order.created\",\"order.cancelled\"],\"includeCustomer\":true}"
   expect 200 "webhook de GiftHub → Nexus"

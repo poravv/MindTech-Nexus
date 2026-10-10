@@ -17,11 +17,13 @@ import com.mindtechpy.nexus.domain.shared.TenantId;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
  * Creates or reconfigures an integration (connections and policy). New integrations start ENABLED; the
- * state is changed only through {@link ChangeIntegrationState}. Connections must belong to the same tenant.
+ * state is changed only through {@link ChangeIntegrationState}. Connections must belong to the same tenant,
+ * and an ORDER integration (GiftHub → POS) needs the CATALOG integration of that POS to that GiftHub.
  */
 public class UpsertIntegration {
 
@@ -83,6 +85,17 @@ public class UpsertIntegration {
         if (integrations.existsByCode(integration.tenantId(), integration.code(), integration.id())) {
             throw DomainException.conflict("integration-code-taken", "Ya existe una integración con ese código");
         }
+        if (integration.flow() == Flow.ORDER && !hasMatchingCatalog(integration)) {
+            throw DomainException.invalid("catalog-integration-missing", "Falta la integración CATALOG del mismo POS hacia "
+                    + "esta conexión GiftHub: sin ella los pedidos llegan sin el código de producto del POS");
+        }
+    }
+
+    /** Orders carry the POS product codes only for products that a CATALOG integration pushed to that GiftHub. */
+    private boolean hasMatchingCatalog(Integration order) {
+        return integrations.findAll(order.tenantId()).stream().anyMatch(catalog -> catalog.flow() == Flow.CATALOG
+                && catalog.targetConnectionId().equals(order.sourceConnectionId())
+                && Objects.equals(catalog.sourceConnectionId(), order.targetConnectionId()));
     }
 
     private void requireConnection(TenantId tenantId, UUID connectionId) {

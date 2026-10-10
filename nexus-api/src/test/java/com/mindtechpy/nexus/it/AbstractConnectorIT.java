@@ -88,7 +88,9 @@ abstract class AbstractConnectorIT extends AbstractOperationIT {
                 .content(toJson(request)), 201)).get("id").asString());
     }
 
+    /** With the CATALOG integration it requires (POS → GiftHub). */
     protected UUID orderIntegration() {
+        createIntegration("CATALOG", posConnection, giftHubConnection);
         return createIntegration("ORDER", giftHubConnection, posConnection);
     }
 
