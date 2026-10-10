@@ -1,5 +1,5 @@
 import { inject } from '@angular/core';
-import { catchError, forkJoin, map, Observable, of } from 'rxjs';
+import { forkJoin, map, Observable } from 'rxjs';
 import { Connection, ConnectionsApi } from '../../api/connections.api';
 import { Integration, IntegrationHealth, IntegrationHealthStatus, IntegrationsApi } from '../../api/integrations.api';
 import { Tenant } from '../../api/tenants.api';
@@ -19,7 +19,7 @@ export interface IntegrationRow {
   source: Connection | undefined;
   target: Connection | undefined;
   health: IntegrationHealthStatus;
-  /** Last 24 h figures from the health endpoint; undefined when it could not be loaded. */
+  /** Last 24 h figures from the health endpoint; undefined for an integration created after it answered. */
   insight: IntegrationHealth | undefined;
 }
 
@@ -35,8 +35,7 @@ export function loadIntegrationData(): () => Observable<IntegrationData> {
     forkJoin({
       integrations: integrationsApi.list(tenantId),
       connections: connectionsApi.list(tenantId),
-      // Health is a bonus: without it the screens still work and every integration reads "sin actividad".
-      health: integrationsApi.health(tenantId).pipe(catchError(() => of([] as IntegrationHealth[]))),
+      health: integrationsApi.health(tenantId),
     });
   return () =>
     fanOut(forTenant).pipe(
