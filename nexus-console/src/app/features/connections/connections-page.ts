@@ -8,6 +8,7 @@ import { Notifier } from '../../core/notifier.service';
 import { problemMessage } from '../../core/problem';
 import { canManageTenantConfig } from '../../core/roles';
 import { TenantScope } from '../../core/tenant-scope.service';
+import { Icon } from '../../shared/ui/icon';
 import { Modal } from '../../shared/ui/modal';
 import { TenantRequired } from '../../shared/ui/tenant-required';
 
@@ -58,7 +59,7 @@ interface ConnectionForm {
 @Component({
   selector: 'app-connections-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, FormsModule, Modal, TenantRequired],
+  imports: [DatePipe, FormsModule, Modal, TenantRequired, Icon],
   templateUrl: './connections-page.html',
 })
 export default class ConnectionsPage {

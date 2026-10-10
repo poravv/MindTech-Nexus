@@ -5,7 +5,7 @@
       <p>Sistemas externos con los que habla Nexus. Las credenciales se guardan cifradas y nunca se vuelven a mostrar.</p>
     </div>
     @if (canManage()) {
-      <button type="button" class="btn btn-primary" (click)="openCreate()" [disabled]="scope.needsTenant()">Nueva conexión</button>
+      <button type="button" class="btn btn-primary" (click)="openCreate()" [disabled]="scope.needsTenant()"><app-icon name="plus" />Nueva conexión</button>
     }
   </header>
 
@@ -34,12 +34,19 @@
                   <td>{{ connection.name }}</td>
                   <td>{{ connection.connector }}</td>
                   <td class="mono">{{ connection.baseUrl }}</td>
-                  <td>{{ connection.hasCredentials ? 'Cargadas' : 'Faltan' }}</td>
+                  <td>
+                    <span class="inline-status" [class]="connection.hasCredentials ? 'inline-status tone-ok' : 'inline-status tone-danger'">
+                      <app-icon [name]="connection.hasCredentials ? 'key-round' : 'triangle-alert'" />{{ connection.hasCredentials ? 'Cargadas' : 'Faltan' }}
+                    </span>
+                  </td>
                   <td class="nowrap">
                     @if (connection.lastTestAt) {
-                      {{ connection.lastTestOk ? 'Correcta' : 'Falló' }} · {{ connection.lastTestAt | date: 'dd/MM HH:mm' }}
+                      <span class="inline-status" [class]="connection.lastTestOk ? 'inline-status tone-ok' : 'inline-status tone-danger'">
+                        <app-icon [name]="connection.lastTestOk ? 'circle-check' : 'circle-x'" />{{ connection.lastTestOk ? 'Correcta' : 'Falló' }}
+                      </span>
+                      <span class="muted"> · {{ connection.lastTestAt | date: 'dd/MM HH:mm' }}</span>
                     } @else {
-                      <span class="muted">Sin probar</span>
+                      <span class="inline-status muted"><app-icon name="circle-help" />Sin probar</span>
                     }
                   </td>
                   @if (canManage()) {
