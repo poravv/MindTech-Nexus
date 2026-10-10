@@ -47,4 +47,11 @@ class IntegrationPolicyTest {
         assertThatThrownBy(() -> new IntegrationPolicy(null, null, null, null, 10, 5, null, null))
                 .isInstanceOf(DomainException.class).hasMessageContaining("maxDelaySeconds");
     }
+
+    @Test
+    void should_reject_read_timeout_that_outlasts_the_job_lease() {
+        assertThat(new IntegrationPolicy(null, null, null, null, null, null, 540_000, null).readTimeoutMs()).isEqualTo(540_000);
+        assertThatThrownBy(() -> new IntegrationPolicy(null, null, null, null, null, null, 540_001, null))
+                .isInstanceOf(DomainException.class).hasMessageContaining("readTimeoutMs");
+    }
 }

@@ -28,8 +28,10 @@ class IntegrationAdminIT extends AbstractOperationIT {
     @Test
     void should_return_422_when_policy_is_invalid() {
         JsonNode problem = createIntegration(tenant, admin, targetConnection, Map.of("maxInFlight", 0), 422);
+        JsonNode tooSlow = createIntegration(tenant, admin, targetConnection, Map.of("readTimeoutMs", 600_000), 422);
 
         assertThat(problem.get("code").asString()).isEqualTo("invalid-policy");
+        assertThat(tooSlow.get("code").asString()).isEqualTo("invalid-policy");
     }
 
     @Test
