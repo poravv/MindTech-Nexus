@@ -86,9 +86,10 @@ class AdminIntegrationController {
         return integrationQueries.list(TenantContext.currentUser(), TenantId.of(tenantId)).stream().map(IntegrationView::of).toList();
     }
 
-    @Operation(summary = "Salud por integración sobre las operaciones creadas desde from (default 24 h): SUSPENDED si está detenida, "
-            + "DEGRADED con alguna FAILED/DEAD, PROGRESSING si drena o hay operaciones sin terminar en éxito, HEALTHY solo con éxitos, "
-            + "NO_ACTIVITY sin operaciones; dead es la DLQ actual de la integración")
+    @Operation(summary = "Salud por integración: SUSPENDED si está detenida; DEGRADED mientras tenga operaciones DEAD sin reprocesar ni "
+            + "descartar (dead, la DLQ actual, sin importar la antigüedad); PROGRESSING si drena o hay operaciones en cola creadas desde "
+            + "from (default 24 h); HEALTHY si todas las de la ventana terminaron (las FAILED de negocio se cuentan en byStatus pero no "
+            + "degradan); NO_ACTIVITY sin operaciones en la ventana")
     @GetMapping("/health")
     List<IntegrationQueries.Health> health(@RequestParam(required = false) UUID tenantId, @RequestParam(required = false) Instant from) {
         return integrationQueries.health(TenantContext.currentUser(), TenantId.of(tenantId), from);

@@ -23,8 +23,8 @@ import java.util.UUID;
 public class IntegrationQueries {
 
     /**
-     * Health of one integration over the operations created since {@code from}. {@code dead} is its whole
-     * current DLQ, regardless of age, as in the operations summary.
+     * Health of one integration. {@code byStatus} counts the operations created since {@code from}; {@code dead}
+     * is its whole current DLQ, regardless of age, as in the operations summary, and alone decides DEGRADED.
      */
     public record Health(UUID integrationId, IntegrationHealth health, Map<OperationStatus, Long> byStatus, long dead,
                          Instant lastOperationAt, OperationRepository.LastFailure lastFailure) {
@@ -66,8 +66,9 @@ public class IntegrationQueries {
         Map<UUID, OperationRepository.LastFailure> lastFailure = operations.lastFailuresSince(tenantId, since);
         return integrations.findAll(tenantId).stream().map(integration -> {
             Map<OperationStatus, Long> recent = byStatus.getOrDefault(integration.id(), Map.of());
-            return new Health(integration.id(), IntegrationHealth.of(integration.state(), recent), recent,
-                    dead.getOrDefault(integration.id(), 0L), lastOperationAt.get(integration.id()), lastFailure.get(integration.id()));
+            long unresolvedDead = dead.getOrDefault(integration.id(), 0L);
+            return new Health(integration.id(), IntegrationHealth.of(integration.state(), recent, unresolvedDead), recent,
+                    unresolvedDead, lastOperationAt.get(integration.id()), lastFailure.get(integration.id()));
         }).toList();
     }
 }

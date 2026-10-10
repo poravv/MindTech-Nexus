@@ -24,7 +24,10 @@ class OperationInsightsIT extends AbstractOperationIT {
     void should_report_each_health_from_state_and_operations_of_the_window() {
         UUID healthy = integrationWith("SUCCEEDED", "SUCCEEDED");
         UUID degradedByDead = integrationWith("SUCCEEDED", "DEAD");
-        UUID degradedByFailed = integrationWith("FAILED");
+        UUID healthyWithRejections = integrationWith("SUCCEEDED", "FAILED");
+        UUID degradedByOldDead = createIntegration(fastPolicy());
+        set(start(degradedByOldDead, "old-dead").id(), "DEAD", Instant.now().minus(Duration.ofDays(3)));
+        UUID discarded = integrationWith("DISCARDED");
         UUID progressing = integrationWith("SUCCEEDED", "RETRY");
         UUID draining = integrationWith();
         changeState(draining, admin, "DRAINING", 200);
@@ -36,12 +39,15 @@ class OperationInsightsIT extends AbstractOperationIT {
 
         assertThat(health.get(healthy.toString()).get("health").asString()).isEqualTo("HEALTHY");
         assertThat(health.get(degradedByDead.toString()).get("health").asString()).isEqualTo("DEGRADED");
-        assertThat(health.get(degradedByFailed.toString()).get("health").asString()).isEqualTo("DEGRADED");
+        assertThat(health.get(healthyWithRejections.toString()).get("health").asString()).isEqualTo("HEALTHY");
+        assertThat(health.get(healthyWithRejections.toString()).get("byStatus").get("FAILED").asLong()).isEqualTo(1);
+        assertThat(health.get(degradedByOldDead.toString()).get("health").asString()).isEqualTo("DEGRADED");
+        assertThat(health.get(discarded.toString()).get("health").asString()).isEqualTo("HEALTHY");
         assertThat(health.get(progressing.toString()).get("health").asString()).isEqualTo("PROGRESSING");
         assertThat(health.get(draining.toString()).get("health").asString()).isEqualTo("PROGRESSING");
         assertThat(health.get(suspended.toString()).get("health").asString()).isEqualTo("SUSPENDED");
         assertThat(health.get(idle.toString()).get("health").asString()).isEqualTo("NO_ACTIVITY");
-        assertThat(health).hasSize(7);
+        assertThat(health).hasSize(9);
     }
 
     @Test
@@ -57,12 +63,12 @@ class OperationInsightsIT extends AbstractOperationIT {
         jdbc.sql("UPDATE operations SET last_error = CAST(:error AS jsonb) WHERE id = :id")
                 .param("error", "{\"kind\":\"REJECTED\",\"code\":\"unknown-product\"}").param("id", failed).update();
         set(start(integration, "old-dead").id(), "DEAD", Instant.now().minus(Duration.ofDays(3)));
-        UUID idleWithOldDlq = createIntegration(fastPolicy());
-        set(start(idleWithOldDlq, "older-dead").id(), "DEAD", Instant.now().minus(Duration.ofDays(3)));
+        UUID quietWithOldDlq = createIntegration(fastPolicy());
+        set(start(quietWithOldDlq, "older-dead").id(), "DEAD", Instant.now().minus(Duration.ofDays(3)));
 
         Map<String, JsonNode> health = health(tenant, admin, 200);
         JsonNode own = health.get(integration.toString());
-        JsonNode idle = health.get(idleWithOldDlq.toString());
+        JsonNode quiet = health.get(quietWithOldDlq.toString());
 
         assertThat(own.get("byStatus").get("SUCCEEDED").asLong()).isEqualTo(1);
         assertThat(own.get("byStatus").get("DEAD").asLong()).isEqualTo(1);
@@ -75,10 +81,10 @@ class OperationInsightsIT extends AbstractOperationIT {
         assertThat(lastFailure.get("step").asString()).isEqualTo("PUSH_PAGE");
         assertThat(lastFailure.get("errorCode").asString()).isEqualTo("attempts-exhausted");
         assertThat(lastFailure.get("at").isNull()).isFalse();
-        assertThat(idle.get("health").asString()).isEqualTo("NO_ACTIVITY");
-        assertThat(idle.get("dead").asLong()).isEqualTo(1);
-        assertThat(idle.get("lastFailure").isNull()).isTrue();
-        assertThat(idle.get("lastOperationAt").isNull()).isTrue();
+        assertThat(quiet.get("health").asString()).isEqualTo("DEGRADED");
+        assertThat(quiet.get("dead").asLong()).isEqualTo(1);
+        assertThat(quiet.get("lastFailure").isNull()).isTrue();
+        assertThat(quiet.get("lastOperationAt").isNull()).isTrue();
     }
 
     @Test
