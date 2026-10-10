@@ -94,7 +94,7 @@ export default class IntegrationDetailPage {
     const total = Object.values(by).reduce((sum, value) => sum + (value ?? 0), 0);
     switch (row.health) {
       case 'DEGRADED':
-        return [row.insight?.dead && `${row.insight.dead} en DLQ`, by.FAILED && `${by.FAILED} fallidas`].filter(Boolean).join(' · ') + ' en 24 h';
+        return 'En 24 h: ' + [by.DEAD && `${by.DEAD} a DLQ`, by.FAILED && `${by.FAILED} ${by.FAILED === 1 ? 'fallida' : 'fallidas'}`].filter(Boolean).join(' · ');
       case 'PROGRESSING':
         return row.integration.state === 'DRAINING' ? 'Terminando las operaciones en curso' : 'Hay operaciones en curso o reintentando';
       case 'HEALTHY':

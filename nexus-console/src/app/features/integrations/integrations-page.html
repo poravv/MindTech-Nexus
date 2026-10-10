@@ -83,7 +83,10 @@
           {{ rows().length }} {{ rows().length === 1 ? 'integración' : 'integraciones' }}
           @if (allTenants()) { en {{ tenants().length }} {{ tenants().length === 1 ? 'tenant' : 'tenants' }} }
           @if (counts().get('DEGRADED'); as degraded) {
-            · <strong class="text-danger">{{ degraded }} con fallas</strong>
+            · <strong class="text-danger">
+              {{ degraded }} {{ degraded === 1 ? 'integración degradada' : 'integraciones degradadas' }}
+              @if (allTenants()) { en {{ degradedTenants() }} {{ degradedTenants() === 1 ? 'tenant' : 'tenants' }} }
+            </strong>
           }
           @if (totalDead()) {
             · <a routerLink="/operaciones" [queryParams]="{ status: 'DEAD' }">{{ totalDead() }} en DLQ</a>

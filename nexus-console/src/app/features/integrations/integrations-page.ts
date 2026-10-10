@@ -121,6 +121,9 @@ export default class IntegrationsPage implements OnDestroy {
     }
     return counts;
   });
+  protected readonly degradedTenants = computed(
+    () => new Set(this.rows().filter((row) => row.health === 'DEGRADED').map((row) => row.integration.tenantId)).size,
+  );
   protected readonly totalDead = computed(() => this.rows().reduce((sum, row) => sum + (row.insight?.dead ?? 0), 0));
 
   protected readonly canManage = computed(() => {
