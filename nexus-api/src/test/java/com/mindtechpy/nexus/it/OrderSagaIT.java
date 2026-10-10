@@ -53,7 +53,8 @@ class OrderSagaIT extends AbstractConnectorIT {
         assertThat(create.getHeader("X-Api-Key")).isEqualTo("pv_live_test");
         JsonNode sale = jsonOf(create);
         assertThat(sale.propertyNames()).containsExactlyInAnyOrder("channel", "externalRef", "customerId", "items",
-                "delivery", "paymentMethod", "notes");
+                "delivery", "shippingCost", "paymentMethod", "notes");
+        assertThat(sale.get("shippingCost").asLong()).isEqualTo(10000);
         assertThat(sale.get("customerId").asString()).isEqualTo("c-maria");
         assertThat(sale.get("items")).hasSize(2);
         assertThat(sale.get("items").get(0).get("code").asString()).isEqualTo("SKU-1001");
@@ -86,8 +87,10 @@ class OrderSagaIT extends AbstractConnectorIT {
 
         assertThat(reload(op.id()).status()).isEqualTo(OperationStatus.SUCCEEDED);
         assertThat(posRequests("POST", "/api/integration/customers/resolve")).isEmpty();
-        assertThat(jsonOf(posRequests("POST", "/api/integration/orders").getFirst()).get("customerId").asString())
-                .isEqualTo("c-default");
+        JsonNode sale = jsonOf(posRequests("POST", "/api/integration/orders").getFirst());
+        assertThat(sale.get("customerId").asString()).isEqualTo("c-default");
+        assertThat(sale.has("shippingCost")).as("el POS exige teléfono de entrega para cobrar envío").isFalse();
+        assertThat(sale.get("notes").asString()).contains("Envío GiftHub: Gs. 10000");
     }
 
     @Test
