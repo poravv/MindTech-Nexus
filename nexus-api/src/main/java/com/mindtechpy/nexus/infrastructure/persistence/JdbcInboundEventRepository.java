@@ -1,8 +1,12 @@
 package com.mindtechpy.nexus.infrastructure.persistence;
 
 import com.mindtechpy.nexus.application.port.out.InboundEventRepository;
+import com.mindtechpy.nexus.domain.shared.TenantId;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
+
+import java.time.Instant;
+import java.util.UUID;
 
 import static com.mindtechpy.nexus.infrastructure.persistence.JdbcValues.timestamp;
 
@@ -13,6 +17,17 @@ class JdbcInboundEventRepository implements InboundEventRepository {
 
     JdbcInboundEventRepository(JdbcClient jdbc) {
         this.jdbc = jdbc;
+    }
+
+    @Override
+    public boolean existsForOperationSince(TenantId tenantId, UUID operationId, Instant since) {
+        return jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM inbound_events
+                                       WHERE tenant_id = :tenantId AND operation_id = :operationId AND received_at >= :since)""")
+                .param("tenantId", tenantId.value())
+                .param("operationId", operationId)
+                .param("since", timestamp(since))
+                .query(Boolean.class).single();
     }
 
     @Override

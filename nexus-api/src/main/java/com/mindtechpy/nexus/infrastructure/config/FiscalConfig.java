@@ -22,8 +22,8 @@ import org.springframework.context.annotation.Configuration;
 class FiscalConfig {
 
     @Bean
-    IssueInvoiceSaga issueInvoiceSaga(SifenPort sifen, ClockPort clock) {
-        return new IssueInvoiceSaga(sifen, clock);
+    IssueInvoiceSaga issueInvoiceSaga(SifenPort sifen, InboundEventRepository inboundEvents, ClockPort clock) {
+        return new IssueInvoiceSaga(sifen, inboundEvents, clock);
     }
 
     @Bean

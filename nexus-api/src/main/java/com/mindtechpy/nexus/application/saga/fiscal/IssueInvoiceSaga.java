@@ -1,6 +1,7 @@
 package com.mindtechpy.nexus.application.saga.fiscal;
 
 import com.mindtechpy.nexus.application.port.out.ClockPort;
+import com.mindtechpy.nexus.application.port.out.InboundEventRepository;
 import com.mindtechpy.nexus.application.port.out.SifenPort;
 import com.mindtechpy.nexus.application.saga.Saga;
 import com.mindtechpy.nexus.application.saga.StepContext;
@@ -24,7 +25,8 @@ import static java.lang.System.Logger.Level.INFO;
 /**
  * {@code ISSUE_INVOICE} (spec §9): {@code SUBMIT} sends the canonical request to SIFEN; a document SIFEN
  * has not decided yet goes to {@code TRACK}, which polls at 1 m, 5 m, 15 m, 1 h and then every 6 h for at
- * most 72 h (a SIFEN webhook makes the next poll run at once); still pending after that, it ends
+ * most 72 h (a SIFEN webhook makes the next poll run at once; one that arrives while the poll is running, and
+ * so cannot reschedule it, makes the poll repeat at once instead of waiting); still pending after that, it ends
  * DEAD({@value #TRACKING_EXPIRED}) at once instead of burning retries. Any resend is preceded by a VERIFY read:
  * a failed send may still have consumed numbering in SIFEN, so the transaction is looked up first and
  * adopted when it exists; only a 404 (or a reservation without CDC, which SIFEN resolves itself) sends
@@ -43,10 +45,12 @@ public class IssueInvoiceSaga implements Saga {
     private static final System.Logger log = System.getLogger(IssueInvoiceSaga.class.getName());
 
     private final SifenPort sifen;
+    private final InboundEventRepository inboundEvents;
     private final ClockPort clock;
 
-    public IssueInvoiceSaga(SifenPort sifen, ClockPort clock) {
+    public IssueInvoiceSaga(SifenPort sifen, InboundEventRepository inboundEvents, ClockPort clock) {
         this.sifen = sifen;
+        this.inboundEvents = inboundEvents;
         this.clock = clock;
     }
 
@@ -157,6 +161,10 @@ public class IssueInvoiceSaga implements Saga {
 
     private StepResult scheduleNextPoll(Operation op, SifenDocument doc) {
         Instant since = Instant.parse((String) op.result().get("trackingSince"));
+        if (inboundEvents.existsForOperationSince(op.tenantId(), op.id(), op.updatedAt())) {
+            log(op, "TRACK → estado=" + doc.estado() + " pero SIFEN avisó un cambio durante este paso: se consulta de nuevo ya");
+            return new StepResult.Next(TRACK, Duration.ZERO, doc.cdc(), op.result());
+        }
         if (!clock.now().isBefore(since.plus(TRACK_LIMIT))) {
             log(op, "TRACK → estado=" + doc.estado() + " tras " + TRACK_LIMIT.toHours() + " h: DEAD hasta que SIFEN avise el estado final");
             return new StepResult.Failed(ConnectorError.of(ErrorKind.EXPIRED, TRACKING_EXPIRED,

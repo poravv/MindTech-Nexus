@@ -58,6 +58,29 @@ class SifenWebhookIT extends AbstractFiscalIT {
     }
 
     @Test
+    void should_poll_again_at_once_instead_of_ending_dead_when_the_event_arrives_while_the_poll_runs() {
+        String ref = newSourceRef();
+        stubSubmit(ref, document(ref, "PENDIENTE_ENVIO"));
+        Operation op = issue(ref);
+        drain();
+        trackingStartedHoursAgo(op.id(), 73);
+        stubFind(ref, document(ref, "EN_PROCESO"));
+        makeDue(op.id());
+        Operation running = claimOnly(op.id(), "it-worker-race");
+
+        deliver(sifenConnection, event(UUID.randomUUID().toString(), ref), now(), WEBHOOK_SECRET, 200);
+        runner.run(running);
+
+        Operation repoll = reload(op.id());
+        assertThat(repoll.status()).isEqualTo(OperationStatus.PENDING);
+        assertThat(repoll.currentStep()).isEqualTo("TRACK");
+        assertThat(nextRunAt(op.id())).isBeforeOrEqualTo(Instant.now());
+        stubFind(ref, document(ref, "APROBADO"));
+        drain();
+        assertThat(reload(op.id()).status()).isEqualTo(OperationStatus.SUCCEEDED);
+    }
+
+    @Test
     void should_leave_dead_when_it_died_for_a_reason_the_event_does_not_fix() {
         String ref = newSourceRef();
         stubSubmit(ref, sifenError(401, "HMAC_INVALID", "Firma invalida"));

@@ -15,4 +15,7 @@ public interface InboundEventRepository {
 
     /** False when {@code (connectionId, eventId)} was already recorded: a redelivery. */
     boolean insertIfAbsent(InboundEvent event);
+
+    /** True when a webhook about {@code operationId} arrived at or after {@code since}. */
+    boolean existsForOperationSince(TenantId tenantId, UUID operationId, Instant since);
 }
