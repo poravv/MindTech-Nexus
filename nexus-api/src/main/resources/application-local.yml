@@ -1,0 +1,4 @@
+# Desarrollo local: además del cluster, se permiten servicios en localhost y en el host de Docker.
+nexus:
+  connectors:
+    allowed-hosts: ${NEXUS_CONNECTORS_ALLOWED_HOSTS:*.svc.cluster.local,localhost,host.docker.internal}

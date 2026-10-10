@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: nexus-api
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:55440/${NEXUS_DB_NAME:nexus}}
+    username: ${NEXUS_DB_USER:}
+    password: ${NEXUS_DB_PASSWORD:}
+  flyway:
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+  shutdown: graceful
+  # Tomcat RemoteIpValve: only trusts X-Forwarded-For from private-network proxies (nginx of the console).
+  forward-headers-strategy: native
+
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
+
+nexus:
+  security:
+    jwt-secret: ${NEXUS_JWT_SIGNING_KEY:}
+    master-key: ${NEXUS_MASTER_KEY:}
+  connectors:
+    allowed-hosts: ${NEXUS_CONNECTORS_ALLOWED_HOSTS:*.svc.cluster.local}
+  bootstrap:
+    admin-email: ${NEXUS_BOOTSTRAP_ADMIN_EMAIL:}
+    admin-password: ${NEXUS_BOOTSTRAP_ADMIN_PASSWORD:}
