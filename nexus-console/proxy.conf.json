@@ -1,0 +1,10 @@
+{
+  "/api/admin": {
+    "target": "http://localhost:8090",
+    "secure": false
+  },
+  "/api/v1/webhooks": {
+    "target": "http://localhost:8090",
+    "secure": false
+  }
+}
