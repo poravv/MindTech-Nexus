@@ -32,14 +32,15 @@ class FiscalConfig {
     }
 
     @Bean
-    IssueInvoice issueInvoice(IntegrationRepository integrations, StartOperation startOperation) {
-        return new IssueInvoice(integrations, startOperation);
+    IssueInvoice issueInvoice(IntegrationRepository integrations, OperationRepository operations,
+                              StartOperation startOperation, ClockPort clock) {
+        return new IssueInvoice(integrations, operations, startOperation, clock);
     }
 
     @Bean
     CancelInvoice cancelInvoice(IntegrationRepository integrations, OperationRepository operations,
-                                StartOperation startOperation) {
-        return new CancelInvoice(integrations, operations, startOperation);
+                                StartOperation startOperation, ClockPort clock) {
+        return new CancelInvoice(integrations, operations, startOperation, clock);
     }
 
     @Bean

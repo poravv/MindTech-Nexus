@@ -92,6 +92,17 @@ public record Operation(UUID id, TenantId tenantId, UUID integrationId, Operatio
         return next(OperationStatus.PENDING, currentStep, 0, now, result, lastError, null, null);
     }
 
+    /**
+     * A FAILED operation its client asks for again: back to the queue at the failed step with a fresh budget.
+     * {@code lastError} is kept, so the saga treats it as a resend and verifies the remote state first.
+     */
+    public Operation retriedAfterFailure(Instant now) {
+        if (status != OperationStatus.FAILED) {
+            throw DomainException.conflict("operation-not-failed", "Solo se reintentan operaciones FAILED");
+        }
+        return next(OperationStatus.PENDING, currentStep, 0, now, result, lastError, null, null);
+    }
+
     private Operation next(OperationStatus newStatus, String step, int newAttempts, Instant runAt,
                            Map<String, Object> newResult, ConnectorError error, String reason, Instant finished) {
         return new Operation(id, tenantId, integrationId, kind, idempotencyKey, requestHash, newStatus, step, newAttempts,

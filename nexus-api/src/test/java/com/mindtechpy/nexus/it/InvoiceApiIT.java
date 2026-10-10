@@ -1,6 +1,7 @@
 package com.mindtechpy.nexus.it;
 
 import com.github.tomakehurst.wiremock.client.WireMock;
+import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationStatus;
 import org.junit.jupiter.api.Test;
@@ -165,6 +166,103 @@ class InvoiceApiIT extends AbstractFiscalIT {
         assertThat(operation.get("lastError").get("message").asString()).isEqualTo("Plazo de cancelacion vencido");
         assertThat(operation.get("deadReason").isNull()).isTrue();
         assertThat(invoiceState(ref).get("status").asString()).isEqualTo("APPROVED");
+    }
+
+    @Test
+    void should_put_a_failed_cancellation_back_in_the_queue_and_reach_sifen_when_the_pos_repeats_it() {
+        String ref = approvedInvoice();
+        stubFind(ref, document(ref, "APROBADO"));
+        SIFEN.stubFor(WireMock.post(urlEqualTo("/api/v1/facturas/" + ref + "/cancelar")).inScenario(ref)
+                .whenScenarioStateIs(Scenario.STARTED).willSetStateTo("fixed")
+                .willReturn(sifenError(409, "BUSINESS_RULE", "SIFEN no registró el evento")));
+        SIFEN.stubFor(WireMock.post(urlEqualTo("/api/v1/facturas/" + ref + "/cancelar")).inScenario(ref)
+                .whenScenarioStateIs("fixed").willReturn(document(ref, "CANCELADO")));
+        String operationId = body(cancel(ref, "Error en el cliente", 202)).get("operationId").asString();
+        drain();
+        assertThat(operation(operationId).get("status").asString()).isEqualTo("FAILED");
+
+        JsonNode retried = body(cancel(ref, "Error en el cliente", 202));
+        drain();
+
+        assertThat(retried.get("operationId").asString()).isEqualTo(operationId);
+        assertThat(operation(operationId).get("status").asString()).isEqualTo("SUCCEEDED");
+        assertThat(invoiceState(ref).get("status").asString()).isEqualTo("CANCELLED");
+        assertThat(count(postRequestedFor(urlEqualTo("/api/v1/facturas/" + ref + "/cancelar")))).isEqualTo(2);
+        assertThat(count(findsOf(ref))).isEqualTo(1);
+    }
+
+    @Test
+    void should_return_the_existing_cancellation_without_calling_sifen_again_when_it_is_in_flight_or_succeeded() {
+        String ref = approvedInvoice();
+        SIFEN.stubFor(WireMock.post(urlEqualTo("/api/v1/facturas/" + ref + "/cancelar"))
+                .willReturn(document(ref, "CANCELADO")));
+        String operationId = body(cancel(ref, "Anulación", 202)).get("operationId").asString();
+
+        JsonNode inFlight = body(cancel(ref, "Anulación", 200));
+        drain();
+        JsonNode afterSuccess = body(cancel(ref, "Anulación", 200));
+
+        assertThat(inFlight.get("operationId").asString()).isEqualTo(operationId);
+        assertThat(inFlight.get("status").asString()).isEqualTo("PENDING");
+        assertThat(afterSuccess.get("operationId").asString()).isEqualTo(operationId);
+        assertThat(afterSuccess.get("status").asString()).isEqualTo("SUCCEEDED");
+        assertThat(count(postRequestedFor(urlEqualTo("/api/v1/facturas/" + ref + "/cancelar")))).isEqualTo(1);
+    }
+
+    @Test
+    void should_leave_a_dead_cancellation_for_a_human_replay_when_the_pos_repeats_it() {
+        String ref = approvedInvoice();
+        SIFEN.stubFor(WireMock.post(urlEqualTo("/api/v1/facturas/" + ref + "/cancelar"))
+                .willReturn(sifenError(401, "UNAUTHORIZED", "Firma inválida")));
+        String operationId = body(cancel(ref, "Anulación", 202)).get("operationId").asString();
+        drain();
+
+        JsonNode repeated = body(cancel(ref, "Anulación", 200));
+        drain();
+
+        assertThat(repeated.get("operationId").asString()).isEqualTo(operationId);
+        assertThat(repeated.get("status").asString()).isEqualTo("DEAD");
+        assertThat(count(postRequestedFor(urlEqualTo("/api/v1/facturas/" + ref + "/cancelar")))).isEqualTo(1);
+    }
+
+    @Test
+    void should_verify_and_send_again_the_same_transaction_when_a_failed_emission_is_repeated() {
+        String ref = newSourceRef();
+        SIFEN.stubFor(WireMock.post(urlEqualTo("/api/v1/facturas")).inScenario(ref)
+                .withRequestBody(matchingJsonPath("$.transactionId", equalTo(ref)))
+                .whenScenarioStateIs(Scenario.STARTED).willSetStateTo("fixed")
+                .willReturn(sifenError(422, "VALIDATION_ERROR", "Timbrado vencido")));
+        SIFEN.stubFor(WireMock.post(urlEqualTo("/api/v1/facturas")).inScenario(ref)
+                .withRequestBody(matchingJsonPath("$.transactionId", equalTo(ref)))
+                .whenScenarioStateIs("fixed").willReturn(document(ref, "APROBADO")));
+        stubFind(ref, sifenError(404, "NOT_FOUND", "No existe"));
+        Operation failed = issue(ref);
+        drain();
+        assertThat(reload(failed.id()).status()).isEqualTo(OperationStatus.FAILED);
+
+        JsonNode retried = body(issue(pos, invoice(ref), 202));
+        drain();
+
+        assertThat(retried.get("operationId").asString()).isEqualTo(failed.id().toString());
+        assertThat(invoiceState(ref).get("status").asString()).isEqualTo("APPROVED");
+        assertThat(count(findsOf(ref))).isEqualTo(1);
+        assertThat(count(submitsOf(ref))).isEqualTo(2);
+    }
+
+    @Test
+    void should_not_retry_an_emission_that_sifen_processed_and_rejected() {
+        String ref = newSourceRef();
+        stubSubmit(ref, document(ref, "RECHAZADO"));
+        Operation rejected = issue(ref);
+        drain();
+
+        JsonNode repeated = body(issue(pos, invoice(ref), 200));
+        drain();
+
+        assertThat(repeated.get("status").asString()).isEqualTo("REJECTED");
+        assertThat(reload(rejected.id()).status()).isEqualTo(OperationStatus.FAILED);
+        assertThat(count(submitsOf(ref))).isEqualTo(1);
+        assertThat(count(findsOf(ref))).isZero();
     }
 
     @Test
