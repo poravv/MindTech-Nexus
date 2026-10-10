@@ -59,7 +59,7 @@ class PosRestClient implements PosPort {
                 "instructions", order.delivery().instructions());
         Object body = object("channel", order.channel(), "externalRef", order.externalRef(), "customerId", order.customerId(),
                 "branchId", order.branchId(), "warehouseId", order.warehouseId(), "items", items, "delivery", delivery,
-                "shippingCost", order.shippingCost(),
+                "shippingCost", order.shippingCost(), "discountAmount", order.discount(),
                 "paymentMethod", order.paymentMethod(), "notes", order.notes());
         Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.POST, "/api/integration/orders",
                 apiKey(pos).andThen(headers -> headers.set("Idempotency-Key", idempotencyKey)), body);

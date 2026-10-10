@@ -21,10 +21,12 @@ public interface PosPort {
 
     /**
      * {@code branchId}/{@code warehouseId} null: the POS uses the defaults of the API key. {@code shippingCost}
-     * (whole guaraníes, null = none) is the channel's delivery fee; the POS adds it to its total.
+     * (whole guaraníes, null = none) is the channel's delivery fee; the POS adds it to its total. {@code discount}
+     * (whole guaraníes, null = none) is the channel's order discount (coupon); the POS takes it off the items.
      */
     record NewOrder(String channel, String externalRef, String customerId, String branchId, String warehouseId,
-                    List<Item> items, Delivery delivery, Long shippingCost, String paymentMethod, String notes) {
+                    List<Item> items, Delivery delivery, Long shippingCost, Long discount, String paymentMethod,
+                    String notes) {
     }
 
     record Order(String saleId, String saleNumber, long total, String status) {

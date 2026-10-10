@@ -28,8 +28,8 @@ import static java.lang.System.Logger.Level.WARNING;
 /**
  * {@code [NEXUS-ORDER]} GiftHub order → POS channel sale (spec §10.1). Steps:
  * {@code RESOLVE_CUSTOMER} (phone → POS customer, or the connection's {@code defaultCustomerId}) →
- * {@code CREATE_ORDER} (POS sale {@code PENDING} with items and toppings as product lines, GiftHub's delivery fee,
- * {@code Idempotency-Key = GIFTHUB:{orderId}}; after an uncertain attempt it first looks the sale up and adopts
+ * {@code CREATE_ORDER} (POS sale {@code PENDING} with items and toppings as product lines, GiftHub's delivery fee
+ * and order discount (coupon), {@code Idempotency-Key = GIFTHUB:{orderId}}; after an uncertain attempt it first looks the sale up and adopts
  * it; a POS total other than GiftHub's {@code total_pyg} is logged and kept as {@code totalMismatch}, never
  * blocks) → {@code NOTIFY_GIFTHUB} ({@code CONFIRMED} with the sale id and number). Compensation: a POS
  * rejection (stock, unknown product) cancels the order in GiftHub with the reason, unless it is already paid
@@ -139,9 +139,8 @@ public class CreateOrderSaga implements Saga {
     }
 
     /**
-     * The POS prices the items itself and takes no order discount (its electronic invoice would not carry it), so
-     * its total can differ from what GiftHub charged: a coupon, another price, a POS promotion, a delivery fee
-     * without phone. It does not block the order: the cashier settles it.
+     * The POS prices the items itself, so its total can differ from what GiftHub charged: another price, a POS
+     * promotion, a delivery fee without phone. It does not block the order: the cashier settles it.
      */
     private static void warnTotalMismatch(StepContext context, ChannelOrder order, PosPort.Order sale) {
         Operation op = context.operation();
@@ -239,12 +238,13 @@ public class CreateOrderSaga implements Saga {
         // The POS only takes a shipping cost with the delivery address and phone; without them the fee stays in the notes.
         Long fee = order.deliveryFeePyg();
         Long shippingCost = fee != null && fee > 0 && delivery != null && delivery.contactPhone() != null ? fee : null;
+        Long discount = order.discountPyg() != null && order.discountPyg() > 0 ? order.discountPyg() : null;
         return new PosPort.NewOrder(CHANNEL, order.orderId(), (String) context.operation().result().get("customerId"),
-                setting(settings, "branchId"), setting(settings, "warehouseId"), items, delivery, shippingCost, paymentMethod,
-                notes(order));
+                setting(settings, "branchId"), setting(settings, "warehouseId"), items, delivery, shippingCost, discount,
+                paymentMethod, notes(order));
     }
 
-    /** GiftHub's amounts for the cashier: the discount only travels here, and the fee too when the POS cannot take it. */
+    /** GiftHub's amounts for the cashier, also the ones the POS already took (fee, discount), to check its total. */
     private static String notes(ChannelOrder order) {
         List<String> lines = new ArrayList<>();
         lines.add("Pedido GiftHub " + (order.number() == null ? order.orderId() : order.number()));

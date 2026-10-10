@@ -107,6 +107,26 @@ class OrderSagaIT extends AbstractConnectorIT {
     }
 
     @Test
+    void should_send_the_gifthub_coupon_as_the_sale_discount_so_the_pos_total_matches() {
+        stubPos(post(urlPathEqualTo(pos("/api/integration/orders"))).willReturn(jsonResponse(
+                SALE.replace("\"total\":91000", "\"total\":83000"), 201)));
+        String delivery = UUID.randomUUID().toString();
+        String body = orderCreated(delivery, orderId, maria()).replace("\"discount_pyg\":0", "\"discount_pyg\":8000")
+                .replace("\"total_pyg\":91000", "\"total_pyg\":83000");
+        JsonNode received = sendSigned(delivery, body, 200);
+
+        drain();
+
+        Operation done = reload(UUID.fromString(received.get("operationId").asString()));
+        assertThat(done.status()).isEqualTo(OperationStatus.SUCCEEDED);
+        JsonNode sale = jsonOf(posRequests("POST", "/api/integration/orders").getFirst());
+        assertThat(sale.get("discountAmount").asLong()).isEqualTo(8000);
+        assertThat(sale.get("shippingCost").asLong()).isEqualTo(10000);
+        assertThat(done.result()).containsEntry("total", 83000).containsEntry("giftHubTotal", 83000)
+                .containsEntry("totalMismatch", false);
+    }
+
+    @Test
     void should_create_the_sale_and_record_the_mismatch_when_the_pos_total_differs_from_gifthub() {
         stubPos(post(urlPathEqualTo(pos("/api/integration/orders"))).willReturn(jsonResponse(
                 SALE.replace("\"total\":91000", "\"total\":81000"), 201)));
