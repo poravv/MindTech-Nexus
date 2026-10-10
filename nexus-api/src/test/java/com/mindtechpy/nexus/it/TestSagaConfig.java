@@ -3,6 +3,7 @@ package com.mindtechpy.nexus.it;
 import com.mindtechpy.nexus.application.saga.Saga;
 import com.mindtechpy.nexus.application.saga.StepContext;
 import com.mindtechpy.nexus.application.saga.StepResult;
+import com.mindtechpy.nexus.application.saga.catalog.CatalogSyncSaga;
 import com.mindtechpy.nexus.application.usecase.StartOperation;
 import com.mindtechpy.nexus.domain.identity.Actor;
 import com.mindtechpy.nexus.domain.identity.Scope;
@@ -11,6 +12,7 @@ import com.mindtechpy.nexus.domain.operation.OperationKind;
 import com.mindtechpy.nexus.infrastructure.security.TenantContext;
 import com.mindtechpy.nexus.infrastructure.web.CorrelationIdFilter;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.ResponseEntity;
@@ -31,12 +33,23 @@ import java.util.function.Function;
 @TestConfiguration(proxyBeanMethods = false)
 public class TestSagaConfig {
 
+    /**
+     * The engine tests script {@code CATALOG_SYNC}, the kind of the real {@link CatalogSyncSaga}: the real saga
+     * bean is wrapped (one saga per kind) and still runs every integration that has a source connection,
+     * which engine tests never set. Real catalog runs then start at step {@code FIRST}; the catalog saga does not
+     * depend on the step name.
+     */
     @Bean
-    ScriptedSaga scriptedSaga() {
-        return new ScriptedSaga();
+    static BeanPostProcessor scriptedCatalogSaga() {
+        return new BeanPostProcessor() {
+            @Override
+            public Object postProcessAfterInitialization(Object bean, String beanName) {
+                return bean instanceof CatalogSyncSaga real ? new ScriptedSaga(real) : bean;
+            }
+        };
     }
 
-    /** Runs {@code CATALOG_SYNC} operations with the behaviour set by the current test; records every call. */
+    /** Runs engine-test {@code CATALOG_SYNC} operations with the behaviour set by the current test; records every call. */
     public static class ScriptedSaga implements Saga {
 
         public record Call(UUID operationId, String step, boolean verification) {
@@ -47,9 +60,11 @@ public class TestSagaConfig {
 
         public final Queue<Call> calls = new ConcurrentLinkedQueue<>();
         public final Queue<Compensation> compensations = new ConcurrentLinkedQueue<>();
+        private final Saga real;
         private volatile Function<StepContext, StepResult> behavior;
 
-        public ScriptedSaga() {
+        ScriptedSaga(Saga real) {
+            this.real = real;
             reset();
         }
 
@@ -79,12 +94,19 @@ public class TestSagaConfig {
 
         @Override
         public StepResult execute(StepContext context) {
+            if (context.source() != null) {
+                return real.execute(context);
+            }
             calls.add(new Call(context.operation().id(), context.step(), context.operation().needsVerification()));
             return behavior.apply(context);
         }
 
         @Override
         public void compensate(StepContext context, ConnectorError cause) {
+            if (context.source() != null) {
+                real.compensate(context, cause);
+                return;
+            }
             compensations.add(new Compensation(context.operation().id(), context.step(), cause));
         }
     }

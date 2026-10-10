@@ -187,8 +187,8 @@ public class SagaRunner {
 
     /**
      * Single compensation point: asks the saga to undo remote effects (when there is a saga context) and
-     * then persists the terminal status. A failing compensation turns the outcome into DEAD so a human
-     * reviews it.
+     * then persists the terminal status. A failing compensation, or one that asks for manual
+     * reconciliation, turns the outcome into DEAD so a human reviews it.
      */
     private void endWithFailure(Saga saga, StepContext context, Operation claimed, Operation terminal,
                                 ConnectorError cause, OperationStep step) {
@@ -196,6 +196,10 @@ public class SagaRunner {
         if (saga != null) {
             try {
                 saga.compensate(context, cause);
+            } catch (ManualReconciliationRequired e) {
+                log.log(WARNING, "{0} op={1} conciliación manual: {2}", terminal.flow().logPrefix(), terminal.id(), e.getMessage());
+                outcome = terminal.dead(ManualReconciliationRequired.REASON, new ConnectorError(cause.kind(), cause.code(),
+                        e.getMessage(), cause.httpStatus(), null), clock.now());
             } catch (RuntimeException e) {
                 log.log(WARNING, terminal.flow().logPrefix() + " op=" + terminal.id() + " compensación fallida", e);
                 outcome = terminal.dead("compensation-failed", cause, clock.now());
