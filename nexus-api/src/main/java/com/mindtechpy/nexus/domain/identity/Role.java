@@ -11,8 +11,9 @@ import static com.mindtechpy.nexus.domain.identity.Permission.*;
 /** Console roles. {@code value} is the wire/database spelling. */
 public enum Role {
     PLATFORM_ADMIN("platform_admin", EnumSet.allOf(Permission.class)),
-    TENANT_ADMIN("tenant_admin", EnumSet.of(MANAGE_USERS, MANAGE_API_CLIENTS, MANAGE_CONNECTIONS, READ_TENANT_DATA, READ_AUDIT)),
-    OPERATOR("operator", EnumSet.of(READ_TENANT_DATA)),
+    TENANT_ADMIN("tenant_admin", EnumSet.of(MANAGE_USERS, MANAGE_API_CLIENTS, MANAGE_CONNECTIONS, READ_TENANT_DATA, READ_AUDIT,
+            MANAGE_INTEGRATIONS, CHANGE_INTEGRATION_STATE, REPLAY_OPERATIONS)),
+    OPERATOR("operator", EnumSet.of(READ_TENANT_DATA, CHANGE_INTEGRATION_STATE, REPLAY_OPERATIONS)),
     AUDITOR("auditor", EnumSet.of(READ_TENANT_DATA, READ_AUDIT)),
     VIEWER("viewer", EnumSet.of(READ_TENANT_DATA));
 

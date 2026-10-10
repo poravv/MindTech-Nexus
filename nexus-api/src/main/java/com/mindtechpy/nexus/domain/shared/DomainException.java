@@ -6,7 +6,7 @@ package com.mindtechpy.nexus.domain.shared;
  */
 public class DomainException extends RuntimeException {
 
-    public enum Kind { INVALID, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, CONFLICT, LOCKED }
+    public enum Kind { INVALID, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, CONFLICT, LOCKED, SATURATED }
 
     private final Kind kind;
     private final String code;

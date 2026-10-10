@@ -17,6 +17,11 @@ public record Actor(Type type, String id, Role role, TenantId tenantId) {
         return new Actor(Type.SYSTEM, "system", null, null);
     }
 
+    /** Machine client: no console role, so it can only use runtime operations scoped to its tenant. */
+    public static Actor client(String clientId, TenantId tenantId) {
+        return new Actor(Type.CLIENT, clientId, null, tenantId);
+    }
+
     public static Actor user(String userId, Role role, TenantId tenantId) {
         return new Actor(Type.USER, userId, role, tenantId);
     }
