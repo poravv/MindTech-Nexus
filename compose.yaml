@@ -1,0 +1,41 @@
+# Desarrollo local: Postgres de Nexus + nexus-api (perfil Spring "local").
+# Los secretos salen de .env (gitignored; plantilla en .env.example). Puertos de host elegidos para no
+# chocar con los stacks locales de punto-venta/electronico-sifen/gift-hub.
+name: mindtech-nexus
+
+services:
+  postgres:
+    image: postgres:16.10-alpine
+    environment:
+      POSTGRES_DB: ${NEXUS_DB_NAME}
+      POSTGRES_USER: ${NEXUS_DB_USER}
+      POSTGRES_PASSWORD: ${NEXUS_DB_PASSWORD}
+    ports:
+      - "55440:5432"
+    volumes:
+      - nexus-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+
+  nexus-api:
+    build: ./nexus-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${NEXUS_DB_NAME}
+      NEXUS_DB_USER: ${NEXUS_DB_USER}
+      NEXUS_DB_PASSWORD: ${NEXUS_DB_PASSWORD}
+      NEXUS_JWT_SIGNING_KEY: ${NEXUS_JWT_SIGNING_KEY}
+      NEXUS_MASTER_KEY: ${NEXUS_MASTER_KEY}
+      NEXUS_BOOTSTRAP_ADMIN_EMAIL: ${NEXUS_BOOTSTRAP_ADMIN_EMAIL}
+      NEXUS_BOOTSTRAP_ADMIN_PASSWORD: ${NEXUS_BOOTSTRAP_ADMIN_PASSWORD}
+    ports:
+      - "8090:8080"
+      - "8091:8081"
+
+volumes:
+  nexus-pgdata:
