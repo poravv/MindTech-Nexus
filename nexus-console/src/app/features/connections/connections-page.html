@@ -1,0 +1,146 @@
+<section class="page">
+  <header class="page-head">
+    <div>
+      <h1>Conexiones</h1>
+      <p>Sistemas externos con los que habla Nexus. Las credenciales se guardan cifradas y nunca se vuelven a mostrar.</p>
+    </div>
+    @if (canManage()) {
+      <button type="button" class="btn btn-primary" (click)="openCreate()" [disabled]="scope.needsTenant()"><app-icon name="plus" />Nueva conexión</button>
+    }
+  </header>
+
+  @if (scope.needsTenant()) {
+    <app-tenant-required />
+  } @else {
+    @if (connections.error(); as error) {
+      <p class="alert" role="alert">{{ errorOf(error) }}</p>
+    }
+    <div class="panel">
+      <div class="table-wrap" role="region" aria-label="Conexiones" tabindex="0">
+        <table class="data">
+          <thead>
+            <tr>
+              <th scope="col">Nombre</th><th scope="col">Sistema</th><th scope="col">URL base</th>
+              <th scope="col">Credenciales</th><th scope="col">Última prueba</th>
+              @if (canManage()) {
+                <th scope="col"><span class="visually-hidden">Acciones</span></th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @if (connections.hasValue()) {
+              @for (connection of connections.value(); track connection.id) {
+                <tr>
+                  <td>{{ connection.name }}</td>
+                  <td>{{ connection.connector }}</td>
+                  <td class="mono">{{ connection.baseUrl }}</td>
+                  <td>
+                    <span class="inline-status" [class]="connection.hasCredentials ? 'inline-status tone-ok' : 'inline-status tone-danger'">
+                      <app-icon [name]="connection.hasCredentials ? 'key-round' : 'triangle-alert'" />{{ connection.hasCredentials ? 'Cargadas' : 'Faltan' }}
+                    </span>
+                  </td>
+                  <td class="nowrap">
+                    @if (connection.lastTestAt) {
+                      <span class="inline-status" [class]="connection.lastTestOk ? 'inline-status tone-ok' : 'inline-status tone-danger'">
+                        <app-icon [name]="connection.lastTestOk ? 'circle-check' : 'circle-x'" />{{ connection.lastTestOk ? 'Correcta' : 'Falló' }}
+                      </span>
+                      <span class="muted"> · {{ connection.lastTestAt | date: 'dd/MM HH:mm' }}</span>
+                    } @else {
+                      <span class="inline-status muted"><app-icon name="circle-help" />Sin probar</span>
+                    }
+                  </td>
+                  @if (canManage()) {
+                    <td>
+                      <div class="row-actions">
+                        <button type="button" class="btn btn-sm" (click)="test(connection)" [disabled]="testing() === connection.id"
+                                [attr.aria-label]="'Probar ' + connection.name">
+                          {{ testing() === connection.id ? 'Probando…' : 'Probar' }}
+                        </button>
+                        <button type="button" class="btn btn-sm" (click)="openEdit(connection)"
+                                [attr.aria-label]="'Editar ' + connection.name">Editar</button>
+                      </div>
+                    </td>
+                  }
+                </tr>
+              } @empty {
+                <tr><td colspan="6" class="empty">No hay conexiones en este tenant.</td></tr>
+              }
+            } @else if (connections.isLoading()) {
+              <tr><td colspan="6" class="empty">Cargando…</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+</section>
+
+<app-modal [heading]="editing()?.id ? 'Editar conexión' : 'Nueva conexión'" [open]="editing() !== null"
+           (closed)="close()">
+  <form class="form" (ngSubmit)="save()" #ngForm="ngForm">
+    @if (formError(); as message) {
+      <p class="alert" role="alert">{{ message }}</p>
+    }
+    <div class="field">
+      <label for="conn-connector">Sistema</label>
+      <select id="conn-connector" name="connector" class="select" [ngModel]="form.connector"
+              (ngModelChange)="changeConnector($event)" [disabled]="!!editing()?.id">
+        @for (type of connectorTypes; track type) {
+          <option [value]="type">{{ connectors[type].label }}</option>
+        }
+      </select>
+    </div>
+    <div class="field">
+      <label for="conn-name">Nombre</label>
+      <input id="conn-name" name="name" class="input" required maxlength="100" [(ngModel)]="form.name" />
+    </div>
+    <div class="field">
+      <label for="conn-url">URL base</label>
+      <input id="conn-url" name="baseUrl" type="url" class="input mono" required maxlength="500" [(ngModel)]="form.baseUrl"
+             placeholder="http://backend.punto-venta.svc.cluster.local:3000/api" aria-describedby="conn-url-hint" />
+      <span id="conn-url-hint" class="hint">Solo hosts permitidos (por defecto *.svc.cluster.local).</span>
+    </div>
+
+    <fieldset class="form">
+      <legend>Credenciales</legend>
+      @if (editing()?.id) {
+        <p class="hint">Dejalas vacías para conservar las actuales. Si cargás una, cargá todas.</p>
+      }
+      @for (field of connectors[form.connector].credentials; track field.key) {
+        <div class="field">
+          <label [for]="'cred-' + field.key">{{ field.label }}</label>
+          <input [id]="'cred-' + field.key" [name]="'cred-' + field.key" type="password" class="input mono"
+                 autocomplete="off" [required]="!editing()?.id" [(ngModel)]="form.credentials[field.key]" />
+          @if (field.hint) {
+            <span class="hint">{{ field.hint }}</span>
+          }
+        </div>
+      }
+    </fieldset>
+
+    @if (connectors[form.connector].settings.length || connectors[form.connector].flags.length) {
+      <fieldset class="form">
+        <legend>Ajustes</legend>
+        @for (field of connectors[form.connector].settings; track field.key) {
+          <div class="field">
+            <label [for]="'set-' + field.key">{{ field.label }}</label>
+            <input [id]="'set-' + field.key" [name]="'set-' + field.key" class="input" [(ngModel)]="form.settings[field.key]" />
+            @if (field.hint) {
+              <span class="hint">{{ field.hint }}</span>
+            }
+          </div>
+        }
+        @for (field of connectors[form.connector].flags; track field.key) {
+          <label class="check">
+            <input type="checkbox" [name]="'flag-' + field.key" [(ngModel)]="form.flags[field.key]" />{{ field.label }}
+          </label>
+        }
+      </fieldset>
+    }
+
+    <div class="form-actions">
+      <button type="button" class="btn" (click)="close()">Cancelar</button>
+      <button type="submit" class="btn btn-primary" [disabled]="busy() || ngForm.invalid">Guardar</button>
+    </div>
+  </form>
+</app-modal>

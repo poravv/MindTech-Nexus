@@ -1,0 +1,291 @@
+<ng-template #facets>
+  <div class="facets" role="search" aria-label="Filtrar integraciones">
+    <div class="facet-search">
+      <label for="int-search" class="facet-title">Buscar</label>
+      <div class="search-box">
+        <app-icon name="search" />
+        <input id="int-search" type="search" class="search-input" placeholder="Código o conexión" autocomplete="off"
+               [ngModel]="query()" (ngModelChange)="query.set($event)" aria-keyshortcuts="/" />
+        <kbd aria-hidden="true">/</kbd>
+      </div>
+    </div>
+
+    <fieldset class="facet">
+      <legend class="facet-title">Salud</legend>
+      @for (option of healthOptions; track option) {
+        <label class="facet-option">
+          <input type="checkbox" [checked]="healthFilter().has(option)" (change)="toggle(healthFilter, option)" />
+          <app-status-badge [status]="option" [plain]="true" />
+          <span class="facet-count">{{ counts().get(option) ?? 0 }}</span>
+        </label>
+      }
+    </fieldset>
+
+    <fieldset class="facet">
+      <legend class="facet-title">Estado</legend>
+      @for (option of stateOptions; track option) {
+        <label class="facet-option">
+          <input type="checkbox" [checked]="stateFilter().has(option)" (change)="toggle(stateFilter, option)" />
+          <app-status-badge [status]="option" [plain]="true" />
+          <span class="facet-count">{{ counts().get(option) ?? 0 }}</span>
+        </label>
+      }
+    </fieldset>
+
+    <fieldset class="facet">
+      <legend class="facet-title">Flujo</legend>
+      @for (flow of flowTypes; track flow) {
+        <label class="facet-option">
+          <input type="checkbox" [checked]="flowFilter().has(flow)" (change)="toggle(flowFilter, flow)" />
+          <span class="facet-flow"><app-icon [name]="flowMeta[flow].icon" />{{ flowMeta[flow].label }}</span>
+          <span class="facet-count">{{ counts().get(flow) ?? 0 }}</span>
+        </label>
+      }
+    </fieldset>
+
+    @if (isFiltered()) {
+      <button type="button" class="facet-clear" (click)="clearFilters()">Quitar filtros</button>
+    }
+  </div>
+</ng-template>
+
+<section class="page">
+  <header class="page-head">
+    <div>
+      <h1>Integraciones</h1>
+      @if (data.hasValue()) {
+        <p>
+          {{ rows().length }} {{ rows().length === 1 ? 'integración' : 'integraciones' }}
+          @if (counts().get('DEGRADED'); as degraded) {
+            · <strong class="text-danger">{{ degraded }} con fallas</strong>
+          }
+          @if (totalDead()) {
+            · <a routerLink="/operaciones" [queryParams]="{ status: 'DEAD' }">{{ totalDead() }} en DLQ</a>
+          }
+          · salud de las últimas 24 h
+        </p>
+      } @else {
+        <p>Cada integración une una conexión de origen con una de destino para un flujo.</p>
+      }
+    </div>
+    <div class="page-actions">
+      <button type="button" class="btn btn-icon" (click)="data.reload()" aria-label="Actualizar" title="Actualizar"
+              [disabled]="scope.needsTenant()">
+        <app-icon name="refresh-cw" [spin]="data.isLoading()" />
+      </button>
+      <div class="segmented" role="group" aria-label="Vista">
+        <button type="button" [attr.aria-pressed]="view() === 'list'" (click)="setView('list')">
+          <app-icon name="list" />Lista
+        </button>
+        <button type="button" [attr.aria-pressed]="view() === 'tiles'" (click)="setView('tiles')">
+          <app-icon name="layout-grid" />Mosaico
+        </button>
+      </div>
+      @if (canManage()) {
+        <button type="button" class="btn btn-primary" (click)="openCreate()" [disabled]="scope.needsTenant()">
+          <app-icon name="plus" />Nueva integración
+        </button>
+      }
+    </div>
+  </header>
+
+  @if (scope.needsTenant()) {
+    <app-tenant-required />
+  } @else {
+    @if (data.error(); as error) {
+      <p class="alert" role="alert">{{ errorOf(error) }}</p>
+    }
+
+    @if (healthBar().length) {
+      <div class="health">
+        <div class="health-bar" role="img" [attr.aria-label]="'Salud: ' + healthBarLabel()">
+          @for (segment of healthBar(); track segment.health) {
+            <span class="seg" [class]="'seg h-' + segment.health" [style.flex-grow]="segment.share"></span>
+          }
+        </div>
+        <ul class="legend" aria-hidden="true">
+          @for (segment of healthBar(); track segment.health) {
+            <li><span class="swatch" [class]="'swatch h-' + segment.health"></span>{{ segment.count }} {{ healthLabel(segment.health) }}</li>
+          }
+        </ul>
+      </div>
+    }
+
+    @if (data.isLoading() && !data.hasValue()) {
+      <div class="rows" aria-busy="true">
+        @for (n of [1, 2, 3]; track n) {
+          <div class="row skeleton"></div>
+        }
+      </div>
+    } @else if (data.hasValue()) {
+      @if (!visible().length) {
+        <div class="panel empty-state">
+          <app-icon name="workflow" class="empty-icon" />
+          @if (isFiltered()) {
+            <p class="empty-title">Ninguna integración coincide con los filtros.</p>
+            <button type="button" class="btn" (click)="clearFilters()">Quitar filtros</button>
+          } @else {
+            <p class="empty-title">Todavía no hay integraciones en este tenant.</p>
+            <p class="muted">Creá primero las conexiones de origen y destino; después unilas acá.</p>
+            @if (canManage()) {
+              <button type="button" class="btn btn-primary" (click)="openCreate()"><app-icon name="plus" />Nueva integración</button>
+            }
+          }
+        </div>
+      }
+
+      <ul class="rows" [class.tiles]="view() === 'tiles'" aria-label="Integraciones">
+        @for (row of visible(); track row.integration.id) {
+          @let integration = row.integration;
+          <li class="row">
+            <div class="identity">
+              <span class="flow-icon" [attr.title]="flowMeta[integration.flow].label">
+                <app-icon [name]="flowMeta[integration.flow].icon" />
+              </span>
+              <div class="names">
+                <a class="code" [routerLink]="['/integraciones', integration.id]">{{ integration.code }}</a>
+                <span class="chips">
+                  <span class="chip">{{ flowMeta[integration.flow].label }}</span>
+                  <span class="chip">v{{ integration.version }}</span>
+                </span>
+              </div>
+            </div>
+
+            <dl class="route">
+              <div>
+                <dt>Origen</dt>
+                <dd>
+                  @if (row.source; as source) {
+                    <app-icon [name]="connectorIcons[source.connector]" />{{ source.name }}
+                  } @else { — }
+                </dd>
+              </div>
+              <div>
+                <dt>Destino</dt>
+                <dd>
+                  @if (row.target; as target) {
+                    <app-icon [name]="connectorIcons[target.connector]" />{{ target.name }}
+                  } @else { — }
+                </dd>
+              </div>
+            </dl>
+
+            <div class="signal">
+              @if (row.failing; as failing) {
+                <a class="failing" [routerLink]="['/operaciones', failing.id]">
+                  <span class="failing-what">
+                    {{ row.dead ? row.dead + ' en DLQ' : 'Operación fallida' }}
+                  </span>
+                  <span class="failing-why">
+                    en <span class="mono">{{ failing.currentStep ?? failing.kind }}</span>{{ failing.deadReason ? ' · ' + failing.deadReason : '' }}
+                  </span>
+                </a>
+              } @else if (row.operations[0]; as last) {
+                <span class="muted">Última operación {{ last.createdAt | date: 'dd/MM HH:mm' }}</span>
+              } @else {
+                <span class="muted">Sin operaciones en 24 h</span>
+              }
+            </div>
+
+            <div class="statuses">
+              <app-status-badge [status]="row.health" [plain]="true" />
+              <app-status-badge [status]="integration.state" [plain]="true" />
+            </div>
+
+            <div class="row-actions">
+              @if (states().length) {
+                <button type="button" class="btn btn-sm btn-icon btn-ghost" (click)="stateTarget.set(integration)"
+                        [attr.aria-label]="'Cambiar estado de ' + integration.code" title="Cambiar estado">
+                  <app-icon name="arrow-right-left" />
+                </button>
+              }
+              @if (canRun() && integration.flow === 'CATALOG') {
+                <button type="button" class="btn btn-sm btn-icon btn-ghost" (click)="run(integration)"
+                        [attr.aria-label]="'Sincronizar ahora ' + integration.code" title="Sincronizar ahora">
+                  <app-icon name="refresh-cw" />
+                </button>
+              }
+              @if (canManage()) {
+                <button type="button" class="btn btn-sm btn-icon btn-ghost" (click)="openEdit(integration)"
+                        [attr.aria-label]="'Editar ' + integration.code" title="Editar">
+                  <app-icon name="pencil" />
+                </button>
+              }
+            </div>
+          </li>
+        }
+      </ul>
+    }
+  }
+</section>
+
+<app-modal [heading]="editing()?.id ? 'Editar integración' : 'Nueva integración'" [open]="editing() !== null"
+           (closed)="editing.set(null)">
+  <form class="form" (ngSubmit)="save()" #ngForm="ngForm">
+    @if (formError(); as message) {
+      <p class="alert" role="alert">{{ message }}</p>
+    }
+    <div class="form-grid">
+      <div class="field">
+        <label for="int-flow">Flujo</label>
+        <select id="int-flow" name="flow" class="select" [ngModel]="form.flow" (ngModelChange)="changeFlow($event)"
+                [disabled]="!!editing()?.id">
+          @for (flow of flowTypes; track flow) {
+            <option [value]="flow">{{ flows[flow].label }}</option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label for="int-code">Código</label>
+        <input id="int-code" name="code" class="input mono" required maxlength="100" [(ngModel)]="form.code"
+               [readonly]="!!editing()?.id" placeholder="fiscal-pos-centro" />
+      </div>
+      <div class="field">
+        <label for="int-source">Origen ({{ flows[form.flow].source }})</label>
+        <select id="int-source" name="source" class="select" required [(ngModel)]="form.sourceConnectionId">
+          <option value="" disabled>Elegí una conexión</option>
+          @for (c of connectionsFor(flows[form.flow].source); track c.id) {
+            <option [value]="c.id">{{ c.name }}</option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label for="int-target">Destino ({{ flows[form.flow].target }})</label>
+        <select id="int-target" name="target" class="select" required [(ngModel)]="form.targetConnectionId">
+          <option value="" disabled>Elegí una conexión</option>
+          @for (c of connectionsFor(flows[form.flow].target); track c.id) {
+            <option [value]="c.id">{{ c.name }}</option>
+          }
+        </select>
+      </div>
+    </div>
+
+    <fieldset>
+      <legend>Política</legend>
+      <div class="form-grid">
+        @for (field of policyFields; track field.key) {
+          <div class="field">
+            <label [for]="'pol-' + field.key">{{ field.label }}</label>
+            <input [id]="'pol-' + field.key" [name]="'pol-' + field.key" type="number" min="1" required class="input"
+                   [(ngModel)]="form.policy[field.key]" />
+          </div>
+        }
+        @if (form.flow === 'CATALOG') {
+          <div class="field">
+            <label for="pol-schedule">Sincronizar cada (s)</label>
+            <input id="pol-schedule" name="pol-schedule" type="number" min="60" required class="input"
+                   [(ngModel)]="form.policy.scheduleEverySeconds" />
+          </div>
+        }
+      </div>
+    </fieldset>
+
+    <div class="form-actions">
+      <button type="button" class="btn" (click)="editing.set(null)">Cancelar</button>
+      <button type="submit" class="btn btn-primary" [disabled]="busy() || ngForm.invalid">Guardar</button>
+    </div>
+  </form>
+</app-modal>
+
+
+<app-integration-state-dialog [integration]="stateTarget()" (closed)="stateTarget.set(null)" (changed)="stateChanged()" />

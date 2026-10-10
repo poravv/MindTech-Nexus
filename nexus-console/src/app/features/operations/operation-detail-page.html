@@ -1,0 +1,119 @@
+@if (operation.error(); as error) {
+  <p class="alert" role="alert">{{ errorOf(error) }}</p>
+}
+
+@if (operation.hasValue()) {
+  @let op = operation.value();
+  <section class="page">
+    <header class="page-head">
+      <div>
+        <h1 class="mono">{{ op.kind }}</h1>
+        <p class="mono id">{{ op.id }}</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn" [routerLink]="['/integraciones', op.integrationId]"><app-icon name="workflow" />Integración</a>
+        @if (canReplay()) {
+          <button type="button" class="btn btn-primary" (click)="confirming.set(true)"><app-icon name="rotate-cw" />Reintentar (replay)</button>
+        }
+      </div>
+    </header>
+
+    <div class="panel status-strip">
+      <section class="block">
+        <h2 class="block-title">Estado</h2>
+        <app-status-badge [status]="op.status" [large]="true" />
+        <p class="block-note">
+          @if (op.deadReason) {
+            Motivo: <strong>{{ op.deadReason }}</strong>
+          } @else if (op.finishedAt) {
+            Finalizada {{ op.finishedAt | date: 'dd/MM HH:mm:ss' }}
+          } @else {
+            Paso actual <span class="mono">{{ op.currentStep ?? '—' }}</span>
+          }
+        </p>
+      </section>
+      <section class="block">
+        <h2 class="block-title">Intentos</h2>
+        <p class="block-value num">{{ op.attempts }} <span class="muted">/ {{ op.maxAttempts }}</span></p>
+        <p class="block-note">
+          {{ op.nextRunAt ? 'Próximo intento ' + (op.nextRunAt | date: 'HH:mm:ss') : 'Sin reintentos programados' }}
+        </p>
+      </section>
+      <section class="block">
+        <h2 class="block-title">Flujo</h2>
+        <p class="block-value">{{ flowLabel(op.flow) }}</p>
+        <p class="block-note">Creada {{ op.createdAt | date: 'dd/MM/yyyy HH:mm:ss' }}</p>
+      </section>
+    </div>
+
+    <div class="detail-grid">
+      <section class="panel" aria-labelledby="steps-heading">
+        <header class="panel-head"><h2 id="steps-heading">Pasos</h2><span class="hint">{{ op.steps.length }} ejecuciones</span></header>
+        <ol class="timeline">
+          @for (step of op.steps; track step.id) {
+            <li class="t-item">
+              <app-status-badge [status]="step.status" [plain]="true" class="t-status" aria-hidden="true" />
+              <div class="t-body">
+                <p class="t-title">
+                  <span class="mono">{{ step.step }}</span>
+                  <app-status-badge [status]="step.status" />
+                  <span class="chip">intento {{ step.attempt }}</span>
+                </p>
+                <p class="t-meta">
+                  {{ step.startedAt | date: 'dd/MM HH:mm:ss' }}
+                  @if (duration(step); as d) { · {{ d }} }
+                  @if (step.responseCode) { · HTTP <span class="mono">{{ step.responseCode }}</span> }
+                  @if (step.errorCode) { · <span class="mono t-error">{{ step.errorCode }}</span> }
+                  @if (step.externalRef) { · ref <span class="mono">{{ step.externalRef }}</span> }
+                </p>
+              </div>
+            </li>
+          } @empty {
+            <li class="empty">Todavía no se ejecutó ningún paso.</li>
+          }
+        </ol>
+      </section>
+
+      <div class="side">
+        @if (lastError(); as error) {
+          <section class="panel" aria-labelledby="error-heading">
+            <header class="panel-head"><h2 id="error-heading">Último error</h2></header>
+            <dl class="facts pad">
+              @if (error.message) { <dt>Mensaje</dt><dd>{{ error.message }}</dd> }
+              @if (error.kind) { <dt>Tipo</dt><dd class="mono">{{ error.kind }}</dd> }
+              @if (error.code) { <dt>Código</dt><dd class="mono">{{ error.code }}</dd> }
+              @if (error.httpStatus) { <dt>HTTP</dt><dd class="mono">{{ error.httpStatus }}</dd> }
+            </dl>
+          </section>
+        }
+
+        <section class="panel" aria-labelledby="ids-heading">
+          <header class="panel-head"><h2 id="ids-heading">Identificadores</h2></header>
+          <dl class="facts pad">
+            <dt>Idempotencia</dt><dd class="mono">{{ op.idempotencyKey }}</dd>
+            <dt>Correlación</dt><dd class="mono">{{ op.correlationId ?? '—' }}</dd>
+            <dt>Integración</dt><dd><a class="mono" [routerLink]="['/integraciones', op.integrationId]">{{ op.integrationId }}</a></dd>
+          </dl>
+        </section>
+
+        @if (op.result) {
+          <details class="panel raw">
+            <summary>Resultado (JSON)</summary>
+            <pre class="json">{{ op.result | json }}</pre>
+          </details>
+        }
+      </div>
+    </div>
+  </section>
+} @else if (operation.isLoading()) {
+  <p class="empty" aria-busy="true">Cargando operación…</p>
+}
+
+<app-confirm-dialog
+  heading="Reintentar operación"
+  message="La operación vuelve a la cola con la misma clave de idempotencia y los intentos en cero. Los pasos ya exitosos no se repiten."
+  confirmLabel="Reintentar"
+  [open]="confirming()"
+  [busy]="busy()"
+  (confirmed)="replay()"
+  (cancelled)="confirming.set(false)" />

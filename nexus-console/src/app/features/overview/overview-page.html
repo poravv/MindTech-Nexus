@@ -1,0 +1,162 @@
+<section class="page">
+  <header class="page-head">
+    <div>
+      <h1>Resumen</h1>
+      <p>Últimas 24 horas{{ scope.isPlatformAdmin() && !scope.tenantId() ? ', todos los tenants' : '' }}.</p>
+    </div>
+    <div class="page-actions">
+      <button type="button" class="btn btn-icon" (click)="summary.reload(); integrations.reload()" aria-label="Actualizar" title="Actualizar">
+        <app-icon name="refresh-cw" [spin]="summary.isLoading()" />
+      </button>
+    </div>
+  </header>
+
+  @if (summary.error(); as error) {
+    <p class="alert alert-info" role="status">Métricas de operaciones: {{ unavailable(error) }}</p>
+  }
+
+  @if (totals(); as t) {
+    <div class="kpis">
+      <a class="panel kpi kpi-dlq" [class.alarm]="t.dead > 0" routerLink="/operaciones" [queryParams]="{ status: 'DEAD' }">
+        <span class="kpi-label"><app-icon name="octagon-x" />En DLQ</span>
+        <span class="kpi-value">{{ t.dead }}</span>
+        <span class="kpi-note">{{ t.dead ? 'Necesitan revisión y replay' : 'Nada pendiente de revisión' }}</span>
+      </a>
+      <div class="panel kpi">
+        <span class="kpi-label"><app-icon name="activity" />Operaciones</span>
+        <span class="kpi-value">{{ t.total }}</span>
+        <span class="kpi-note">Creadas en 24 h</span>
+      </div>
+      <div class="panel kpi">
+        <span class="kpi-label"><app-icon name="circle-check" />Éxito</span>
+        <span class="kpi-value">{{ t.successRate === null ? '—' : t.successRate + ' %' }}</span>
+        <span class="kpi-note">De las terminadas</span>
+      </div>
+      <div class="panel kpi">
+        <span class="kpi-label"><app-icon name="rotate-cw" />En curso</span>
+        <span class="kpi-value">{{ t.inFlight }}</span>
+        <span class="kpi-note">{{ t.retrying }} reintentando</span>
+      </div>
+    </div>
+  } @else if (summary.isLoading()) {
+    <div class="kpis" aria-busy="true">
+      @for (n of [1, 2, 3, 4]; track n) {
+        <div class="panel kpi skeleton"></div>
+      }
+    </div>
+  }
+
+  <div class="charts">
+    <section class="panel" aria-labelledby="status-heading">
+      <header class="panel-head"><h2 id="status-heading">Operaciones por estado</h2></header>
+      @if (donut().length) {
+        <div class="donut-wrap">
+          <svg class="donut" viewBox="0 0 100 100" role="img" [attr.aria-label]="'Total ' + totals()?.total + ' operaciones'">
+            <circle class="track" cx="50" cy="50" [attr.r]="radius" />
+            @for (segment of donut(); track segment.status) {
+              @if (segment.value) {
+                <circle class="segment" cx="50" cy="50" [attr.r]="radius" [style.stroke]="segment.fill"
+                        [attr.stroke-dasharray]="segment.dash" [attr.stroke-dashoffset]="segment.offset">
+                  <title>{{ segment.label }}: {{ segment.value }} ({{ segment.share }} %)</title>
+                </circle>
+              }
+            }
+            <text x="50" y="49" class="donut-total">{{ totals()?.total }}</text>
+            <text x="50" y="60" class="donut-caption">operaciones</text>
+          </svg>
+          <table class="legend">
+            <caption class="visually-hidden">Operaciones por estado en 24 h</caption>
+            <tbody>
+              @for (segment of donut(); track segment.status) {
+                <tr>
+                  <th scope="row">
+                    <a routerLink="/operaciones" [queryParams]="{ status: segment.status }">
+                      <span class="swatch" [style.background]="segment.fill"></span>
+                      <app-status-badge [status]="segment.status" [plain]="true" />
+                    </a>
+                  </th>
+                  <td class="num">{{ segment.value }}</td>
+                  <td class="num muted">{{ segment.share }} %</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else if (summary.hasValue()) {
+        <p class="empty">Sin operaciones en las últimas 24 horas.</p>
+      } @else if (summary.error()) {
+        <p class="empty">Sin datos.</p>
+      } @else {
+        <p class="empty">Cargando…</p>
+      }
+    </section>
+
+    <section class="panel" aria-labelledby="flow-heading">
+      <header class="panel-head"><h2 id="flow-heading">Operaciones por flujo</h2></header>
+      @if (summary.hasValue()) {
+        <ul class="bars">
+          @for (bar of flows(); track bar.flow) {
+            <li>
+              <a class="bar-label" routerLink="/operaciones" [queryParams]="{ flow: bar.flow }">
+                <app-icon [name]="bar.icon" />{{ bar.label }}
+              </a>
+              <span class="bar-track" aria-hidden="true"><span class="bar" [style.width.%]="bar.width"></span></span>
+              <span class="bar-value num">{{ bar.value }}</span>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="empty">{{ summary.error() ? 'Sin datos.' : 'Cargando…' }}</p>
+      }
+    </section>
+  </div>
+
+  @if (showIntegrations()) {
+    <section class="panel" aria-labelledby="int-heading">
+      <header class="panel-head">
+        <h2 id="int-heading">Integraciones</h2>
+        <a routerLink="/integraciones" class="head-link">Ver todas<app-icon name="chevron-right" /></a>
+      </header>
+      @if (scope.needsTenant()) {
+        <p class="empty">Elegí un tenant en la barra superior para ver la salud de sus integraciones.</p>
+      } @else if (integrations.error(); as error) {
+        <p class="empty">{{ unavailable(error) }}</p>
+      } @else if (integrations.hasValue()) {
+        <div class="int-body">
+          <ul class="health-counts">
+            @for (item of healthCounts(); track item.health) {
+              <li [class.zero]="!item.count">
+                <span class="hc-value num">{{ item.count }}</span>
+                <app-status-badge [status]="item.health" [plain]="true" />
+              </li>
+            }
+          </ul>
+          @if (failing().length) {
+            <ul class="failing">
+              @for (row of failing(); track row.integration.id) {
+                <li>
+                  <app-icon [name]="flowMeta[row.integration.flow].icon" class="f-icon" />
+                  <a class="mono" [routerLink]="['/integraciones', row.integration.id]">{{ row.integration.code }}</a>
+                  <span class="f-why">
+                    @if (row.failing; as op) {
+                      {{ row.dead ? row.dead + ' en DLQ' : 'Fallida' }} · paso <span class="mono">{{ op.currentStep ?? op.kind }}</span>{{ op.deadReason ? ' · ' + op.deadReason : '' }}
+                    }
+                  </span>
+                  @if (row.failing; as op) {
+                    <a class="btn btn-sm" [routerLink]="['/operaciones', op.id]">Revisar</a>
+                  }
+                </li>
+              }
+            </ul>
+          } @else if (integrationRows().length) {
+            <p class="all-good"><app-icon name="circle-check" />Ninguna integración con fallas en las últimas 24 h.</p>
+          } @else {
+            <p class="muted">Este tenant todavía no tiene integraciones.</p>
+          }
+        </div>
+      } @else {
+        <p class="empty">Cargando…</p>
+      }
+    </section>
+  }
+</section>

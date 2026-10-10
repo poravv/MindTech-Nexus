@@ -1,0 +1,154 @@
+.auth {
+  min-height: 100dvh;
+  display: grid;
+  background: var(--color-bg);
+}
+
+.brand {
+  display: none;
+}
+
+.side {
+  display: grid;
+  place-items: center;
+  padding: var(--space-6) var(--space-4);
+}
+
+.form-wrap {
+  display: grid;
+  gap: var(--space-6);
+  width: min(100%, 24rem);
+}
+
+.mobile-logo {
+  --logo-size: 1.0625rem;
+}
+
+@media (min-width: 60rem) {
+  .auth {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  }
+
+  .brand {
+    position: relative;
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    gap: var(--space-6);
+    padding: var(--space-6) var(--space-7);
+    overflow: hidden;
+    background-color: var(--color-rail);
+    background-image: radial-gradient(oklch(100% 0 0 / 0.07) 1px, transparent 1px);
+    background-size: 22px 22px;
+    color: var(--color-rail-text);
+  }
+
+  .brand-logo {
+    --logo-size: 1.0625rem;
+    color: var(--color-rail-text-active);
+  }
+
+  .pitch {
+    display: grid;
+    gap: var(--space-3);
+    max-width: 28rem;
+    margin-top: var(--space-6);
+  }
+
+  .headline {
+    font-size: var(--text-2xl);
+    font-weight: var(--weight-semibold);
+    letter-spacing: -0.025em;
+    line-height: 1.15;
+    color: var(--color-rail-text-active);
+    text-wrap: balance;
+  }
+
+  .sub {
+    font-size: var(--text-md);
+    color: var(--color-rail-text-muted);
+    max-width: 52ch;
+  }
+
+  .diagram {
+    align-self: center;
+    width: 100%;
+    max-width: 30rem;
+    justify-self: center;
+  }
+
+  .foot {
+    font-size: var(--text-xs);
+    color: var(--color-rail-text-muted);
+  }
+
+  .mobile-logo {
+    display: none;
+  }
+
+  .side {
+    background: var(--color-surface);
+  }
+}
+
+// ---- Diagram ----
+
+.links path,
+.flow path {
+  fill: none;
+  stroke-width: 1.5;
+}
+
+.links path {
+  stroke: oklch(100% 0 0 / 0.16);
+}
+
+// One authored motion: packets travelling along the links into and out of Nexus.
+.flow path {
+  stroke: oklch(78% 0.14 290);
+  stroke-linecap: round;
+  stroke-dasharray: 2 18;
+  animation: travel 2.4s linear infinite;
+}
+
+@keyframes travel {
+  to {
+    stroke-dashoffset: -40;
+  }
+}
+
+.chip rect {
+  fill: oklch(100% 0 0 / 0.06);
+  stroke: oklch(100% 0 0 / 0.16);
+}
+
+.chip circle {
+  fill: oklch(79% 0.13 160);
+}
+
+.chip text {
+  fill: oklch(94% 0.01 285);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.core rect {
+  fill: oklch(55% 0.21 288);
+}
+
+.core .halo {
+  fill: oklch(60% 0.2 288 / 0.16);
+  stroke: oklch(70% 0.15 288 / 0.35);
+}
+
+.core path {
+  fill: none;
+  stroke: oklch(100% 0 0);
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.core .dot {
+  fill: oklch(100% 0 0);
+}

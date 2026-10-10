@@ -1,0 +1,82 @@
+<section class="page">
+  <header class="page-head">
+    <div>
+      <h1>Operaciones</h1>
+      <p>Cada factura, pedido o sincronización es una operación durable con sus pasos y reintentos.</p>
+    </div>
+  </header>
+
+  <form class="panel panel-body toolbar" (ngSubmit)="apply()" role="search" aria-label="Filtrar operaciones">
+    <div class="field">
+      <label for="f-status">Estado</label>
+      <select id="f-status" name="status" class="select" [ngModel]="draft().status" (ngModelChange)="update('status', $event)">
+        <option value="">Todos</option>
+        @for (option of statuses; track option) {
+          <option [value]="option">{{ statusMeta[option].label }}</option>
+        }
+      </select>
+    </div>
+    <div class="field">
+      <label for="f-flow">Flujo</label>
+      <select id="f-flow" name="flow" class="select" [ngModel]="draft().flow" (ngModelChange)="update('flow', $event)">
+        <option value="">Todos</option>
+        @for (option of flows; track option) {
+          <option [value]="option">{{ flowMeta[option].label }}</option>
+        }
+      </select>
+    </div>
+    <div class="field">
+      <label for="f-from">Desde</label>
+      <input id="f-from" name="from" type="datetime-local" class="input" [ngModel]="draft().from" (ngModelChange)="update('from', $event)" />
+    </div>
+    <div class="field">
+      <label for="f-to">Hasta</label>
+      <input id="f-to" name="to" type="datetime-local" class="input" [ngModel]="draft().to" (ngModelChange)="update('to', $event)" />
+    </div>
+    <div class="field">
+      <label for="f-q">Buscar</label>
+      <input id="f-q" name="q" type="search" class="input" placeholder="Clave, correlación…" [ngModel]="draft().q"
+             (ngModelChange)="update('q', $event)" />
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn" (click)="clear()">Limpiar</button>
+      <button type="submit" class="btn btn-primary">Filtrar</button>
+    </div>
+  </form>
+
+  @if (operations.error(); as error) {
+    <p class="alert" role="alert">{{ errorOf(error) }}</p>
+  }
+
+  <div class="panel">
+    <div class="table-wrap" role="region" aria-label="Operaciones" tabindex="0">
+      <table class="data">
+        <thead>
+          <tr>
+            <th scope="col">Creada</th><th scope="col">Tipo</th><th scope="col">Estado</th><th scope="col">Paso</th>
+            <th scope="col">Intentos</th><th scope="col">Clave</th>
+          </tr>
+        </thead>
+        <tbody>
+          @if (operations.hasValue()) {
+            @for (op of operations.value(); track op.id) {
+              <tr>
+                <td class="nowrap"><a [routerLink]="['/operaciones', op.id]">{{ op.createdAt | date: 'dd/MM HH:mm:ss' }}</a></td>
+                <td><span class="mono">{{ op.kind }}</span>&nbsp;<span class="muted">· {{ flowMeta[op.flow].label }}</span></td>
+                <td><app-status-badge [status]="op.status" /></td>
+                <td class="mono">{{ op.currentStep ?? '—' }}</td>
+                <td class="num">{{ op.attempts }}/{{ op.maxAttempts }}</td>
+                <td class="mono">{{ op.idempotencyKey }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="6" class="empty">No hay operaciones con estos filtros.</td></tr>
+            }
+          } @else if (operations.isLoading()) {
+            <tr><td colspan="6" class="empty">Cargando…</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <app-pager [page]="page()" [hasNext]="hasNext()" (pageChange)="goTo($event)" />
+  </div>
+</section>

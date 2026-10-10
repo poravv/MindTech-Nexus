@@ -1,0 +1,48 @@
+// Shared by the login and change-password screens.
+
+.intro {
+  display: grid;
+  gap: var(--space-1);
+}
+
+h1 {
+  font-size: var(--text-xl);
+}
+
+.intro p {
+  font-size: var(--text-sm);
+}
+
+.password {
+  position: relative;
+}
+
+.password .input {
+  padding-right: 2.75rem;
+}
+
+.reveal {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  border: 0;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.reveal:hover {
+  color: var(--color-text);
+}
+
+.submit {
+  min-height: 2.625rem;
+  font-size: var(--text-md);
+}
+
+.secondary {
+  justify-self: center;
+}

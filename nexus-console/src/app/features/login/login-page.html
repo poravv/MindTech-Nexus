@@ -1,0 +1,35 @@
+<app-auth-frame>
+  <div class="intro">
+    <h1>Ingresar a la consola</h1>
+    <p class="muted">Usá tu cuenta de Nexus.</p>
+  </div>
+
+  <form class="form" (ngSubmit)="submit()" #form="ngForm" [attr.aria-busy]="busy()">
+    @if (error(); as message) {
+      <p class="alert" role="alert">{{ message }}</p>
+    }
+    <div class="field">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" class="input" autocomplete="username" required autofocus
+             placeholder="nombre@empresa.com.py" [(ngModel)]="email" />
+    </div>
+    <div class="field">
+      <label for="password">Contraseña</label>
+      <div class="password">
+        <input id="password" name="password" class="input" autocomplete="current-password" required
+               [type]="showPassword() ? 'text' : 'password'" [(ngModel)]="password" />
+        <button type="button" class="reveal" (click)="showPassword.set(!showPassword())"
+                [attr.aria-pressed]="showPassword()" [attr.aria-label]="showPassword() ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+          <app-icon [name]="showPassword() ? 'eye-off' : 'eye'" />
+        </button>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary submit" [disabled]="busy() || form.invalid">
+      @if (busy()) {
+        <app-icon name="loader" [spin]="true" />Ingresando…
+      } @else {
+        Ingresar
+      }
+    </button>
+  </form>
+</app-auth-frame>

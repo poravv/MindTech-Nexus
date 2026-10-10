@@ -1,0 +1,110 @@
+<a class="skip" href="#main">Saltar al contenido</a>
+
+<div class="layout" [class.collapsed]="collapsed()">
+  <nav id="rail" class="rail" [class.open]="menuOpen()" aria-label="Secciones">
+    <div class="rail-head">
+      <a routerLink="/" class="brand" aria-label="MindTech Nexus, ir al resumen">
+        <app-logo [withText]="!collapsed() || menuOpen()" />
+      </a>
+      <button type="button" class="rail-close" (click)="menuOpen.set(false)" aria-label="Cerrar menú">
+        <app-icon name="x" />
+      </button>
+    </div>
+
+    <div class="rail-groups">
+      @for (group of nav(); track group.label) {
+        <div class="group">
+          <p class="group-label" [id]="'nav-' + $index">{{ group.label }}</p>
+          <ul [attr.aria-labelledby]="'nav-' + $index">
+            @for (item of group.items; track item.path) {
+              <li>
+                <a [routerLink]="item.path" routerLinkActive="active" ariaCurrentWhenActive="page"
+                   [routerLinkActiveOptions]="{ exact: item.path === '/' }"
+                   [attr.title]="collapsed() ? item.label : null">
+                  <app-icon [name]="item.icon" />
+                  <span class="label">{{ item.label }}</span>
+                </a>
+              </li>
+            }
+          </ul>
+        </div>
+      }
+    </div>
+
+    @if (railSlot.content(); as filters) {
+      <div class="rail-filters">
+        <ng-container [ngTemplateOutlet]="filters" />
+      </div>
+    }
+
+    <button type="button" class="rail-toggle" (click)="toggleCollapsed()"
+            [attr.aria-label]="collapsed() ? 'Expandir menú' : 'Contraer menú'" [attr.aria-expanded]="!collapsed()">
+      <app-icon [name]="collapsed() ? 'panel-left-open' : 'panel-left-close'" />
+      <span class="label">Contraer</span>
+    </button>
+  </nav>
+  <div class="scrim" [class.open]="menuOpen()" (click)="menuOpen.set(false)" aria-hidden="true"></div>
+
+  <div class="main-col">
+    <header class="topbar">
+      <button type="button" class="btn btn-ghost btn-icon menu-toggle" aria-controls="rail"
+              [attr.aria-expanded]="menuOpen()" (click)="menuOpen.set(true)" aria-label="Abrir menú">
+        <app-icon name="menu" />
+      </button>
+
+      <nav class="crumbs" aria-label="Ubicación">
+        <ol>
+          @for (crumb of crumbs(); track crumb.label; let last = $last) {
+            <li>
+              @if (crumb.path && !last) {
+                <a [routerLink]="crumb.path">{{ crumb.label }}</a>
+              } @else {
+                <span [attr.aria-current]="last ? 'page' : null">{{ crumb.label }}</span>
+              }
+              @if (!last) {
+                <app-icon name="chevron-right" class="sep" />
+              }
+            </li>
+          }
+        </ol>
+      </nav>
+
+      <div class="top-tools">
+        @if (scope.isPlatformAdmin()) {
+          <div class="tenant-picker">
+            <app-icon name="building" class="picker-icon" />
+            <label for="tenant-picker" class="visually-hidden">Tenant</label>
+            <select id="tenant-picker" class="select" [value]="scope.tenantId() ?? ''"
+                    (change)="selectTenant($any($event.target).value)">
+              <option value="">Todos los tenants</option>
+              @for (tenant of tenants.hasValue() ? tenants.value() : []; track tenant.id) {
+                <option [value]="tenant.id" [selected]="tenant.id === scope.tenantId()">{{ tenant.name }}</option>
+              }
+            </select>
+          </div>
+        }
+
+        <button type="button" class="btn btn-ghost btn-icon" (click)="theme.cycle()" [attr.aria-label]="themeLabel()"
+                [title]="themeLabel()">
+          <app-icon [name]="theme.mode() === 'dark' ? 'moon' : theme.mode() === 'light' ? 'sun' : 'monitor'" />
+        </button>
+
+        <div class="who">
+          <span class="avatar" aria-hidden="true">{{ initials() }}</span>
+          <span class="who-text">
+            <span class="email">{{ user()?.email }}</span>
+            <span class="role">{{ roleLabel() }}</span>
+          </span>
+        </div>
+
+        <button type="button" class="btn btn-ghost btn-icon" (click)="logout()" aria-label="Salir" title="Salir">
+          <app-icon name="log-out" />
+        </button>
+      </div>
+    </header>
+
+    <main id="main" class="content" tabindex="-1" #main>
+      <router-outlet />
+    </main>
+  </div>
+</div>
