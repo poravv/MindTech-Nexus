@@ -32,9 +32,12 @@ public interface PosPort {
     record Order(String saleId, String saleNumber, long total, String status) {
     }
 
-    /** {@code priceLabel}: how the POS wants the price shown (null = none); it is forwarded to GiftHub as is. */
-    record CatalogItem(String code, String name, BigDecimal price, BigDecimal stockQty, boolean tracked, String category,
-                       String imageUrl, String priceLabel) {
+    /**
+     * {@code priceLabel}: how the POS wants the price shown (null = none); it is forwarded to GiftHub as is.
+     * {@code description}: the POS product description (null = none).
+     */
+    record CatalogItem(String code, String name, String description, BigDecimal price, BigDecimal stockQty, boolean tracked,
+                       String category, String imageUrl, String priceLabel) {
     }
 
     record CatalogPage(List<CatalogItem> items, int page, int limit, long total) {

@@ -48,6 +48,7 @@ public class CatalogSyncSaga implements Saga {
     static final String DEFAULT_CATEGORY = "General";
     private static final int ERROR_SAMPLES = 10;
     private static final int PRICE_LABEL_MAX = 40;
+    private static final int DESCRIPTION_MAX = 1000;
 
     private static final System.Logger log = System.getLogger(CatalogSyncSaga.class.getName());
 
@@ -155,7 +156,8 @@ public class CatalogSyncSaga implements Saga {
      * POS → GiftHub product. {@code available = !tracked || stock > 0}; GiftHub stock is an integer copy
      * (fractions are rounded down) or null when the POS sells without stock control. Only {@code https}
      * images are sent: GiftHub downloads nothing else, and omitting the field keeps the current photo. The POS
-     * price label travels as is (blank = none, cut to GiftHub's limit): the POS decides how the price reads.
+     * price label and description travel as is (blank = none, cut to GiftHub's limit): the POS decides how the
+     * price reads and what the product says.
      */
     static GiftHubPort.Product product(PosPort.CatalogItem item) {
         BigDecimal stock = item.stockQty() == null ? BigDecimal.ZERO : item.stockQty().max(BigDecimal.ZERO);
@@ -163,7 +165,8 @@ public class CatalogSyncSaga implements Saga {
         String imageUrl = item.imageUrl() != null && item.imageUrl().startsWith("https://") ? item.imageUrl() : null;
         String category = item.category() == null || item.category().isBlank() ? DEFAULT_CATEGORY : truncate(item.category(), 60);
         String priceLabel = item.priceLabel() == null || item.priceLabel().isBlank() ? null : truncate(item.priceLabel(), PRICE_LABEL_MAX);
-        return new GiftHubPort.Product(item.code(), truncate(item.name(), 120), category,
+        String description = item.description() == null || item.description().isBlank() ? null : truncate(item.description(), DESCRIPTION_MAX);
+        return new GiftHubPort.Product(item.code(), truncate(item.name(), 120), description, category,
                 item.price().setScale(0, RoundingMode.HALF_UP).longValueExact(), !item.tracked() || stock.signum() > 0,
                 stockQty, imageUrl, priceLabel);
     }

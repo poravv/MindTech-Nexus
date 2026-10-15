@@ -107,9 +107,9 @@ class PosRestClient implements PosPort {
             }
             List<CatalogItem> items = new ArrayList<>();
             for (JsonNode item : body.path("items")) {
-                items.add(new CatalogItem(text(item, "code"), text(item, "name"), item.path("price").decimalValue(),
-                        item.path("stockQty").decimalValue(), item.path("tracked").asBoolean(true), text(item, "category"),
-                        text(item, "imageUrl"), text(item, "priceLabel")));
+                items.add(new CatalogItem(text(item, "code"), text(item, "name"), text(item, "description"),
+                        item.path("price").decimalValue(), item.path("stockQty").decimalValue(), item.path("tracked").asBoolean(true),
+                        text(item, "category"), text(item, "imageUrl"), text(item, "priceLabel")));
             }
             return new CatalogPage(items, body.path("page").asInt(page), body.path("limit").asInt(limit), body.path("total").asLong());
         });
