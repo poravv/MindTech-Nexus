@@ -43,6 +43,7 @@ const CONNECTORS: Record<Connector, ConnectorSpec> = {
     credentials: [
       { key: 'accessKey', label: 'Access key' },
       { key: 'secretKey', label: 'Secret key' },
+      { key: 'webhookSecret', label: 'Secreto del webhook', hint: 'El secret del webhook registrado en SIFEN.' },
     ],
     settings: [],
     flags: [],
@@ -52,7 +53,7 @@ const CONNECTORS: Record<Connector, ConnectorSpec> = {
     note: 'Ventas, pedidos y catálogo',
     icon: 'store',
     namePlaceholder: 'POS Farmacia Centro',
-    urlPlaceholder: 'http://backend.punto-venta.svc.cluster.local:3000/api',
+    urlPlaceholder: 'http://backend.punto-venta.svc.cluster.local:3000',
     credentials: [{ key: 'apiKey', label: 'API key', hint: 'Formato pv_live_…' }],
     settings: [
       { key: 'branchRef', label: 'Sucursal para pedidos' },
@@ -67,7 +68,10 @@ const CONNECTORS: Record<Connector, ConnectorSpec> = {
     icon: 'gift',
     namePlaceholder: 'GiftHub Farmacia Centro',
     urlPlaceholder: 'http://api.comercio-central.svc.cluster.local:3000',
-    credentials: [{ key: 'apiKey', label: 'API key', hint: 'Formato gh_live_…' }],
+    credentials: [
+      { key: 'apiKey', label: 'API key', hint: 'Formato gh_live_…' },
+      { key: 'webhookSecret', label: 'Secreto del webhook', hint: 'Lo muestra GiftHub al crear la integración.' },
+    ],
     settings: [],
     flags: [{ key: 'dryRun', label: 'Modo prueba (dry run) en la sincronización de catálogo' }],
   },
