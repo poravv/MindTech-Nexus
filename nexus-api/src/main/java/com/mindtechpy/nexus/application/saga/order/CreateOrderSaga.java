@@ -45,7 +45,7 @@ public class CreateOrderSaga implements Saga {
     static final String NOTIFY_GIFTHUB = "NOTIFY_GIFTHUB";
 
     private static final System.Logger log = System.getLogger(CreateOrderSaga.class.getName());
-    private static final Pattern E164 = Pattern.compile("^\\+[1-9][0-9]{7,14}$");
+    static final Pattern E164 = Pattern.compile("^\\+[1-9][0-9]{7,14}$");
     private static final Set<String> CANCELS_IN_GIFTHUB = Set.of("insufficient-stock", "unknown-product");
     private static final Set<String> POS_PAYMENT_METHODS = Set.of("CASH", "CARD", "TRANSFER", "OTHER");
     private static final Set<String> CONFIRMED_OR_LATER = Set.of("CONFIRMED", "PREPARING", "READY", "OUT_FOR_DELIVERY", "DELIVERED");
@@ -98,7 +98,7 @@ public class CreateOrderSaga implements Saga {
             return new StepResult.Next(CREATE_ORDER, null, "default", merge(context, Map.of("customerId", fallback.toString())));
         }
         String name = order.customer().name() == null ? "Cliente GiftHub" : truncate(order.customer().name(), 100);
-        String customerId = pos.resolveCustomer(endpoints.pos(), endpoints.readTimeout(), phone, name);
+        String customerId = pos.resolveCustomer(endpoints.pos(), endpoints.readTimeout(), phone, name, null);
         mappings.saveAll(context.operation().tenantId(), endpoints.pos().connection().id(), EntityType.CUSTOMER,
                 Map.of(phone, customerId));
         logStep(context, "cliente POS " + customerId);

@@ -1,6 +1,7 @@
 package com.mindtechpy.nexus.it;
 
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
+import com.github.tomakehurst.wiremock.verification.LoggedRequest;
 import com.mindtechpy.nexus.domain.operation.ErrorKind;
 import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationStatus;
@@ -12,6 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -67,7 +69,7 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
         stubPos(post(urlPathEqualTo(pos(paymentsPath))).willReturn(okJson(PAID_SALE)));
         createOrder();
         String delivery = UUID.randomUUID().toString();
-        sendSigned(delivery, orderPaid(delivery, "OTHER", "QR", "BCD-778812"), 200);
+        sendSigned(delivery, orderPaid(delivery, "OTHER", "QR", "BCD-778812", Map.of()), 200);
         drain();
 
         JsonNode body = jsonOf(posRequests("POST", paymentsPath).getFirst());
@@ -206,6 +208,70 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
         assertThat(posRequests("POST", paymentsPath)).hasSize(1);
     }
 
+    @Test
+    void should_give_the_pos_customer_the_invoice_data_before_registering_the_payment() {
+        stubPos(post(urlPathEqualTo(pos(paymentsPath))).willReturn(okJson(PAID_SALE)));
+        createOrder();
+        String delivery = UUID.randomUUID().toString();
+        sendSigned(delivery, orderPaidWithInvoice(delivery, "80012345", "6"), 200);
+        drain();
+
+        List<LoggedRequest> calls = POS.findAll(anyRequestedFor(anyUrl()));
+        int withRuc = indexOf(calls, request -> request.getUrl().endsWith("/customers/resolve") && "80012345".equals(jsonOf(request).path("ruc").asString(null)));
+        int payment = indexOf(calls, request -> request.getUrl().endsWith(paymentsPath));
+        assertThat(withRuc).isNotNegative().isLessThan(payment);
+        JsonNode body = jsonOf(calls.get(withRuc));
+        assertThat(body.propertyNames()).containsExactlyInAnyOrder("phoneE164", "name", "ruc", "dv", "businessName");
+        assertThat(body.get("phoneE164").asString()).isEqualTo("+595981123456");
+        assertThat(body.get("ruc").asString()).isEqualTo("80012345");
+        assertThat(body.get("dv").asString()).isEqualTo("6");
+        assertThat(body.get("businessName").asString()).isEqualTo("Comercial López S.A.");
+    }
+
+    @Test
+    void should_still_register_the_payment_when_the_pos_rejects_the_ruc() {
+        stubPos(post(urlPathEqualTo(pos("/api/integration/customers/resolve"))).withRequestBody(containing("\"ruc\""))
+                .willReturn(jsonResponse("{\"code\":\"invalid-ruc\",\"message\":\"El DV no corresponde al RUC\"}", 400)));
+        stubPos(post(urlPathEqualTo(pos(paymentsPath))).willReturn(okJson(PAID_SALE)));
+        createOrder();
+        String delivery = UUID.randomUUID().toString();
+        JsonNode received = sendSigned(delivery, orderPaidWithInvoice(delivery, "80099999", "7"), 200);
+        drain();
+
+        Operation done = reload(UUID.fromString(received.get("operationId").asString()));
+        assertThat(done.status()).isEqualTo(OperationStatus.SUCCEEDED);
+        assertThat(done.result()).containsEntry("saleNumber", "SALE-00000042");
+        assertThat(posRequests("POST", paymentsPath)).hasSize(1);
+    }
+
+    @Test
+    void should_still_register_the_payment_when_another_pos_customer_already_has_the_ruc() {
+        stubPos(post(urlPathEqualTo(pos("/api/integration/customers/resolve"))).withRequestBody(containing("\"ruc\""))
+                .willReturn(jsonResponse("{\"type\":\"about:blank\",\"status\":409,\"code\":\"ruc-in-use\","
+                        + "\"detail\":\"Otro cliente ya tiene ese RUC\"}", 409)));
+        stubPos(post(urlPathEqualTo(pos(paymentsPath))).willReturn(okJson(PAID_SALE)));
+        createOrder();
+        String delivery = UUID.randomUUID().toString();
+        JsonNode received = sendSigned(delivery, orderPaidWithInvoice(delivery, "80077777", "1"), 200);
+        drain();
+
+        assertThat(reload(UUID.fromString(received.get("operationId").asString())).status()).isEqualTo(OperationStatus.SUCCEEDED);
+        assertThat(posRequests("POST", paymentsPath)).hasSize(1);
+    }
+
+    @Test
+    void should_not_touch_the_pos_customer_when_the_paid_order_has_no_invoice() {
+        stubPos(post(urlPathEqualTo(pos(paymentsPath))).willReturn(okJson(PAID_SALE)));
+        createOrder();
+        int resolvesAtCreation = posRequests("POST", "/api/integration/customers/resolve").size();
+
+        receivePaid(UUID.randomUUID().toString(), "CASH");
+        drain();
+
+        assertThat(posRequests("POST", "/api/integration/customers/resolve")).hasSize(resolvesAtCreation);
+        assertThat(posRequests("POST", paymentsPath)).hasSize(1);
+    }
+
     private void createOrder() {
         String delivery = UUID.randomUUID().toString();
         sendSigned(delivery, orderCreated(delivery, orderId, maria()), 200);
@@ -220,10 +286,25 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
 
     /** {@code order.paid} as GiftHub sends it: the order with its payment state plus the {@code payment} block. */
     private String orderPaid(String deliveryId, String method) {
-        return orderPaid(deliveryId, method, method, null);
+        return orderPaid(deliveryId, method, method, null, Map.of());
     }
 
-    private String orderPaid(String deliveryId, String method, String paidWith, String reference) {
+    /** {@code order.paid} with "Incluir datos del cliente": the customer and the invoice data they gave. */
+    private String orderPaidWithInvoice(String deliveryId, String ruc, String dv) {
+        return orderPaid(deliveryId, "CASH", "CASH", null, Map.of("customer", maria(),
+                "invoice", Map.of("requested", true, "ruc", ruc, "dv", dv, "legal_name", "Comercial López S.A.")));
+    }
+
+    private static int indexOf(List<LoggedRequest> requests, Predicate<LoggedRequest> matches) {
+        for (int i = 0; i < requests.size(); i++) {
+            if (matches.test(requests.get(i))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private String orderPaid(String deliveryId, String method, String paidWith, String reference, Map<String, Object> extra) {
         Map<String, Object> order = new HashMap<>();
         order.put("id", orderId);
         order.put("number", "BH-7Q2K");
@@ -237,6 +318,7 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
         order.put("total_pyg", 91000);
         order.put("items", List.of(Map.of("external_id", "SKU-1001", "name", "Hamburguesa doble", "quantity", 2)));
         order.put("created_at", "2026-10-08T14:02:58.000Z");
+        order.putAll(extra);
         Map<String, Object> payment = new HashMap<>();
         payment.put("method", paidWith);
         payment.put("reference", reference);

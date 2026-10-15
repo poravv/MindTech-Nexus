@@ -16,6 +16,7 @@ import com.mindtechpy.nexus.domain.operation.ConnectorError;
 import com.mindtechpy.nexus.domain.operation.ErrorKind;
 import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationKind;
+import com.mindtechpy.nexus.domain.order.InvoiceData;
 import com.mindtechpy.nexus.domain.shared.TenantId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,12 +37,16 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** {@code [NEXUS-ORDER]} ORDER_PAID by branch: order gate, effect validation, remote duplicate as success, and the dead ends. */
+/**
+ * {@code [NEXUS-ORDER]} ORDER_PAID by branch: invoice data that never blocks the payment, order gate, effect validation,
+ * remote duplicate as success, and the dead ends.
+ */
 class OrderPaidSagaTest {
 
     private static final TenantId TENANT = new TenantId(UUID.randomUUID());
     private static final String ORDER_ID = "ord-1";
     private static final String KEY = "GIFTHUB:" + ORDER_ID + ":paid";
+    private static final String PHONE = "+595981123456";
     private static final PosPort.Order PENDING_SALE = new PosPort.Order("sale-1", "SALE-00000042", 91000, "PENDING");
     private static final PosPort.Order COMPLETED_SALE = new PosPort.Order("sale-1", "SALE-00000042", 91000, "COMPLETED");
     private static final PosPort.PaidSale PAID = new PosPort.PaidSale("sale-1", "SALE-00000042", "COMPLETED", true);
@@ -251,6 +256,96 @@ class OrderPaidSagaTest {
         assertThat(error.code()).isEqualTo("pos-payment-not-applied");
     }
 
+    @Test
+    void should_start_with_the_invoice_data_before_paying() {
+        assertThat(saga.firstStep()).isEqualTo(OrderPaidSaga.APPLY_INVOICE_DATA);
+    }
+
+    @Test
+    void should_give_the_pos_customer_the_ruc_dv_and_legal_name_when_the_customer_requested_an_invoice() {
+        when(pos.resolveCustomer(any(), any(), eq(PHONE), eq("María López"), any())).thenReturn("c-maria");
+
+        StepResult result = saga.execute(invoiceStep(withInvoice(true, "80012345", "6", "  Comercial López S.A.  ")));
+
+        assertThat(next(result).externalRef()).isEqualTo("c-maria");
+        verify(pos).resolveCustomer(any(), any(), eq(PHONE), eq("María López"),
+                eq(new InvoiceData("80012345", "6", "Comercial López S.A.")));
+        verify(pos, never()).payChannelOrder(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void should_go_on_to_the_payment_with_consumidor_final_when_the_pos_says_invalid_ruc() {
+        when(pos.resolveCustomer(any(), any(), any(), any(), any())).thenThrow(new ConnectorException(
+                new ConnectorError(ErrorKind.REJECTED, "invalid-ruc", "El DV no corresponde al RUC", 400, null)));
+
+        StepResult result = saga.execute(invoiceStep(withInvoice(true, "80012345", "7", "Comercial López S.A.")));
+
+        assertThat(next(result).externalRef()).isNull();
+    }
+
+    @Test
+    void should_go_on_to_the_payment_with_consumidor_final_when_another_pos_customer_has_the_ruc() {
+        when(pos.resolveCustomer(any(), any(), any(), any(), any())).thenThrow(new ConnectorException(
+                new ConnectorError(ErrorKind.REJECTED, "ruc-in-use", "Otro cliente ya tiene ese RUC", 409, null)));
+
+        assertThat(next(saga.execute(invoiceStep(withInvoice(true, "80012345", "6", "Comercial López S.A.")))).externalRef()).isNull();
+    }
+
+    @Test
+    void should_go_on_to_the_payment_without_calling_the_pos_when_the_invoice_data_is_malformed() {
+        next(saga.execute(invoiceStep(withInvoice(true, "80012345", "67", "Comercial López S.A."))));
+        next(saga.execute(invoiceStep(withInvoice(true, "8001-2345", "6", "Comercial López S.A."))));
+        next(saga.execute(invoiceStep(withInvoice(true, "80012345", "6", " "))));
+
+        verify(pos, never()).resolveCustomer(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void should_skip_the_invoice_data_when_the_customer_did_not_request_an_invoice() {
+        next(saga.execute(invoiceStep(withInvoice(false, "80012345", "6", "Comercial López S.A."))));
+        next(saga.execute(invoiceStep(withInvoice(null, "80012345", "6", "Comercial López S.A."))));
+        next(saga.execute(invoiceStep(paid("CASH"))));
+
+        verify(pos, never()).resolveCustomer(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void should_skip_the_invoice_data_when_the_order_has_no_e164_phone() {
+        Map<String, Object> payload = withInvoice(true, "80012345", "6", "Comercial López S.A.");
+        payload.put("customer", Map.of("name", "María López", "phone", "0981 123456"));
+
+        next(saga.execute(invoiceStep(payload)));
+
+        verify(pos, never()).resolveCustomer(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void should_not_put_a_ruc_on_the_default_customer_when_the_sale_was_created_with_it() {
+        createOrderEnded(Operation.create(TENANT, UUID.randomUUID(), OperationKind.CREATE_ORDER, ORDER_ID, Map.of(), 5, null, Instant.now())
+                .atStep("NOTIFY_GIFTHUB").succeeded(Map.of("customerId", "c-generic", "saleId", "sale-1", "saleNumber", "SALE-00000042"),
+                        Instant.now()));
+        StepContext base = invoiceStep(withInvoice(true, "80012345", "6", "Comercial López S.A."));
+        Connection posConnection = base.target().connection();
+        StepContext withDefault = new StepContext(base.operation(), base.integration(), base.source(), new Endpoint(
+                new Connection(posConnection.id(), TENANT, ConnectorType.POS, "pos", posConnection.baseUrl(), new byte[0],
+                        Map.of("defaultCustomerId", "c-generic"), null, null), base.target().credentials()));
+
+        next(saga.execute(withDefault));
+
+        verify(pos, never()).resolveCustomer(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void should_retry_the_invoice_data_when_the_pos_is_unavailable() {
+        when(pos.resolveCustomer(any(), any(), any(), any(), any())).thenThrow(new ConnectorException(
+                ConnectorError.of(ErrorKind.TRANSIENT, "pos-http-503", "Service Unavailable")));
+
+        ConnectorError error = failure(saga.execute(invoiceStep(withInvoice(true, "80012345", "6", "Comercial López S.A."))));
+
+        assertThat(error.kind()).isEqualTo(ErrorKind.TRANSIENT);
+        verify(pos, never()).payChannelOrder(any(), any(), any(), any(), any(), any());
+    }
+
     private void createOrderEnded(Operation created) {
         when(operations.findByKey(TENANT, OperationKind.CREATE_ORDER, ORDER_ID)).thenReturn(Optional.of(created));
     }
@@ -263,6 +358,31 @@ class OrderPaidSagaTest {
         payload.put("payment_method", method);
         payload.put("total_pyg", 91000);
         return payload;
+    }
+
+    private static Map<String, Object> withInvoice(Boolean requested, String ruc, String dv, String legalName) {
+        Map<String, Object> payload = paid("CASH");
+        payload.put("customer", Map.of("id", "cust-1", "name", "María López", "phone", PHONE));
+        Map<String, Object> invoice = new HashMap<>();
+        invoice.put("requested", requested);
+        invoice.put("ruc", ruc);
+        invoice.put("dv", dv);
+        invoice.put("legal_name", legalName);
+        payload.put("invoice", invoice);
+        return payload;
+    }
+
+    private static StepContext invoiceStep(Map<String, Object> payload) {
+        StepContext context = context(payload);
+        return new StepContext(context.operation().atStep(OrderPaidSaga.APPLY_INVOICE_DATA), context.integration(), context.source(),
+                context.target());
+    }
+
+    private static StepResult.Next next(StepResult result) {
+        assertThat(result).isInstanceOf(StepResult.Next.class);
+        StepResult.Next next = (StepResult.Next) result;
+        assertThat(next.nextStep()).isEqualTo(OrderPaidSaga.PAY_POS);
+        return next;
     }
 
     private static StepContext context(Map<String, Object> payload) {

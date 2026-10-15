@@ -64,14 +64,15 @@ class OrderPaymentTest {
     }
 
     @Test
-    void should_keep_only_the_payment_fields_in_the_payload() {
+    void should_keep_only_the_payment_customer_and_invoice_fields_in_the_payload() {
         Map<String, Object> order = order("CASH");
         order.put("items", java.util.List.of());
         order.put("customer", Map.of("phone", "+595981123456"));
 
         Map<String, Object> payload = OrderPayment.payloadOf(order, Map.of("method", "QR", "reference", "BCD-1", "paid_at", "2026-10-15T12:00:00Z"));
 
-        assertThat(payload.keySet()).containsExactly("id", "number", "payment_status", "payment_method", "total_pyg", "payment");
+        assertThat(payload.keySet()).containsExactly("id", "number", "payment_status", "payment_method", "total_pyg", "customer",
+                "invoice", "payment");
         assertThat(payload.get("payment")).isEqualTo(Map.of("method", "QR", "reference", "BCD-1"));
     }
 

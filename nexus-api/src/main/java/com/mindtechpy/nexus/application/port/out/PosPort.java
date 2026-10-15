@@ -1,6 +1,7 @@
 package com.mindtechpy.nexus.application.port.out;
 
 import com.mindtechpy.nexus.application.saga.StepContext.Endpoint;
+import com.mindtechpy.nexus.domain.order.InvoiceData;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -52,8 +53,12 @@ public interface PosPort {
     record CatalogPage(List<CatalogItem> items, int page, int limit, long total) {
     }
 
-    /** Customer id for the phone (E.164), created with {@code name} when it does not exist. */
-    String resolveCustomer(Endpoint pos, Duration readTimeout, String phoneE164, String name);
+    /**
+     * Customer id for the phone (E.164), created with {@code name} when it does not exist. With {@code invoice}
+     * (null = none) the POS also sets its RUC, DV and business name (idempotent); a RUC whose DV does not match
+     * fails {@code REJECTED invalid-ruc}, one another customer already has fails {@code REJECTED ruc-in-use}.
+     */
+    String resolveCustomer(Endpoint pos, Duration readTimeout, String phoneE164, String name, InvoiceData invoice);
 
     /** Creates the channel sale; {@code idempotencyKey} must be {@code {channel}:{externalRef}}. */
     Order createOrder(Endpoint pos, Duration readTimeout, String idempotencyKey, NewOrder order);

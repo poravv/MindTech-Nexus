@@ -5,6 +5,7 @@ import com.mindtechpy.nexus.application.port.out.PosPort;
 import com.mindtechpy.nexus.application.saga.StepContext.Endpoint;
 import com.mindtechpy.nexus.domain.operation.ConnectorError;
 import com.mindtechpy.nexus.domain.operation.ErrorKind;
+import com.mindtechpy.nexus.domain.order.InvoiceData;
 import com.mindtechpy.nexus.infrastructure.connectors.ConnectorHttp;
 import com.mindtechpy.nexus.infrastructure.connectors.ConnectorHttp.Response;
 import org.springframework.http.HttpHeaders;
@@ -27,7 +28,9 @@ import static com.mindtechpy.nexus.infrastructure.connectors.ConnectorHttp.text;
  * scopes {@code catalog:read customers:write orders:write}). Bodies carry exactly the fields of the POS DTOs:
  * its validation rejects unknown ones. Statuses: 422 {@code insufficient-stock|unknown-product} → REJECTED
  * with that code; 404 (customer/branch/warehouse of another organization) → REJECTED {@code pos-not-found};
- * 409 on create (same reference, other content) → CONFLICT; 400 → REJECTED. The payment POST classifies on its own:
+ * 409 on create (same reference, other content) → CONFLICT; 400 → REJECTED. Resolving a customer with invoice data:
+ * 400 {@code invalid-ruc} (DV does not match) and 409 {@code ruc-in-use} (another customer has that RUC, nothing
+ * changed) → REJECTED with that code. The payment POST classifies on its own:
  * 408/5xx → UNCERTAIN (a gateway may fail after the POS took the payment: the saga reads the sale before resending);
  * 409 → REJECTED with the POS {@code code} ({@code cash-session-closed} → TRANSIENT: the cashier opens the session and
  * the retry closes the sale); 400 → REJECTED {@code pos-bad-request}, only a validation error of our body, which the
@@ -36,6 +39,9 @@ import static com.mindtechpy.nexus.infrastructure.connectors.ConnectorHttp.text;
 @Component
 class PosRestClient implements PosPort {
 
+    private static final String INVALID_RUC = "invalid-ruc";
+    private static final String RUC_IN_USE = "ruc-in-use";
+
     private final ConnectorHttp http;
 
     PosRestClient(ConnectorHttp http) {
@@ -43,10 +49,16 @@ class PosRestClient implements PosPort {
     }
 
     @Override
-    public String resolveCustomer(Endpoint pos, Duration readTimeout, String phoneE164, String name) {
+    public String resolveCustomer(Endpoint pos, Duration readTimeout, String phoneE164, String name, InvoiceData invoice) {
         return http.timed("POS", "resolve_customer", () -> {
+            Object body = invoice == null ? object("phoneE164", phoneE164, "name", name)
+                    : object("phoneE164", phoneE164, "name", name, "ruc", invoice.ruc(), "dv", invoice.dv(), "businessName", invoice.legalName());
             Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.POST,
-                    "/api/integration/customers/resolve", apiKey(pos), object("phoneE164", phoneE164, "name", name));
+                    "/api/integration/customers/resolve", apiKey(pos), body);
+            String code = text(response.body(), "code");
+            if ((response.status() == 400 && INVALID_RUC.equals(code)) || (response.status() == 409 && RUC_IN_USE.equals(code))) {
+                throw new ConnectorException(ConnectorHttp.error(ErrorKind.REJECTED, code, problemDetail(response), response));
+            }
             String customerId = text(requireSuccess(response, false), "customerId");
             if (customerId == null) {
                 throw new ConnectorException(ConnectorHttp.error(ErrorKind.UNCERTAIN, "pos-invalid-response",
