@@ -307,7 +307,7 @@ jobs:
       - name: Smoke check post-deploy
         run: |
           if ! kubectl -n argocd get application nexus >/dev/null 2>&1; then exit 0; fi
-          out=$(curl -s -o /dev/null -w '%{http_code} %{content_type}' --max-time 15 -X POST \
+          out=$(curl -s -o /dev/null -w '%{http_code} %{content_type}' --max-time 15 --retry 4 --retry-delay 10 --retry-all-errors -X POST \
             -H 'Content-Type: application/json' -d '{}' \
             https://nexus.mindtechpy.net/api/v1/webhooks/gifthub/00000000-0000-0000-0000-000000000000)
           echo "POST /api/v1/webhooks/gifthub/<uuid-cero> → ${out}"
