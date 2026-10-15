@@ -157,6 +157,18 @@
       </app-form-section>
     }
 
+    @if (target.original && webhookUrl(target.original); as url) {
+      <app-form-section heading="Webhook" description="Registrá esta URL en el sistema externo para que sus eventos lleguen a esta conexión.">
+        <div class="field">
+          <label for="conn-webhook-url">URL del webhook</label>
+          <div class="copy-row">
+            <input id="conn-webhook-url" class="input mono" readonly [value]="url" />
+            <button type="button" class="btn" (click)="copy(url)" aria-label="Copiar URL del webhook">Copiar</button>
+          </div>
+        </div>
+      </app-form-section>
+    }
+
     <app-form-section heading="Verificación">
       @if (target.original; as original) {
         <div class="test-row">

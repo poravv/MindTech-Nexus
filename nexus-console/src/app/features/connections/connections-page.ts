@@ -30,6 +30,8 @@ interface ConnectorSpec {
   credentials: FieldSpec[];
   settings: FieldSpec[];
   flags: FieldSpec[];
+  /** Public path Nexus listens on for this system's webhooks, if it has any. */
+  webhookPath?: string;
 }
 
 /** Credential keys and settings each connector expects (spec §5.3 and §17). */
@@ -47,6 +49,7 @@ const CONNECTORS: Record<Connector, ConnectorSpec> = {
     ],
     settings: [],
     flags: [],
+    webhookPath: '/api/v1/webhooks/sifen',
   },
   POS: {
     label: 'Punto de venta',
@@ -74,6 +77,7 @@ const CONNECTORS: Record<Connector, ConnectorSpec> = {
     ],
     settings: [],
     flags: [{ key: 'dryRun', label: 'Modo prueba (dry run) en la sincronización de catálogo' }],
+    webhookPath: '/api/v1/webhooks/gifthub',
   },
 };
 
@@ -93,6 +97,9 @@ interface ConnectionForm {
   templateUrl: './connections-page.html',
   styles: `
     .test-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+    .copy-row { display: flex; gap: var(--space-2); }
+    .copy-row .input { flex: 1 1 auto; min-width: 0; }
+    .mono { font-family: var(--font-mono); }
     .test-result {
       display: flex;
       align-items: flex-start;
@@ -239,6 +246,21 @@ export default class ConnectionsPage {
 
   protected errorOf(error: unknown): string {
     return problemMessage(error, 'No se pudo cargar la lista.');
+  }
+
+  /** URL to register in the external system so its events reach this connection. */
+  protected webhookUrl(connection: Connection): string | null {
+    const path = CONNECTORS[connection.connector].webhookPath;
+    return path ? `${location.origin}${path}/${connection.id}` : null;
+  }
+
+  protected async copy(value: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(value);
+      this.notifier.success('Copiado al portapapeles.');
+    } catch {
+      this.notifier.error('No se pudo copiar: seleccioná el texto y copialo a mano.');
+    }
   }
 }
 
