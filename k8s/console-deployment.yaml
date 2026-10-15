@@ -36,7 +36,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: nexus-console
-          image: ghcr.io/poravv/mindtech-nexus-console:sha-c895212
+          image: ghcr.io/poravv/mindtech-nexus-console:sha-ff75ac6
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
