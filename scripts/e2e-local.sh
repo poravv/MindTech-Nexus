@@ -472,6 +472,13 @@ pos_sale_status_is() {
   pos GET "/sales/$1"; [ "$STATUS" = 200 ] && [ "$(jq -r .status <<< "$BODY")" = "$2" ]
 }
 
+gifthub_pays() {  # pedido venta → cobra el pedido en GiftHub; Nexus (ORDER_PAID) cierra la venta del POS
+  gh PATCH "/api/admin/orders/$1/payment" '{"status":"PAID","method":"CASH"}'; expect 200 "cobrar pedido en GiftHub"
+  wait_for "venta $2 cobrada en el POS" 120 pos_sale_status_is "$2" COMPLETED
+}
+
+pos_payments() { pos_sql "SELECT count(*) FROM payments WHERE \"saleId\" = '$1'"; }
+
 phase_order() {
   step "4. Pedidos: GiftHub → Nexus → POS"
   ensure_cash_session
@@ -483,11 +490,12 @@ phase_order() {
   local sale; sale=$(jq -r .saleId <<< "$POS_ORDER")
   ok "pedido $order → venta POS $(jq -r .status <<< "$POS_ORDER"), GiftHub CONFIRMED con Nº externo $(jq -r .externalOrderNumber <<< "$GH_VIEW")"
 
-  pos GET "/sales/$sale"; expect 200 "venta de canal"
-  pos POST "/sales/$sale/payments" "{\"method\":\"CASH\",\"amount\":$(jq -r .total <<< "$BODY"),\"cashSessionId\":\"$CASH_SESSION\"}"
-  expect "200 201" "cobrar venta de canal"
-  wait_for "pedido pagado y entregado en GiftHub" 180 gh_order_is "$order" DELIVERED PAID
-  ok "cobrado en el POS → GiftHub PAID/DELIVERED"
+  gifthub_pays "$order" "$sale"
+  [ "$(pos_payments "$sale")" = 1 ] || die "la venta $sale no tiene exactamente un pago en el POS ($(pos_payments "$sale"))"
+  gh GET "/api/admin/orders/$order"; expect 200 "pedido GiftHub"
+  [ "$(jq -r .paymentStatus <<< "$BODY")" = PAID ] || die "GiftHub no quedó PAID"
+  [ "$(jq -r .orderStatus <<< "$BODY")" != DELIVERED ] || die "GiftHub pasó solo a DELIVERED: el estado del pedido lo maneja GiftHub"
+  ok "cobrado en GiftHub → venta $sale COMPLETED con un pago; GiftHub sigue en $(jq -r .orderStatus <<< "$BODY")"
 
   # Sin stock: el POS de prueba admite stock negativo; se apaga mientras dura el caso y se restaura.
   pos GET /config/organization; expect 200 "ajustes POS"
@@ -525,8 +533,7 @@ phase_order_paid() {
   local sale; sale=$(jq -r .saleId <<< "$POS_ORDER")
   pos_sale_status_is "$sale" PENDING || die "la venta $sale no está PENDING antes del cobro"
 
-  gh PATCH "/api/admin/orders/$order/payment" '{"status":"PAID","method":"CASH"}'; expect 200 "cobrar pedido en GiftHub"
-  wait_for "venta cobrada en el POS" 120 pos_sale_status_is "$sale" COMPLETED
+  gifthub_pays "$order" "$sale"
   nexus_operation "$order:paid"
   [ "$(jq -r .status <<< "$OP")" = SUCCEEDED ] || die "ORDER_PAID no terminó SUCCEEDED: $(jq -c . <<< "$OP")"
   [ "$(jq -r .result.saleId <<< "$OP")" = "$sale" ] || die "ORDER_PAID cerró otra venta: $(jq -c .result <<< "$OP")"
@@ -642,12 +649,11 @@ phase_coupon() {
   [ "$(jq -r .result.totalMismatch <<< "$OP")" = false ] || die "Nexus marcó totalMismatch con totales iguales"
   ok "2 × hamburguesa + envío 10000 − cupón 7000 → total POS $pos_total = total GiftHub $gh_total, sin totalMismatch"
 
-  pos POST "/sales/$sale/payments" "{\"method\":\"CASH\",\"amount\":$pos_total,\"cashSessionId\":\"$CASH_SESSION\"}"
-  expect "200 201" "cobrar venta con cupón"
+  gifthub_pays "$order" "$sale"
   wait_for "factura del pedido con cupón APROBADO" 720 sale_invoice_is "$sale" APROBADO
   local sifen; sifen=$(sifen_total "$sale")
   [ "$pos_total" = "$sifen" ] || die "pedido con cupón: total POS $pos_total ≠ total SIFEN $sifen"
-  ok "cobrado → factura APROBADO, total SIFEN $sifen = total POS (cupón prorrateado, envío sin descuento)"
+  ok "cobrado en GiftHub → factura APROBADO, total SIFEN $sifen = total POS (cupón prorrateado, envío sin descuento)"
 }
 
 # ---------------------------------------------------------------- 5. operación
