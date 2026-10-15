@@ -103,14 +103,50 @@ class OrderPaidSagaTest {
     }
 
     @Test
-    void should_skip_with_no_sale_when_create_order_ended_without_a_sale() {
+    void should_skip_with_no_sale_when_create_order_was_rejected_and_the_pos_has_no_sale() {
         createOrderEnded(Operation.create(TENANT, UUID.randomUUID(), OperationKind.CREATE_ORDER, ORDER_ID, Map.of(), 5, null, Instant.now())
                 .atStep("CREATE_ORDER").failed(ConnectorError.of(ErrorKind.REJECTED, "insufficient-stock", "sin stock"), Instant.now()));
 
         StepResult result = saga.execute(context(paid("CASH")));
 
         assertThat(((StepResult.Completed) result).result()).containsEntry("outcome", "SKIPPED").containsEntry("reason", "no-sale");
+        verify(pos).findOrder(any(), any(), eq("GIFTHUB"), eq(ORDER_ID));
         verify(pos, never()).payChannelOrder(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void should_retry_while_create_order_is_dead_and_pay_once_its_replay_creates_the_sale() {
+        Operation createDead = Operation.create(TENANT, UUID.randomUUID(), OperationKind.CREATE_ORDER, ORDER_ID, Map.of(), 5, null,
+                Instant.now()).atStep("CREATE_ORDER").dead("attempts-exhausted",
+                ConnectorError.of(ErrorKind.TRANSIENT, "connect-failed", "POS caído"), Instant.now());
+        createOrderEnded(createDead);
+
+        ConnectorError waiting = failure(saga.execute(context(paid("CASH"))));
+
+        assertThat(waiting.kind()).isEqualTo(ErrorKind.TRANSIENT);
+        assertThat(waiting.code()).isEqualTo("sale-pending");
+        verify(pos, never()).payChannelOrder(any(), any(), any(), any(), any(), any());
+
+        createOrderEnded(createDead.replayed(Instant.now()).atStep("NOTIFY_GIFTHUB")
+                .succeeded(Map.of("saleId", "sale-1", "saleNumber", "SALE-00000042"), Instant.now()));
+        when(pos.payChannelOrder(any(), any(), eq(KEY), any(), any(), any())).thenReturn(PAID);
+
+        assertThat(saga.execute(context(paid("CASH")))).isInstanceOf(StepResult.Completed.class);
+        verify(pos).payChannelOrder(any(), any(), eq(KEY), eq("GIFTHUB"), eq(ORDER_ID), any());
+    }
+
+    @Test
+    void should_pay_when_create_order_has_no_sale_id_but_the_pos_has_the_sale() {
+        createOrderEnded(Operation.create(TENANT, UUID.randomUUID(), OperationKind.CREATE_ORDER, ORDER_ID, Map.of(), 5, null, Instant.now())
+                .atStep("CREATE_ORDER").dead("attempts-exhausted", ConnectorError.of(ErrorKind.UNCERTAIN, "no-response", "timeout"),
+                        Instant.now()));
+        when(pos.findOrder(any(), any(), eq("GIFTHUB"), eq(ORDER_ID))).thenReturn(Optional.of(PENDING_SALE));
+        when(pos.payChannelOrder(any(), any(), eq(KEY), any(), any(), any())).thenReturn(PAID);
+
+        StepResult result = saga.execute(context(paid("CASH")));
+
+        assertThat(((StepResult.Completed) result).externalRef()).isEqualTo("sale-1");
+        verify(pos).payChannelOrder(any(), any(), eq(KEY), eq("GIFTHUB"), eq(ORDER_ID), any());
     }
 
     @Test

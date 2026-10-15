@@ -11,6 +11,7 @@ import com.mindtechpy.nexus.domain.operation.ConnectorError;
 import com.mindtechpy.nexus.domain.operation.ErrorKind;
 import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationKind;
+import com.mindtechpy.nexus.domain.operation.OperationStatus;
 import com.mindtechpy.nexus.domain.order.OrderPayment;
 
 import java.util.Map;
@@ -22,9 +23,11 @@ import static java.lang.System.Logger.Level.INFO;
 /**
  * {@code [NEXUS-ORDER]} GiftHub collected a channel order → the POS registers the payment and closes the sale
  * (single step {@code PAY_POS}: {@code POST /api/integration/orders/GIFTHUB/{orderId}/payments},
- * {@code Idempotency-Key = GIFTHUB:{orderId}:paid}). Order gate: it only runs once {@code CREATE_ORDER} produced
- * the sale; while that one is still running it retries, and when it ended without a sale (its compensation
- * cancelled the order in GiftHub) it finishes {@code SKIPPED no-sale}. The real effect is checked on both sides:
+ * {@code Idempotency-Key = GIFTHUB:{orderId}:paid}). Order gate: it only runs once the sale exists, per
+ * {@code CREATE_ORDER}'s result or, failing that, a lookup in the POS. Without a sale it finishes
+ * {@code SKIPPED no-sale} only when {@code CREATE_ORDER} ended FAILED (a confirmed rejection, already compensated);
+ * while that one is running, or DEAD waiting for a replay, it retries and in the end goes DEAD too, so the console
+ * replays {@code CREATE_ORDER} and then this one. The real effect is checked on both sides:
  * the event must say {@code payment_status = PAID} (else {@code SKIPPED not-paid}) and the POS answer must leave
  * the sale {@code COMPLETED}. A sale already {@code COMPLETED} (idempotent retry, 409 {@code not-pending},
  * verification after a timeout) is success. Nothing is undone: the money was taken in GiftHub, so a POS rejection
@@ -71,7 +74,8 @@ public class OrderPaidSaga implements Saga {
             }
             Operation created = operations.findByKey(context.operation().tenantId(), OperationKind.CREATE_ORDER,
                     payment.orderId()).orElse(null);
-            if (created == null || created.result() == null || created.result().get("saleId") == null) {
+            if ((created == null || created.result() == null || created.result().get("saleId") == null)
+                    && pos.findOrder(endpoints.pos(), endpoints.readTimeout(), CHANNEL, payment.orderId()).isEmpty()) {
                 return saleMissing(context, created);
             }
             if (context.operation().needsVerification()) {
@@ -115,13 +119,16 @@ public class OrderPaidSaga implements Saga {
         }
     }
 
-    /** CREATE_ORDER still running (or its webhook not here yet): retry; finished without a sale: nothing to collect. */
+    /**
+     * No sale in the POS. CREATE_ORDER FAILED (rejected, the order cancelled in GiftHub): nothing to collect.
+     * Anything else (not here yet, running, DEAD until a replay) may still produce it: retry.
+     */
     private StepResult saleMissing(StepContext context, Operation created) {
-        if (created != null && created.status().isFinished()) {
-            return skipped(context, "no-sale", "CREATE_ORDER terminó " + created.status() + " sin venta en el POS");
+        if (created != null && created.status() == OperationStatus.FAILED) {
+            return skipped(context, "no-sale", "CREATE_ORDER terminó FAILED sin venta en el POS");
         }
         return new StepResult.Failed(ConnectorError.of(ErrorKind.TRANSIENT, "sale-pending",
-                created == null ? "Todavía no llegó order.created" : "CREATE_ORDER sigue " + created.status()));
+                created == null ? "Todavía no llegó order.created" : "CREATE_ORDER sigue " + created.status() + " sin venta"));
     }
 
     private Optional<PosPort.Order> completedSale(OrderEndpoints endpoints, String orderId) {
