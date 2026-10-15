@@ -99,7 +99,6 @@ interface ConnectionForm {
     .test-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
     .copy-row { display: flex; gap: var(--space-2); }
     .copy-row .input { flex: 1 1 auto; min-width: 0; }
-    .mono { font-family: var(--font-mono); }
     .test-result {
       display: flex;
       align-items: flex-start;
