@@ -60,7 +60,7 @@ class PosRestClient implements PosPort {
     public Order createOrder(Endpoint pos, Duration readTimeout, String idempotencyKey, NewOrder order) {
         return http.timed("POS", "create_order", () -> {
             List<Object> items = new ArrayList<>();
-            order.items().forEach(item -> items.add(object("code", item.code(), "quantity", item.quantity())));
+            order.items().forEach(item -> items.add(object("code", item.code(), "quantity", item.quantity(), "unitPrice", item.unitPrice())));
             Object delivery = order.delivery() == null ? null : object("address", order.delivery().address(),
                     "contactName", order.delivery().contactName(), "contactPhone", order.delivery().contactPhone(),
                     "instructions", order.delivery().instructions());

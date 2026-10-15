@@ -59,8 +59,10 @@ class OrderSagaIT extends AbstractConnectorIT {
         assertThat(sale.get("items")).hasSize(2);
         assertThat(sale.get("items").get(0).get("code").asString()).isEqualTo("SKU-1001");
         assertThat(sale.get("items").get(0).get("quantity").asInt()).isEqualTo(2);
+        assertThat(sale.get("items").get(0).get("unitPrice").asLong()).isEqualTo(38000);
         assertThat(sale.get("items").get(1).get("code").asString()).isEqualTo("SKU-2001");
         assertThat(sale.get("items").get(1).get("quantity").asInt()).isEqualTo(2);
+        assertThat(sale.get("items").get(1).get("unitPrice").asLong()).isEqualTo(2500);
         assertThat(sale.get("notes").asString()).contains("BH-7Q2K", "Sin cebolla", "Punto: A punto",
                 "Envío GiftHub: Gs. 10000", "Total GiftHub: Gs. 91000");
         assertThat(done.result()).containsEntry("giftHubTotal", 91000).containsEntry("totalMismatch", false);
@@ -79,7 +81,7 @@ class OrderSagaIT extends AbstractConnectorIT {
     }
 
     @Test
-    void should_use_default_customer_of_connection_when_event_has_no_customer() {
+    void should_use_default_customer_of_connection_and_still_send_the_shipping_when_event_has_no_customer() {
         stubPos(post(urlPathEqualTo(pos("/api/integration/orders"))).willReturn(jsonResponse(SALE, 201)));
 
         Operation op = receiveOrder(null);
@@ -89,7 +91,7 @@ class OrderSagaIT extends AbstractConnectorIT {
         assertThat(posRequests("POST", "/api/integration/customers/resolve")).isEmpty();
         JsonNode sale = jsonOf(posRequests("POST", "/api/integration/orders").getFirst());
         assertThat(sale.get("customerId").asString()).isEqualTo("c-default");
-        assertThat(sale.has("shippingCost")).as("el POS exige teléfono de entrega para cobrar envío").isFalse();
+        assertThat(sale.get("shippingCost").asLong()).as("el envío viaja aunque no haya teléfono de entrega").isEqualTo(10000);
         assertThat(sale.get("notes").asString()).contains("Envío GiftHub: Gs. 10000");
     }
 

@@ -13,7 +13,8 @@ import java.util.regex.Pattern;
  * An order received from a sales channel (GiftHub {@code data.order}, manual §7.3), reduced to what the POS
  * needs. The operation payload keeps GiftHub's own field names, so {@link #from} parses both the webhook and
  * the stored payload. {@code externalId} of an item or topping is null when the product was not synced by
- * Nexus. Amounts are guaraníes as GiftHub charged them; null in payloads stored before they were kept.
+ * Nexus. Amounts are guaraníes as GiftHub charged them (unit prices IVA included); null in payloads stored before
+ * they were kept.
  */
 public record ChannelOrder(String orderId, String number, String fulfillment, String paymentMethod, String notes,
                            Customer customer, Delivery delivery, List<Item> items, Long totalPyg, Long deliveryFeePyg,
@@ -28,12 +29,15 @@ public record ChannelOrder(String orderId, String number, String fulfillment, St
     public record Delivery(String address, String reference) {
     }
 
-    /** A product to sell: an item, or one of its toppings (GiftHub sends the topping quantity already multiplied). */
-    public record Line(String externalId, String name, BigDecimal quantity) {
+    /**
+     * A product to sell: an item, or one of its toppings (GiftHub sends the topping quantity already multiplied).
+     * {@code unitPrice}: GiftHub's {@code unit_price_pyg}.
+     */
+    public record Line(String externalId, String name, BigDecimal quantity, Long unitPrice) {
     }
 
     /** {@code options}: the chosen option groups as text (they are not products), null when there are none. */
-    public record Item(String externalId, String name, BigDecimal quantity, String options, List<Line> toppings) {
+    public record Item(String externalId, String name, BigDecimal quantity, Long unitPrice, String options, List<Line> toppings) {
     }
 
     /** @throws DomainException {@code invalid-order} when the id or the items are missing or malformed */
@@ -48,7 +52,8 @@ public record ChannelOrder(String orderId, String number, String fulfillment, St
         List<Item> items = new ArrayList<>();
         for (Object raw : rawItems) {
             Map<String, Object> item = map(raw);
-            items.add(new Item(text(item, "external_id"), text(item, "name"), quantity(item.get("quantity")), options(item),
+            items.add(new Item(text(item, "external_id"), text(item, "name"), quantity(item.get("quantity")),
+                    amount(item, "unit_price_pyg"), options(item),
                     toppings(item)));
         }
         Map<String, Object> customer = map(order.get("customer"));
@@ -75,7 +80,7 @@ public record ChannelOrder(String orderId, String number, String fulfillment, St
     public List<Line> saleLines() {
         List<Line> lines = new ArrayList<>();
         for (Item item : items) {
-            lines.add(new Line(item.externalId(), item.name(), item.quantity()));
+            lines.add(new Line(item.externalId(), item.name(), item.quantity(), item.unitPrice()));
             lines.addAll(item.toppings());
         }
         return lines;
@@ -102,14 +107,15 @@ public record ChannelOrder(String orderId, String number, String fulfillment, St
         if (item.get("toppings") instanceof List<?> raw) {
             for (Object value : raw) {
                 Map<String, Object> topping = map(value);
-                toppings.add(new Line(text(topping, "external_id"), text(topping, "name"), quantity(topping.get("quantity"))));
+                toppings.add(new Line(text(topping, "external_id"), text(topping, "name"), quantity(topping.get("quantity")),
+                        amount(topping, "unit_price_pyg")));
             }
         }
         return List.copyOf(toppings);
     }
 
-    private static Long amount(Map<String, Object> order, String key) {
-        return order.get(key) instanceof Number number ? number.longValue() : null;
+    private static Long amount(Map<String, Object> map, String key) {
+        return map.get(key) instanceof Number number ? number.longValue() : null;
     }
 
     private static BigDecimal quantity(Object value) {

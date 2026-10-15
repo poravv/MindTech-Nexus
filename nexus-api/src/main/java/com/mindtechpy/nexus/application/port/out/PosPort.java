@@ -13,7 +13,8 @@ import java.util.Optional;
  */
 public interface PosPort {
 
-    record Item(String code, BigDecimal quantity) {
+    /** {@code unitPrice}: whole guaraníes per unit, IVA included, used instead of the POS catalog price (null = catalog). */
+    record Item(String code, BigDecimal quantity, Long unitPrice) {
     }
 
     record Delivery(String address, String contactName, String contactPhone, String instructions) {
@@ -21,7 +22,7 @@ public interface PosPort {
 
     /**
      * {@code branchId}/{@code warehouseId} null: the POS uses the defaults of the API key. {@code shippingCost}
-     * (whole guaraníes, null = none) is the channel's delivery fee; the POS adds it to its total. {@code discount}
+     * (whole guaraníes, null = none) is the channel's delivery fee, with or without a delivery address; the POS adds it to its total. {@code discount}
      * (whole guaraníes, null = none) is the channel's order discount (coupon); the POS takes it off the items.
      */
     record NewOrder(String channel, String externalRef, String customerId, String branchId, String warehouseId,
