@@ -61,6 +61,10 @@ class CatalogSyncIT extends AbstractConnectorIT {
         assertThat(first.get("available").asBoolean()).isTrue();
         assertThat(first.get("category").asString()).isEqualTo("Panificados");
         assertThat(first.has("image_url")).isFalse();
+        assertThat(first.get("price_label").asString()).isEqualTo("por porción");
+        JsonNode second = jsonOf(bulks.getFirst()).get("products").get(1);
+        assertThat(second.has("price_label")).as("no label in the POS clears it in GiftHub").isTrue();
+        assertThat(second.get("price_label").isNull()).isTrue();
         assertThat(jsonOf(bulks.get(2)).get("products").get(0).get("available").asBoolean()).isFalse();
         assertThat(posRequests("GET", "/api/integration/catalog")).extracting(r -> r.queryParameter("page").firstValue())
                 .containsExactly("1", "2", "3");
@@ -358,7 +362,7 @@ class CatalogSyncIT extends AbstractConnectorIT {
         }
     }
 
-    /** Items {@code from..to} (1-based) of a {@value #TOTAL}-product catalog; the last one has no stock. */
+    /** Items {@code from..to} (1-based) of a {@value #TOTAL}-product catalog; the first has a price label, the last no stock. */
     private String catalogPage(int page, int from, int to) {
         List<Map<String, Object>> items = new ArrayList<>();
         IntStream.rangeClosed(from, to).forEach(n -> {
@@ -370,6 +374,7 @@ class CatalogSyncIT extends AbstractConnectorIT {
             item.put("tracked", true);
             item.put("category", "Panificados");
             item.put("imageUrl", "/uploads/p.png");
+            item.put("priceLabel", n == 1 ? "por porción" : null);
             item.put("updatedAt", "2026-10-01T00:00:00Z");
             items.add(item);
         });

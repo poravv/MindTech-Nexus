@@ -22,9 +22,12 @@ public interface GiftHubPort {
     record StatusChange(String status, String note, String externalRef, String externalNumber) {
     }
 
-    /** {@code stockQty} null: GiftHub does not track stock for the product. */
+    /**
+     * {@code stockQty} null: GiftHub does not track stock for the product. {@code priceLabel} null: GiftHub shows
+     * the price alone.
+     */
     record Product(String externalId, String name, String category, long pricePyg, boolean available, Long stockQty,
-                   String imageUrl) {
+                   String imageUrl, String priceLabel) {
     }
 
     record RowError(String externalId, String error) {

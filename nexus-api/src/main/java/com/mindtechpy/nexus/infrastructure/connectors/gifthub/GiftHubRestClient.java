@@ -73,7 +73,10 @@ class GiftHubRestClient implements GiftHubPort {
         });
     }
 
-    /** {@code stock_qty} always travels ({@code null} turns stock control off); {@code image_url} only when set. */
+    /**
+     * {@code stock_qty} and {@code price_label} always travel ({@code null} turns stock control off / clears the label,
+     * so the POS stays authoritative); {@code image_url} only when set.
+     */
     @Override
     public BulkResult upsertProducts(Endpoint giftHub, Duration readTimeout, List<Product> products, boolean dryRun) {
         return http.timed("GIFTHUB", "upsert_products", () -> {
@@ -83,6 +86,7 @@ class GiftHubRestClient implements GiftHubPort {
                         "category", product.category(), "price_pyg", product.pricePyg(), "available", product.available(),
                         "image_url", product.imageUrl()));
                 row.put("stock_qty", product.stockQty());
+                row.put("price_label", product.priceLabel());
                 rows.add(row);
             }
             Response response = http.call(giftHub.connection().baseUrl(), readTimeout, HttpMethod.PUT,
