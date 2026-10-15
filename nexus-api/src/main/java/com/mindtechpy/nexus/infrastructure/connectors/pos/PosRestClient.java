@@ -27,8 +27,11 @@ import static com.mindtechpy.nexus.infrastructure.connectors.ConnectorHttp.text;
  * scopes {@code catalog:read customers:write orders:write}). Bodies carry exactly the fields of the POS DTOs:
  * its validation rejects unknown ones. Statuses: 422 {@code insufficient-stock|unknown-product} → REJECTED
  * with that code; 404 (customer/branch/warehouse of another organization) → REJECTED {@code pos-not-found};
- * 409 on create (same reference, other content) → CONFLICT; 409 on payment → REJECTED with the POS {@code code}
- * ({@code cash-session-closed} → TRANSIENT: the cashier opens the session and the retry closes the sale); 400 → REJECTED.
+ * 409 on create (same reference, other content) → CONFLICT; 400 → REJECTED. The payment POST classifies on its own:
+ * 408/5xx → UNCERTAIN (a gateway may fail after the POS took the payment: the saga reads the sale before resending);
+ * 409 → REJECTED with the POS {@code code} ({@code cash-session-closed} → TRANSIENT: the cashier opens the session and
+ * the retry closes the sale); 400 → REJECTED {@code pos-bad-request}, only a validation error of our body, which the
+ * POS should no longer answer for a well-formed payment.
  */
 @Component
 class PosRestClient implements PosPort {
@@ -88,7 +91,16 @@ class PosRestClient implements PosPort {
                     orderPath(channel, externalRef) + "/payments",
                     apiKey(pos).andThen(headers -> headers.set("Idempotency-Key", idempotencyKey)),
                     object("method", payment.method(), "amount", payment.amount(), "reference", payment.reference()));
-            if (response.status() == 409) {
+            int status = response.status();
+            if (status == 408 || status >= 500) {
+                throw new ConnectorException(ConnectorHttp.error(ErrorKind.UNCERTAIN, "pos-http-" + status,
+                        problemDetail(response), response));
+            }
+            if (status == 400) {
+                throw new ConnectorException(ConnectorHttp.error(ErrorKind.REJECTED, "pos-bad-request",
+                        problemDetail(response), response));
+            }
+            if (status == 409) {
                 String code = text(response.body(), "code");
                 ErrorKind kind = "cash-session-closed".equals(code) ? ErrorKind.TRANSIENT : ErrorKind.REJECTED;
                 throw new ConnectorException(ConnectorHttp.error(kind, code == null ? "pos-conflict" : code,

@@ -218,6 +218,21 @@ class OrderPaidSagaTest {
     }
 
     @Test
+    void should_verify_and_succeed_without_a_second_post_when_the_payment_post_got_a_502() {
+        ConnectorError badGateway = new ConnectorError(ErrorKind.UNCERTAIN, "pos-http-502", "Bad Gateway", 502, null);
+        when(pos.payChannelOrder(any(), any(), eq(KEY), any(), any(), any())).thenThrow(new ConnectorException(badGateway));
+        when(pos.findOrder(any(), any(), eq("GIFTHUB"), eq(ORDER_ID))).thenReturn(Optional.of(COMPLETED_SALE));
+        StepContext first = context(paid("CASH"));
+
+        assertThat(failure(saga.execute(first)).kind()).isEqualTo(ErrorKind.UNCERTAIN);
+        StepContext retry = new StepContext(first.operation().retrying(badGateway, Instant.now(), true), first.integration(),
+                first.source(), first.target());
+
+        assertThat(((StepResult.Completed) saga.execute(retry)).result()).containsEntry("saleNumber", "SALE-00000042");
+        verify(pos, times(1)).payChannelOrder(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void should_resend_with_the_same_key_when_verification_after_a_timeout_finds_the_sale_still_pending() {
         when(pos.findOrder(any(), any(), eq("GIFTHUB"), eq(ORDER_ID))).thenReturn(Optional.of(PENDING_SALE));
         when(pos.payChannelOrder(any(), any(), eq(KEY), any(), any(), any())).thenReturn(PAID);

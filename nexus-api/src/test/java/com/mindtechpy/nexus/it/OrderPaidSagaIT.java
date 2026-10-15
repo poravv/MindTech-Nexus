@@ -1,6 +1,7 @@
 package com.mindtechpy.nexus.it;
 
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
+import com.mindtechpy.nexus.domain.operation.ErrorKind;
 import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationStatus;
 import org.junit.jupiter.api.BeforeEach;
@@ -168,6 +169,28 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
         assertThat(reload(paid.id()).status()).isEqualTo(OperationStatus.SUCCEEDED);
         assertThat(posRequests("POST", paymentsPath)).hasSize(2)
                 .allSatisfy(request -> assertThat(request.getHeader("Idempotency-Key")).isEqualTo("GIFTHUB:" + orderId + ":paid"));
+    }
+
+    @Test
+    void should_read_the_sale_instead_of_resending_when_the_payment_post_got_a_502_after_the_pos_took_it() {
+        stubPos(post(urlPathEqualTo(pos(paymentsPath))).willReturn(jsonResponse("<html>Bad Gateway</html>", 502)));
+        stubPos(get(urlPathEqualTo(pos("/api/integration/orders/GIFTHUB/" + orderId)))
+                .willReturn(okJson(SALE.replace("PENDING", "COMPLETED"))));
+        createOrder();
+
+        Operation paid = receivePaid(UUID.randomUUID().toString(), "CASH");
+        drain();
+        Operation retrying = reload(paid.id());
+        assertThat(retrying.status()).isEqualTo(OperationStatus.RETRY);
+        assertThat(retrying.lastError().kind()).isEqualTo(ErrorKind.UNCERTAIN);
+        assertThat(retrying.lastError().code()).isEqualTo("pos-http-502");
+        makeDue(paid.id());
+        drain();
+
+        Operation done = reload(paid.id());
+        assertThat(done.status()).isEqualTo(OperationStatus.SUCCEEDED);
+        assertThat(done.result()).containsEntry("saleNumber", "SALE-00000042");
+        assertThat(posRequests("POST", paymentsPath)).hasSize(1);
     }
 
     private void createOrder() {
