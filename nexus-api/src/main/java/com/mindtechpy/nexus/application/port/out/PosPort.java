@@ -32,6 +32,14 @@ public interface PosPort {
     record Order(String saleId, String saleNumber, long total, String status) {
     }
 
+    /** A payment to register on a channel sale: {@code amount} in whole guaraníes, {@code reference} optional (≤ 100). */
+    record Payment(String method, long amount, String reference) {
+    }
+
+    /** The sale after the POS took the payment; {@code status} is {@code COMPLETED} when it really closed. */
+    record PaidSale(String saleId, String saleNumber, String status, boolean invoiceQueued) {
+    }
+
     /**
      * {@code priceLabel}: how the POS wants the price shown (null = none); it is forwarded to GiftHub as is.
      * {@code description}: the POS product description (null = none).
@@ -50,6 +58,16 @@ public interface PosPort {
     Order createOrder(Endpoint pos, Duration readTimeout, String idempotencyKey, NewOrder order);
 
     Optional<Order> findOrder(Endpoint pos, Duration readTimeout, String channel, String externalRef);
+
+    /**
+     * Registers the payment of a pending channel sale and closes it; {@code idempotencyKey} must be
+     * {@code {channel}:{externalRef}:paid} (repeating it answers the same closed sale). 404 fails
+     * {@code REJECTED pos-not-found}; 409 fails {@code REJECTED} with the POS code ({@code not-pending},
+     * {@code sale-cancelled}, {@code amount-mismatch}) except {@code cash-session-closed}, which is
+     * {@code TRANSIENT}; 422 fails {@code REJECTED insufficient-stock}.
+     */
+    PaidSale payChannelOrder(Endpoint pos, Duration readTimeout, String idempotencyKey, String channel, String externalRef,
+                             Payment payment);
 
     /**
      * Cancels a channel sale that is still pending (repeating it answers the cancelled sale). Empty when the

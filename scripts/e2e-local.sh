@@ -5,7 +5,7 @@
 #   ./scripts/e2e-local.sh                       # todas las fases
 #   ./scripts/e2e-local.sh setup fiscal          # solo esas (setup corre siempre: es idempotente)
 #
-# Fases: fiscal discounts nc_rejected catalog order delivery coupon ops revive
+# Fases: fiscal discounts nc_rejected catalog order order_paid delivery coupon ops revive
 #
 # Credenciales: de .env.local-stack (gitignored). Las que el script crea (cliente m2m de Nexus, API key del POS,
 # integración de GiftHub) se agregan ahí la primera vez; nunca se imprimen.
@@ -32,7 +32,7 @@ SIFEN_POINT=default
 
 [ -f "$ENV_FILE" ] || { echo "Falta $ENV_FILE"; exit 1; }
 set -a; . "./$ENV_FILE"; set +a
-PHASES=${*:-fiscal discounts nc_rejected catalog order delivery coupon ops revive}
+PHASES=${*:-fiscal discounts nc_rejected catalog order order_paid delivery coupon ops revive}
 
 step() { printf '\n== %s\n' "$*"; }
 ok() { printf '  ✅ %s\n' "$*"; }
@@ -186,7 +186,7 @@ setup() {
   INT_CATALOG=$(upsert_integration CATALOG catalogo-gifthub "\"$CONN_POS\"" "$CONN_GH" '{"scheduleEverySeconds":3600}')
   INT_ORDER=$(upsert_integration ORDER pedidos-gifthub "\"$CONN_GH\"" "$CONN_POS")
   gh PATCH "/api/admin/integrations/$GIFTHUB_E2E_INTEGRATION_ID" \
-    "{\"enabled\":true,\"webhookUrl\":\"$NEXUS_FROM_DOCKER/api/v1/webhooks/gifthub/$CONN_GH\",\"webhookEvents\":[\"order.created\",\"order.cancelled\"],\"includeCustomer\":true}"
+    "{\"enabled\":true,\"webhookUrl\":\"$NEXUS_FROM_DOCKER/api/v1/webhooks/gifthub/$CONN_GH\",\"webhookEvents\":[\"order.created\",\"order.paid\",\"order.cancelled\"],\"includeCustomer\":true}"
   expect 200 "webhook de GiftHub → Nexus"
   ok "conexiones SIFEN/POS/GiftHub e integraciones FISCAL, ORDER, CATALOG"
 
@@ -513,6 +513,26 @@ phase_order() {
   ok "cancelado en GiftHub → venta $cancelled_sale anulada en el POS"
 }
 
+# ---------------------------------------------------------------- 4a. pedido pagado en GiftHub
+phase_order_paid() {
+  step "4a. Pedido pagado en GiftHub cierra la venta en el POS"
+  ensure_cash_session
+  ensure_product E2E-HAMB "Hamburguesa Nexus E2E" 25000 500
+  gifthub_order 1
+  local order=$GH_ORDER
+  wait_for "pedido CONFIRMED en GiftHub" 120 gh_order_is "$order" CONFIRMED
+  pos_channel_sale "$order" || die "sin venta de canal en el POS"
+  local sale; sale=$(jq -r .saleId <<< "$POS_ORDER")
+  pos_sale_status_is "$sale" PENDING || die "la venta $sale no está PENDING antes del cobro"
+
+  gh PATCH "/api/admin/orders/$order/payment" '{"status":"PAID","method":"CASH"}'; expect 200 "cobrar pedido en GiftHub"
+  wait_for "venta cobrada en el POS" 120 pos_sale_status_is "$sale" COMPLETED
+  nexus_operation "$order:paid"
+  [ "$(jq -r .status <<< "$OP")" = SUCCEEDED ] || die "ORDER_PAID no terminó SUCCEEDED: $(jq -c . <<< "$OP")"
+  [ "$(jq -r .result.saleId <<< "$OP")" = "$sale" ] || die "ORDER_PAID cerró otra venta: $(jq -c .result <<< "$OP")"
+  ok "pagado en GiftHub → venta $sale COMPLETED en el POS ($(jq -c '.result | {method, amount, invoiceQueued}' <<< "$OP"))"
+}
+
 # ---------------------------------------------------------------- 4b. delivery con topping
 # Productos de GiftHub por código POS: topping y producto que lo acepta.
 gifthub_flag() {  # código campo valor
@@ -603,7 +623,7 @@ phase_coupon() {
   gifthub_webhook_events '["order.cancelled"]'
   gh POST /api/admin/orders "{\"customerId\":\"$GH_CUSTOMER\",\"fulfillmentType\":\"DELIVERY\",\"address\":\"Av. España 1234\",\"deliveryFeePyg\":10000,\"items\":[{\"productId\":\"$GH_HAMB\",\"quantity\":2}]}"
   local created=$STATUS order; order=$(jq -r '.id // empty' <<< "$BODY")
-  gifthub_webhook_events '["order.created","order.cancelled"]'
+  gifthub_webhook_events '["order.created","order.paid","order.cancelled"]'
   STATUS=$created; expect 201 "pedido delivery en GiftHub"
   local code; code="E2E$(date +%s)"
   gh POST /api/admin/loyalty/coupons "{\"customerId\":\"$GH_CUSTOMER\",\"code\":\"$code\",\"description\":\"Cupón E2E\",\"flamesCost\":0,\"type\":\"FIXED_AMOUNT\",\"discountPyg\":7000}"

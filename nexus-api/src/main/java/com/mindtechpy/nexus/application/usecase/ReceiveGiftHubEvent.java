@@ -17,6 +17,7 @@ import com.mindtechpy.nexus.domain.integration.IntegrationPolicy;
 import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationKind;
 import com.mindtechpy.nexus.domain.order.ChannelOrder;
+import com.mindtechpy.nexus.domain.order.OrderPayment;
 import com.mindtechpy.nexus.domain.shared.DomainException;
 import com.mindtechpy.nexus.domain.shared.RetryLaterException;
 import com.mindtechpy.nexus.domain.shared.TenantId;
@@ -35,9 +36,11 @@ import static java.lang.System.Logger.Level.INFO;
  * is recorded in the same transaction that starts the operation, so a failure leaves nothing recorded and
  * GiftHub's retry processes it again; a redelivery finds the operation by its idempotency key (nothing new
  * is created) and answers DUPLICATE. {@code order.created} starts {@code CREATE_ORDER} (key = order id);
- * {@code order.cancelled} of an order whose POS sale exists starts {@code ORDER_STATUS POS_CANCELLED};
- * {@code ping} and every other event are acknowledged without work. When the ORDER integration cannot take
- * work it answers 429 with {@code Retry-After}, so GiftHub retries instead of dropping the order.
+ * {@code order.paid} starts {@code ORDER_PAID} (key = {@code {orderId}:paid}), which closes the POS sale once
+ * CREATE_ORDER produced it; {@code order.cancelled} of an order whose POS sale exists starts
+ * {@code ORDER_STATUS POS_CANCELLED}; {@code ping} and every other event are acknowledged without work. When
+ * the ORDER integration cannot take work it answers 429 with {@code Retry-After}, so GiftHub retries instead
+ * of dropping the order.
  */
 public class ReceiveGiftHubEvent {
 
@@ -123,6 +126,7 @@ public class ReceiveGiftHubEvent {
         Received received = tx.inTransaction(() -> {
             Operation started = switch (type) {
                 case "order.created" -> startCreateOrder(connection, delivery);
+                case "order.paid" -> startOrderPaid(connection, delivery);
                 case "order.cancelled" -> startPosCancellation(connection, delivery);
                 default -> null;
             };
@@ -142,6 +146,12 @@ public class ReceiveGiftHubEvent {
         Map<String, Object> payload = ChannelOrder.payloadOf(order(delivery));
         Integration integration = orderIntegration(connection);
         return start(integration, OperationKind.CREATE_ORDER, (String) payload.get("id"), payload, delivery);
+    }
+
+    /** Always an operation, even before CREATE_ORDER finished: the saga waits for the sale (order gate). */
+    private Operation startOrderPaid(Connection connection, Delivery delivery) {
+        Map<String, Object> payload = OrderPayment.payloadOf(order(delivery));
+        return start(orderIntegration(connection), OperationKind.ORDER_PAID, payload.get("id") + ":paid", payload, delivery);
     }
 
     /** Only once the POS sale exists; before that, CREATE_ORDER itself notices the cancellation at NOTIFY. */

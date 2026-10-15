@@ -27,7 +27,8 @@ import static com.mindtechpy.nexus.infrastructure.connectors.ConnectorHttp.text;
  * scopes {@code catalog:read customers:write orders:write}). Bodies carry exactly the fields of the POS DTOs:
  * its validation rejects unknown ones. Statuses: 422 {@code insufficient-stock|unknown-product} → REJECTED
  * with that code; 404 (customer/branch/warehouse of another organization) → REJECTED {@code pos-not-found};
- * 409 on create (same reference, other content) → CONFLICT; 400 → REJECTED.
+ * 409 on create (same reference, other content) → CONFLICT; 409 on payment → REJECTED with the POS {@code code}
+ * ({@code cash-session-closed} → TRANSIENT: the cashier opens the session and the retry closes the sale); 400 → REJECTED.
  */
 @Component
 class PosRestClient implements PosPort {
@@ -76,6 +77,26 @@ class PosRestClient implements PosPort {
             Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.GET, orderPath(channel, externalRef),
                     apiKey(pos), null);
             return response.status() == 404 ? Optional.empty() : Optional.of(order(requireSuccess(response, false)));
+        });
+    }
+
+    @Override
+    public PaidSale payChannelOrder(Endpoint pos, Duration readTimeout, String idempotencyKey, String channel, String externalRef,
+                                    Payment payment) {
+        return http.timed("POS", "pay_order", () -> {
+            Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.POST,
+                    orderPath(channel, externalRef) + "/payments",
+                    apiKey(pos).andThen(headers -> headers.set("Idempotency-Key", idempotencyKey)),
+                    object("method", payment.method(), "amount", payment.amount(), "reference", payment.reference()));
+            if (response.status() == 409) {
+                String code = text(response.body(), "code");
+                ErrorKind kind = "cash-session-closed".equals(code) ? ErrorKind.TRANSIENT : ErrorKind.REJECTED;
+                throw new ConnectorException(ConnectorHttp.error(kind, code == null ? "pos-conflict" : code,
+                        problemDetail(response), response));
+            }
+            JsonNode body = requireSuccess(response, false);
+            return new PaidSale(text(body, "saleId"), text(body, "saleNumber"), text(body, "status"),
+                    body.path("invoiceQueued").asBoolean(false));
         });
     }
 
@@ -132,6 +153,12 @@ class PosRestClient implements PosPort {
             default -> ConnectorHttp.error(ErrorKind.REJECTED, "pos-bad-request", message, response);
         };
         throw new ConnectorException(error);
+    }
+
+    /** The payment endpoint answers problem+json ({@code detail}); the rest of the POS uses {@code message}. */
+    private static String problemDetail(Response response) {
+        String detail = text(response.body(), "detail");
+        return detail != null ? detail : text(response.body(), "message");
     }
 
     private static Order order(JsonNode body) {

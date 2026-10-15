@@ -8,6 +8,7 @@ public enum OperationKind {
     CANCEL_INVOICE(Flow.FISCAL),
     CREATE_ORDER(Flow.ORDER),
     ORDER_STATUS(Flow.ORDER),
+    ORDER_PAID(Flow.ORDER),
     CATALOG_SYNC(Flow.CATALOG);
 
     private final Flow flow;

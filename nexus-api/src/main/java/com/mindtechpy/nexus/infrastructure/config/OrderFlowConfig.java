@@ -4,6 +4,7 @@ import com.mindtechpy.nexus.application.port.out.*;
 import com.mindtechpy.nexus.application.saga.Saga;
 import com.mindtechpy.nexus.application.saga.catalog.CatalogSyncSaga;
 import com.mindtechpy.nexus.application.saga.order.CreateOrderSaga;
+import com.mindtechpy.nexus.application.saga.order.OrderPaidSaga;
 import com.mindtechpy.nexus.application.saga.order.OrderStatusSaga;
 import com.mindtechpy.nexus.application.usecase.ReceiveGiftHubEvent;
 import com.mindtechpy.nexus.application.usecase.ReportOrderStatus;
@@ -24,6 +25,11 @@ class OrderFlowConfig {
     @Bean
     Saga orderStatusSaga(PosPort pos, GiftHubPort giftHub) {
         return new OrderStatusSaga(pos, giftHub);
+    }
+
+    @Bean
+    Saga orderPaidSaga(PosPort pos, OperationRepository operations) {
+        return new OrderPaidSaga(pos, operations);
     }
 
     @Bean
