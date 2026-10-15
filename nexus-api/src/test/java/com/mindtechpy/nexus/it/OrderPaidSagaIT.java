@@ -63,6 +63,19 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
     }
 
     @Test
+    void should_send_the_bancard_reference_and_card_when_gifthub_reports_a_qr_payment() {
+        stubPos(post(urlPathEqualTo(pos(paymentsPath))).willReturn(okJson(PAID_SALE)));
+        createOrder();
+        String delivery = UUID.randomUUID().toString();
+        sendSigned(delivery, orderPaid(delivery, "OTHER", "QR", "BCD-778812"), 200);
+        drain();
+
+        JsonNode body = jsonOf(posRequests("POST", paymentsPath).getFirst());
+        assertThat(body.get("method").asString()).isEqualTo("CARD");
+        assertThat(body.get("reference").asString()).isEqualTo("BCD-778812");
+    }
+
+    @Test
     void should_call_the_pos_once_when_gifthub_delivers_the_same_paid_event_again() {
         stubPos(post(urlPathEqualTo(pos(paymentsPath))).willReturn(okJson(PAID_SALE)));
         createOrder();
@@ -207,6 +220,10 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
 
     /** {@code order.paid} as GiftHub sends it: the order with its payment state plus the {@code payment} block. */
     private String orderPaid(String deliveryId, String method) {
+        return orderPaid(deliveryId, method, method, null);
+    }
+
+    private String orderPaid(String deliveryId, String method, String paidWith, String reference) {
         Map<String, Object> order = new HashMap<>();
         order.put("id", orderId);
         order.put("number", "BH-7Q2K");
@@ -221,8 +238,8 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
         order.put("items", List.of(Map.of("external_id", "SKU-1001", "name", "Hamburguesa doble", "quantity", 2)));
         order.put("created_at", "2026-10-08T14:02:58.000Z");
         Map<String, Object> payment = new HashMap<>();
-        payment.put("method", method);
-        payment.put("reference", null);
+        payment.put("method", paidWith);
+        payment.put("reference", reference);
         payment.put("paid_at", "2026-10-08T14:20:00.000Z");
         return toJson(Map.of("id", deliveryId, "type", "order.paid", "created_at", "2026-10-08T14:20:01.000Z",
                 "data", Map.of("order", order, "payment", payment)));

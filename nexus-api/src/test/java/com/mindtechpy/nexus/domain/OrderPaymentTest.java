@@ -24,6 +24,38 @@ class OrderPaymentTest {
     }
 
     @Test
+    void should_prefer_the_method_of_data_payment_in_either_gifthub_vocabulary() {
+        assertThat(OrderPayment.from(paid("OTHER", "QR", null)).posMethod()).isEqualTo("CARD");
+        assertThat(OrderPayment.from(paid("CARD", "LINK_PAGO", null)).posMethod()).isEqualTo("CARD");
+        assertThat(OrderPayment.from(paid("CARD", "TARJETA_POS", null)).posMethod()).isEqualTo("CARD");
+        assertThat(OrderPayment.from(paid("OTHER", "EFECTIVO", null)).posMethod()).isEqualTo("CASH");
+        assertThat(OrderPayment.from(paid("OTHER", "TRANSFERENCIA", null)).posMethod()).isEqualTo("TRANSFER");
+        assertThat(OrderPayment.from(paid("CASH", "OTRO", null)).posMethod()).isEqualTo("OTHER");
+        assertThat(OrderPayment.from(paid("OTHER", "CARD", null)).posMethod()).isEqualTo("CARD");
+    }
+
+    @Test
+    void should_pay_qr_as_card_with_the_bancard_reference() {
+        OrderPayment payment = OrderPayment.from(paid("OTHER", "QR", "  BCD-778812  "));
+
+        assertThat(payment.posMethod()).isEqualTo("CARD");
+        assertThat(payment.reference()).isEqualTo("BCD-778812");
+    }
+
+    @Test
+    void should_cut_the_provider_reference_to_what_the_pos_keeps() {
+        assertThat(OrderPayment.from(paid("CARD", "LINK_PAGO", "x".repeat(150))).reference()).hasSize(100);
+    }
+
+    @Test
+    void should_fall_back_to_the_order_method_and_number_without_data_payment() {
+        OrderPayment payment = OrderPayment.from(OrderPayment.payloadOf(order("TRANSFER"), Map.of()));
+
+        assertThat(payment.posMethod()).isEqualTo("TRANSFER");
+        assertThat(payment.reference()).isEqualTo("GiftHub #BH-1");
+    }
+
+    @Test
     void should_reference_the_gifthub_number_or_the_id_when_there_is_none() {
         assertThat(OrderPayment.from(order("CASH")).reference()).isEqualTo("GiftHub #BH-1");
         Map<String, Object> noNumber = order("CASH");
@@ -37,7 +69,10 @@ class OrderPaymentTest {
         order.put("items", java.util.List.of());
         order.put("customer", Map.of("phone", "+595981123456"));
 
-        assertThat(OrderPayment.payloadOf(order).keySet()).containsExactly("id", "number", "payment_status", "payment_method", "total_pyg");
+        Map<String, Object> payload = OrderPayment.payloadOf(order, Map.of("method", "QR", "reference", "BCD-1", "paid_at", "2026-10-15T12:00:00Z"));
+
+        assertThat(payload.keySet()).containsExactly("id", "number", "payment_status", "payment_method", "total_pyg", "payment");
+        assertThat(payload.get("payment")).isEqualTo(Map.of("method", "QR", "reference", "BCD-1"));
     }
 
     @Test
@@ -46,6 +81,13 @@ class OrderPaymentTest {
         order.put("id", "con espacios");
 
         assertThatThrownBy(() -> OrderPayment.from(order)).isInstanceOf(DomainException.class).hasMessageContaining("id");
+    }
+
+    private static Map<String, Object> paid(String orderMethod, String paymentMethod, String reference) {
+        Map<String, Object> payment = new HashMap<>();
+        payment.put("method", paymentMethod);
+        payment.put("reference", reference);
+        return OrderPayment.payloadOf(order(orderMethod), payment);
     }
 
     private static Map<String, Object> order(String method) {

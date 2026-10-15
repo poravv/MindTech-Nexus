@@ -150,7 +150,7 @@ public class ReceiveGiftHubEvent {
 
     /** Always an operation, even before CREATE_ORDER finished: the saga waits for the sale (order gate). */
     private Operation startOrderPaid(Connection connection, Delivery delivery) {
-        Map<String, Object> payload = OrderPayment.payloadOf(order(delivery));
+        Map<String, Object> payload = OrderPayment.payloadOf(order(delivery), payment(delivery));
         return start(orderIntegration(connection), OperationKind.ORDER_PAID, payload.get("id") + ":paid", payload, delivery);
     }
 
@@ -194,5 +194,11 @@ public class ReceiveGiftHubEvent {
             return (Map<String, Object>) order;
         }
         throw DomainException.invalid("invalid-order", "El evento no trae data.order");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> payment(Delivery delivery) {
+        return delivery.event().get("data") instanceof Map<?, ?> data && data.get("payment") instanceof Map<?, ?> payment
+                ? (Map<String, Object>) payment : Map.of();
     }
 }
