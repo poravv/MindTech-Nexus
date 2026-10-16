@@ -164,8 +164,9 @@ class UseCaseConfig {
     }
 
     @Bean
-    ReplayOperation replayOperation(OperationRepository operations, AuditRepository audit, ClockPort clock, TransactionRunner tx) {
-        return new ReplayOperation(operations, audit, clock, tx);
+    ReplayOperation replayOperation(OperationRepository operations, IntegrationRepository integrations, AuditRepository audit,
+                                    ClockPort clock, TransactionRunner tx) {
+        return new ReplayOperation(operations, integrations, audit, clock, tx);
     }
 
     @Bean
