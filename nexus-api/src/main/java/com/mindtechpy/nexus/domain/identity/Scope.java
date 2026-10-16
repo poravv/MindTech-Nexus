@@ -11,6 +11,7 @@ public enum Scope {
     ORDERS_WRITE("orders:write"),
     ORDERS_READ("orders:read"),
     CATALOG_READ("catalog:read"),
+    CATALOG_SYNC("catalog:sync"),
     OPERATIONS_READ("operations:read");
 
     private final String value;

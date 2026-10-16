@@ -27,7 +27,7 @@ import static java.lang.System.Logger.Level.INFO;
 import static java.lang.System.Logger.Level.WARNING;
 
 /**
- * Creates {@code CATALOG_SYNC} operations: on demand from the console, and every {@code scheduleEverySeconds}
+ * Creates {@code CATALOG_SYNC} operations: on demand from the console or the POS, and every {@code scheduleEverySeconds}
  * (default 300) for each ENABLED CATALOG integration. The scheduled key is the start of the current window
  * ({@code {integrationId}:{yyyyMMddHHmm}}), so calling {@link #scheduleDue} more often than the window, or from a
  * restarted worker, never creates a second run for the same window. After runs that ended DEAD in a row the next
@@ -75,6 +75,37 @@ public class RunCatalogSync {
         audit.append(AuditEvent.of(actor, tenantId, "integration.run", "integration", integration.id().toString(), null,
                 Map.of("operationId", started.operation().id().toString()), now));
         return started;
+    }
+
+    /** What the POS gets back per integration: {@code created} is false when this minute's run already existed. */
+    public record Requested(UUID integrationId, UUID operationId, boolean created) {
+    }
+
+    /**
+     * The POS asks for an immediate sync (a product just sold out) for every ENABLED CATALOG integration of its
+     * tenant. 404 {@code catalog-integration-not-found} if there is none; 409 {@code catalog-run-in-progress} if
+     * any of them has a run in flight, before starting any. The key is per minute, so a repeated request within
+     * the same minute is answered with the run already created.
+     */
+    public List<Requested> requestFromPos(TenantId tenantId) {
+        List<Integration> enabled = integrations.findAll(tenantId).stream()
+                .filter(integration -> integration.flow() == Flow.CATALOG && integration.state() == IntegrationState.ENABLED)
+                .toList();
+        if (enabled.isEmpty()) {
+            throw new DomainException(DomainException.Kind.NOT_FOUND, "catalog-integration-not-found",
+                    "El tenant no tiene una integración de catálogo habilitada");
+        }
+        if (enabled.stream().anyMatch(this::isRunning)) {
+            throw DomainException.conflict("catalog-run-in-progress",
+                    "Ya hay una sincronización de catálogo en curso hacia este GiftHub; reintente cuando termine");
+        }
+        String minute = MINUTE.format(clock.now());
+        return enabled.stream().map(integration -> {
+            log.log(INFO, "[NEXUS-CATALOG] sync pedido por el POS tenant={0} integración={1}", tenantId, integration.code());
+            StartOperation.Started started = startOperation.execute(new StartOperation.Command(tenantId, integration.id(),
+                    OperationKind.CATALOG_SYNC, integration.id() + ":pos:" + minute, Map.of("trigger", "pos"), null));
+            return new Requested(integration.id(), started.operation().id(), started.created());
+        }).toList();
     }
 
     /**
