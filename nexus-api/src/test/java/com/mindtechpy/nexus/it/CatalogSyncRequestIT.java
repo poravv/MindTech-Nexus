@@ -10,9 +10,14 @@ import tools.jackson.databind.JsonNode;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -115,6 +120,42 @@ class CatalogSyncRequestIT extends AbstractConnectorIT {
                 .as("the scheduler still backs off").isZero();
 
         requestSync(clientToken(tenant, "catalog:sync"), 202);
+    }
+
+    /** POS retries and the scheduler tick race on the same GiftHub: at most one unfinished run may come out of it. */
+    @Test
+    void should_create_a_single_run_when_parallel_pos_requests_race_the_scheduler() throws Exception {
+        String token = clientToken(tenant, "catalog:sync");
+        for (int round = 0; round < 10; round++) {
+            UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+            CyclicBarrier start = new CyclicBarrier(6);
+            List<Future<Integer>> statuses = new ArrayList<>();
+            try (ExecutorService pool = Executors.newFixedThreadPool(6)) {
+                for (int i = 0; i < 5; i++) {
+                    statuses.add(pool.submit(() -> {
+                        start.await();
+                        return mvc.perform(post("/api/v1/catalog/sync").header("Authorization", bearer(token)))
+                                .andReturn().getResponse().getStatus();
+                    }));
+                }
+                statuses.add(pool.submit(() -> {
+                    start.await();
+                    runCatalogSync.scheduleDue();
+                    return 0;
+                }));
+            }
+            List<Integer> codes = new ArrayList<>();
+            for (Future<Integer> status : statuses) {
+                codes.add(status.get());
+            }
+
+            assertThat(codes).as("round %d", round).allMatch(code -> List.of(0, 200, 202, 409).contains(code));
+            assertThat(jdbc.sql("SELECT count(*) FROM operations WHERE integration_id = :i").param("i", integration)
+                    .query(Long.class).single()).as("round %d %s", round, codes).isEqualTo(1);
+            jdbc.sql("UPDATE operations SET status = 'SUCCEEDED', finished_at = now() WHERE integration_id = :i")
+                    .param("i", integration).update();
+            changeState(integration, admin, "DISABLED", 200);
+        }
     }
 
     private org.springframework.test.web.servlet.MvcResult requestSync(String token, int expected) {

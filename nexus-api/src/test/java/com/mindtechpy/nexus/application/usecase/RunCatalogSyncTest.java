@@ -3,6 +3,7 @@ package com.mindtechpy.nexus.application.usecase;
 import com.mindtechpy.nexus.application.port.out.ClockPort;
 import com.mindtechpy.nexus.application.port.out.IntegrationRepository;
 import com.mindtechpy.nexus.application.port.out.OperationRepository;
+import com.mindtechpy.nexus.application.port.out.TransactionRunner;
 import com.mindtechpy.nexus.domain.integration.Flow;
 import com.mindtechpy.nexus.domain.integration.Integration;
 import com.mindtechpy.nexus.domain.operation.Operation;
@@ -16,6 +17,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,7 +36,13 @@ class RunCatalogSyncTest {
     private final OperationRepository operations = mock(OperationRepository.class);
     private final StartOperation startOperation = mock(StartOperation.class);
     private final ClockPort clock = () -> NOW;
-    private final RunCatalogSync runCatalogSync = new RunCatalogSync(integrations, operations, startOperation, null, clock);
+    private final TransactionRunner tx = new TransactionRunner() {
+        @Override
+        public <T> T inTransaction(Supplier<T> work) {
+            return work.get();
+        }
+    };
+    private final RunCatalogSync runCatalogSync = new RunCatalogSync(integrations, operations, startOperation, null, clock, tx);
 
     @Test
     void should_answer_404_when_the_tenant_has_no_enabled_catalog_integration() {

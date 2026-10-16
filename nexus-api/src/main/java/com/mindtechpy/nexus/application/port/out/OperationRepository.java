@@ -52,6 +52,12 @@ public interface OperationRepository {
     /** True while an operation of {@code kind} whose integration targets {@code connectionId} is not finished. */
     boolean hasUnfinished(TenantId tenantId, OperationKind kind, UUID targetConnectionId);
 
+    /**
+     * Holds until the current transaction ends a lock on catalog runs to {@code targetConnectionId}, so the check
+     * {@link #hasUnfinished} and the insert of the next run cannot interleave with another trigger.
+     */
+    void lockCatalogTarget(UUID targetConnectionId);
+
     /** Operations created since {@code from}, grouped by status and flow. Empty tenant means every tenant. */
     List<StatusFlowCount> countSince(Optional<TenantId> tenantId, Instant from);
 

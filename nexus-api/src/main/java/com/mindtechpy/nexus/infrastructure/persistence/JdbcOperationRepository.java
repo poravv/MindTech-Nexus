@@ -140,6 +140,13 @@ class JdbcOperationRepository implements OperationRepository {
     }
 
     @Override
+    public void lockCatalogTarget(UUID targetConnectionId) {
+        jdbc.sql("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))")
+                .param("key", "catalog-sync:" + targetConnectionId)
+                .query((rs, n) -> 1).single();
+    }
+
+    @Override
     public List<StatusFlowCount> countSince(Optional<TenantId> tenantId, Instant from) {
         String tenantFilter = tenantId.isPresent() ? " AND tenant_id = :tenantId" : "";
         JdbcClient.StatementSpec statement = jdbc.sql("SELECT status, flow, count(*) AS total FROM operations"
