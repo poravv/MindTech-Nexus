@@ -203,8 +203,10 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
     }
 
     @Test
-    void should_read_the_sale_instead_of_resending_when_the_payment_post_got_a_502_after_the_pos_took_it() {
-        stubPos(post(urlPathEqualTo(pos(paymentsPath))).willReturn(jsonResponse("<html>Bad Gateway</html>", 502)));
+    void should_verify_and_repeat_the_payment_once_so_the_pos_completes_the_invoice_when_the_post_got_a_502_after_the_pos_took_it() {
+        stubPos(post(urlPathEqualTo(pos(paymentsPath))).inScenario("502").whenScenarioStateIs(Scenario.STARTED)
+                .willReturn(jsonResponse("<html>Bad Gateway</html>", 502)).willSetStateTo("cobrada"));
+        stubPos(post(urlPathEqualTo(pos(paymentsPath))).inScenario("502").whenScenarioStateIs("cobrada").willReturn(okJson(PAID_SALE)));
         stubPos(get(urlPathEqualTo(pos("/api/integration/orders/GIFTHUB/" + orderId)))
                 .willReturn(okJson(SALE.replace("PENDING", "COMPLETED"))));
         createOrder();
@@ -220,8 +222,10 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
 
         Operation done = reload(paid.id());
         assertThat(done.status()).isEqualTo(OperationStatus.SUCCEEDED);
-        assertThat(done.result()).containsEntry("saleNumber", "SALE-00000042");
-        assertThat(posRequests("POST", paymentsPath)).hasSize(1);
+        assertThat(done.result()).containsEntry("saleNumber", "SALE-00000042").containsEntry("invoiceQueued", true);
+        assertThat(posRequests("GET", "/api/integration/orders/GIFTHUB/" + orderId)).hasSize(1);
+        assertThat(posRequests("POST", paymentsPath)).hasSize(2)
+                .allSatisfy(request -> assertThat(request.getHeader("Idempotency-Key")).isEqualTo("GIFTHUB:" + orderId + ":paid"));
     }
 
     @Test

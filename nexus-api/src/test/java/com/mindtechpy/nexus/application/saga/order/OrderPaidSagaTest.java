@@ -228,19 +228,43 @@ class OrderPaidSagaTest {
     }
 
     @Test
-    void should_adopt_the_completed_sale_without_resending_when_verification_after_a_timeout_finds_it_paid() {
+    void should_repeat_the_payment_once_with_the_same_key_when_verification_after_a_timeout_finds_the_sale_paid() {
         when(pos.findOrder(any(), any(), eq("GIFTHUB"), eq(ORDER_ID))).thenReturn(Optional.of(COMPLETED_SALE));
+        when(pos.payChannelOrder(any(), any(), eq(KEY), any(), any(), any())).thenReturn(PAID);
 
         StepResult result = saga.execute(uncertain(context(paid("CASH"))));
 
-        assertThat(result).isInstanceOf(StepResult.Completed.class);
-        verify(pos, never()).payChannelOrder(any(), any(), any(), any(), any(), any());
+        assertThat(((StepResult.Completed) result).result()).containsEntry("invoiceQueued", true);
+        verify(pos, times(1)).payChannelOrder(any(), any(), eq(KEY), eq("GIFTHUB"), eq(ORDER_ID), any());
     }
 
     @Test
-    void should_verify_and_succeed_without_a_second_post_when_the_payment_post_got_a_502() {
+    void should_succeed_when_verification_finds_the_sale_paid_and_the_repeated_payment_says_not_pending() {
+        when(pos.findOrder(any(), any(), eq("GIFTHUB"), eq(ORDER_ID))).thenReturn(Optional.of(COMPLETED_SALE));
+        when(pos.payChannelOrder(any(), any(), any(), any(), any(), any())).thenThrow(rejected("not-pending"));
+
+        StepResult result = saga.execute(uncertain(context(paid("CASH"))));
+
+        assertThat(((StepResult.Completed) result).result()).containsEntry("saleNumber", "SALE-00000042");
+        verify(pos, times(1)).payChannelOrder(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void should_succeed_without_manual_reconciliation_when_verification_finds_the_sale_paid_and_the_pos_rejects_the_repeat() {
+        when(pos.findOrder(any(), any(), eq("GIFTHUB"), eq(ORDER_ID))).thenReturn(Optional.of(COMPLETED_SALE));
+        when(pos.payChannelOrder(any(), any(), any(), any(), any(), any())).thenThrow(rejected("amount-mismatch"));
+
+        StepResult result = saga.execute(uncertain(context(paid("CASH"))));
+
+        assertThat(((StepResult.Completed) result).result()).containsEntry("saleNumber", "SALE-00000042")
+                .containsEntry("invoiceQueued", false);
+    }
+
+    @Test
+    void should_verify_and_repeat_the_post_once_when_the_payment_post_got_a_502() {
         ConnectorError badGateway = new ConnectorError(ErrorKind.UNCERTAIN, "pos-http-502", "Bad Gateway", 502, null);
-        when(pos.payChannelOrder(any(), any(), eq(KEY), any(), any(), any())).thenThrow(new ConnectorException(badGateway));
+        when(pos.payChannelOrder(any(), any(), eq(KEY), any(), any(), any())).thenThrow(new ConnectorException(badGateway))
+                .thenReturn(PAID);
         when(pos.findOrder(any(), any(), eq("GIFTHUB"), eq(ORDER_ID))).thenReturn(Optional.of(COMPLETED_SALE));
         StepContext first = context(paid("CASH"));
 
@@ -248,8 +272,9 @@ class OrderPaidSagaTest {
         StepContext retry = new StepContext(first.operation().retrying(badGateway, Instant.now(), true), first.integration(),
                 first.source(), first.target());
 
-        assertThat(((StepResult.Completed) saga.execute(retry)).result()).containsEntry("saleNumber", "SALE-00000042");
-        verify(pos, times(1)).payChannelOrder(any(), any(), any(), any(), any(), any());
+        assertThat(((StepResult.Completed) saga.execute(retry)).result()).containsEntry("saleNumber", "SALE-00000042")
+                .containsEntry("invoiceQueued", true);
+        verify(pos, times(2)).payChannelOrder(any(), any(), eq(KEY), any(), any(), any());
     }
 
     @Test

@@ -40,10 +40,13 @@ import static java.lang.System.Logger.Level.WARNING;
  * it is running, or DEAD waiting for a replay, it retries and in the end goes DEAD too, so the console replays
  * {@code CREATE_ORDER} and then this one. The real effect is checked on both sides:
  * the event must say {@code payment_status = PAID} (else {@code SKIPPED not-paid}) and the POS answer must leave
- * the sale {@code COMPLETED}. A sale already {@code COMPLETED} (idempotent retry, 409 {@code not-pending},
- * verification after a timeout) is success. Nothing is undone: the money was taken in GiftHub, so a POS rejection
- * ({@code amount-mismatch}, {@code sale-cancelled}, {@code insufficient-stock}, sale not found) ends DEAD for
- * manual reconciliation; a closed cash session is retried with backoff until the attempts run out.
+ * the sale {@code COMPLETED}. A sale already {@code COMPLETED} (idempotent retry, 409 {@code not-pending}) is
+ * success; when the verification after an uncertain attempt finds it {@code COMPLETED}, the same-key payment is
+ * still sent once so the POS enqueues the invoice if that attempt left it missing (200 or {@code not-pending} =
+ * success; any other rejection of a sale already paid = success with a WARN; a transient failure retries).
+ * Nothing is undone: the money was taken in GiftHub, so a POS rejection ({@code amount-mismatch},
+ * {@code sale-cancelled}, {@code insufficient-stock}, sale not found) ends DEAD for manual reconciliation; a closed
+ * cash session is retried with backoff until the attempts run out.
  */
 public class OrderPaidSaga implements Saga {
 
@@ -138,13 +141,12 @@ public class OrderPaidSaga implements Saga {
                 && pos.findOrder(endpoints.pos(), endpoints.readTimeout(), CHANNEL, payment.orderId()).isEmpty()) {
             return saleMissing(context, created);
         }
+        Optional<PosPort.Order> verified = Optional.empty();
         if (context.operation().needsVerification()) {
-            Optional<PosPort.Order> completed = completedSale(endpoints, payment.orderId());
-            if (completed.isPresent()) {
-                logStep(context, "verificación: la venta ya está cobrada en el POS");
-                return completed(payment, completed.get().saleId(), completed.get().saleNumber(), false);
-            }
-            logStep(context, "verificación: la venta sigue pendiente en el POS, se reenvía con la misma clave");
+            verified = completedSale(endpoints, payment.orderId());
+            logStep(context, verified.isPresent()
+                    ? "verificación: la venta ya está cobrada en el POS, se repite el pago con la misma clave para que complete la factura"
+                    : "verificación: la venta sigue pendiente en el POS, se reenvía con la misma clave");
         }
         PosPort.PaidSale sale;
         try {
@@ -152,6 +154,11 @@ public class OrderPaidSaga implements Saga {
                     CHANNEL, payment.orderId(), new PosPort.Payment(payment.posMethod(), payment.totalPyg(), payment.reference(),
                             saleInvoice(context.operation())));
         } catch (ConnectorException e) {
+            if (verified.isPresent() && e.error().kind() == ErrorKind.REJECTED && !NOT_PENDING.equals(e.error().code())) {
+                warn(context, "la venta está cobrada pero el POS rechazó repetir el pago (" + e.error().code()
+                        + "): revisar que tenga factura");
+                return completed(payment, verified.get().saleId(), verified.get().saleNumber(), false);
+            }
             if (!NOT_PENDING.equals(e.error().code())) {
                 throw e;
             }
