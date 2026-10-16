@@ -1,7 +1,14 @@
 package com.mindtechpy.nexus.it;
 
+import com.mindtechpy.nexus.application.port.out.IntegrationRepository;
 import com.mindtechpy.nexus.domain.identity.Role;
+import com.mindtechpy.nexus.domain.integration.Integration;
+import com.mindtechpy.nexus.domain.integration.IntegrationState;
+import com.mindtechpy.nexus.domain.shared.DomainException;
+import com.mindtechpy.nexus.domain.shared.TenantId;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.MediaType;
 import tools.jackson.databind.JsonNode;
 
@@ -15,11 +22,15 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 class IntegrationAdminIT extends AbstractOperationIT {
+
+    @Autowired
+    IntegrationRepository integrations;
 
     @Test
     void should_create_enabled_integration_with_spec_defaults_when_policy_is_omitted() {
@@ -66,6 +77,61 @@ class IntegrationAdminIT extends AbstractOperationIT {
         JsonNode problem = createIntegration(tenant, admin, targetConnection, Map.of(), 409);
 
         assertThat(problem.get("code").asString()).isEqualTo("catalog-target-in-use");
+    }
+
+    @Test
+    void should_return_409_when_a_disabled_catalog_integration_is_enabled_while_another_targets_the_same_connection() {
+        UUID first = UUID.fromString(createIntegration(tenant, admin, targetConnection, Map.of(), 201).get("id").asString());
+        changeState(first, admin, "DISABLED", 200);
+        createIntegration(tenant, admin, targetConnection, Map.of(), 201);
+
+        JsonNode problem = body(changeState(first, admin, "ENABLED", 409));
+
+        assertThat(problem.get("code").asString()).isEqualTo("catalog-target-in-use");
+    }
+
+    @Test
+    void should_return_409_when_a_catalog_integration_is_moved_to_a_connection_another_one_targets() {
+        createIntegration(tenant, admin, targetConnection, Map.of(), 201);
+        UUID other = createIntegration(Map.of());
+
+        JsonNode problem = body(perform(put("/api/admin/integrations/{id}", other).param("tenantId", tenant.toString())
+                .header("Authorization", bearer(admin)).contentType(MediaType.APPLICATION_JSON)
+                .content(toJson(Map.of("code", "catalog-moved", "targetConnectionId", targetConnection.toString()))), 409));
+
+        assertThat(problem.get("code").asString()).isEqualTo("catalog-target-in-use");
+    }
+
+    /** The race the application check cannot see: the index answers, for update as for insert. */
+    @Test
+    void should_answer_catalog_target_in_use_from_the_index_when_an_update_skips_the_application_check() {
+        createIntegration(tenant, admin, targetConnection, Map.of(), 201);
+        UUID movedId = createIntegration(Map.of());
+        UUID reenabledId = createIntegration(Map.of());
+        changeState(reenabledId, admin, "DISABLED", 200);
+        Integration moved = integrations.findById(TenantId.of(tenant), movedId).orElseThrow();
+        Integration reenabled = integrations.findById(TenantId.of(tenant), reenabledId).orElseThrow();
+
+        assertThatThrownBy(() -> integrations.update(moved.reconfigured(moved.code(), null, targetConnection, moved.policy(), moved.updatedAt())))
+                .isInstanceOfSatisfying(DomainException.class, e -> assertThat(e.code()).isEqualTo("catalog-target-in-use"));
+        assertThatThrownBy(() -> integrations.update(new Integration(reenabled.id(), reenabled.tenantId(), reenabled.flow(),
+                reenabled.code(), null, targetConnection, IntegrationState.ENABLED, reenabled.policy(), reenabled.version() + 1,
+                reenabled.updatedAt())))
+                .isInstanceOfSatisfying(DomainException.class, e -> assertThat(e.code()).isEqualTo("catalog-target-in-use"));
+    }
+
+    @Test
+    void should_not_report_catalog_target_in_use_when_another_unique_constraint_is_violated() {
+        UUID existingId = createIntegration(Map.of());
+        Integration existing = integrations.findById(TenantId.of(tenant), existingId).orElseThrow();
+        Integration sameCode = Integration.create(existing.tenantId(), existing.flow(), existing.code(), null,
+                createGiftHubConnection(), null, existing.updatedAt());
+        Integration sameId = new Integration(existing.id(), existing.tenantId(), existing.flow(), "catalog-same-id", null,
+                createGiftHubConnection(), IntegrationState.ENABLED, null, 1, existing.updatedAt());
+
+        assertThatThrownBy(() -> integrations.insert(sameCode))
+                .isInstanceOfSatisfying(DomainException.class, e -> assertThat(e.code()).isEqualTo("integration-code-taken"));
+        assertThatThrownBy(() -> integrations.insert(sameId)).isInstanceOf(DuplicateKeyException.class);
     }
 
     @Test

@@ -59,7 +59,7 @@ abstract class AbstractOperationIT extends AbstractPostgresIT {
         targetConnection = createGiftHubConnection();
     }
 
-    private UUID createGiftHubConnection() {
+    protected UUID createGiftHubConnection() {
         return UUID.fromString(body(perform(post("/api/admin/connections").param("tenantId", tenant.toString())
                 .header("Authorization", bearer(admin)).contentType(MediaType.APPLICATION_JSON)
                 .content(toJson(Map.of("connector", "GIFTHUB", "name", "gifthub-" + UUID.randomUUID().toString().substring(0, 8),
