@@ -1,9 +1,5 @@
 package com.mindtechpy.nexus.it;
 
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.classic.spi.ThrowableProxy;
-import ch.qos.logback.core.read.ListAppender;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import com.github.tomakehurst.wiremock.verification.LoggedRequest;
 import com.mindtechpy.nexus.domain.operation.ErrorKind;
@@ -11,7 +7,6 @@ import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 import tools.jackson.databind.JsonNode;
 
 import java.util.HashMap;
@@ -337,40 +332,35 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
         assertThat(jsonOf(posRequests("POST", paymentsPath).getFirst()).path("invoice").path("ruc").asString()).isEqualTo("80077777");
     }
 
-    /** Remote error details echo whatever they got: the logs keep codes, never the RUC, phone or names of the order. */
+    /**
+     * An invalid RUC goes on to consumidor final and a rejected amount ends in manual reconciliation. The steps and the result
+     * keep codes, never the RUC, phone or names the POS echoed. The log side is covered by OrderPaidSagaTest: here the
+     * saga's System.Logger (java.util.logging) loses its bridge to Logback whenever another cached context is closed.
+     */
     @Test
-    void should_not_log_the_ruc_phone_or_names_when_the_pos_rejects_the_invoice_and_then_the_amount() {
+    void should_keep_only_codes_in_steps_and_result_when_the_pos_rejects_the_invoice_and_then_the_amount() {
         stubPos(post(urlPathEqualTo(pos("/api/integration/customers/resolve"))).withRequestBody(containing("\"ruc\""))
                 .willReturn(jsonResponse("{\"code\":\"invalid-ruc\",\"message\":\"El RUC 80012345-6 de Comercial López S.A. no es válido\"}", 400)));
         stubPos(post(urlPathEqualTo(pos(paymentsPath))).willReturn(jsonResponse("{\"type\":\"about:blank\",\"status\":409,"
                 + "\"code\":\"amount-mismatch\",\"detail\":\"El monto de María López (+595981123456, RUC 80012345) no coincide\"}", 409)));
-        ListAppender<ILoggingEvent> logs = new ListAppender<>();
-        Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
-        logs.start();
-        root.addAppender(logs);
-        JsonNode received;
-        try {
-            createOrder();
-            String delivery = UUID.randomUUID().toString();
-            received = sendSigned(delivery, orderPaidWithInvoice(delivery, "80012345", "6"), 200);
-            drain();
-        } finally {
-            root.detachAppender(logs);
-            logs.stop();
-        }
+        createOrder();
+        String delivery = UUID.randomUUID().toString();
+        JsonNode received = sendSigned(delivery, orderPaidWithInvoice(delivery, "80012345", "6"), 200);
+        drain();
 
-        assertThat(reload(UUID.fromString(received.get("operationId").asString())).deadReason()).isEqualTo("manual-reconciliation");
-        assertThat(logs.list.stream().map(this::describe).collect(java.util.stream.Collectors.joining("\n")))
-                .contains("[NEXUS-ORDER]", "invalid-ruc", "amount-mismatch")
+        Operation dead = reload(UUID.fromString(received.get("operationId").asString()));
+        assertThat(dead.status()).isEqualTo(OperationStatus.DEAD);
+        assertThat(dead.deadReason()).isEqualTo("manual-reconciliation");
+        assertThat(dead.lastError().code()).isEqualTo("amount-mismatch");
+        assertThat(dead.result()).containsEntry("invoiceRefused", true);
+        List<String> steps = jdbc.sql("SELECT row_to_json(s)::text FROM operation_steps s WHERE operation_id = :id ORDER BY started_at")
+                .param("id", dead.id()).query(String.class).list();
+        assertThat(String.join("\n", steps)).contains("amount-mismatch");
+        assertThat(String.join("\n", steps) + dead.result())
                 .doesNotContain("80012345")
                 .doesNotContain("981123456")
                 .doesNotContain("María López")
                 .doesNotContain("Comercial López");
-    }
-
-    private String describe(ILoggingEvent event) {
-        String thrown = event.getThrowableProxy() instanceof ThrowableProxy proxy ? " " + proxy.getThrowable() : "";
-        return event.getFormattedMessage() + thrown;
     }
 
     @Test

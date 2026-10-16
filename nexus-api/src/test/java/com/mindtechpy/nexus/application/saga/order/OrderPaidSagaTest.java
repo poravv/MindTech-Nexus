@@ -1,9 +1,17 @@
 package com.mindtechpy.nexus.application.saga.order;
 
+import com.mindtechpy.nexus.application.port.out.AuditRepository;
+import com.mindtechpy.nexus.application.port.out.ConnectionRepository;
 import com.mindtechpy.nexus.application.port.out.ConnectorException;
+import com.mindtechpy.nexus.application.port.out.IntegrationRepository;
+import com.mindtechpy.nexus.application.port.out.OperationMetrics;
 import com.mindtechpy.nexus.application.port.out.OperationRepository;
 import com.mindtechpy.nexus.application.port.out.PosPort;
+import com.mindtechpy.nexus.application.port.out.RateLimiterPort;
+import com.mindtechpy.nexus.application.port.out.SecretCipherPort;
+import com.mindtechpy.nexus.application.port.out.TransactionRunner;
 import com.mindtechpy.nexus.application.saga.ManualReconciliationRequired;
+import com.mindtechpy.nexus.application.saga.SagaRunner;
 import com.mindtechpy.nexus.application.saga.StepContext;
 import com.mindtechpy.nexus.application.saga.StepContext.Endpoint;
 import com.mindtechpy.nexus.application.saga.StepResult;
@@ -21,13 +29,18 @@ import com.mindtechpy.nexus.domain.shared.TenantId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.text.MessageFormat;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -327,34 +340,31 @@ class OrderPaidSagaTest {
 
     @Test
     void should_not_log_the_pos_error_detail_when_the_ruc_is_invalid() {
-        List<String> logged = new ArrayList<>();
-        java.util.logging.Logger sagaLog = java.util.logging.Logger.getLogger(OrderPaidSaga.class.getName());
-        java.util.logging.Handler capture = new java.util.logging.Handler() {
-            @Override
-            public void publish(java.util.logging.LogRecord record) {
-                logged.add(new java.text.MessageFormat(record.getMessage()).format(record.getParameters()));
-            }
+        when(pos.resolveCustomer(any(), any(), any(), any(), any())).thenThrow(new ConnectorException(new ConnectorError(
+                ErrorKind.REJECTED, "invalid-ruc", "El RUC 80012345-7 de Comercial López S.A. (María López, " + PHONE + ") no es válido", 400, null)));
 
-            @Override
-            public void flush() {
-            }
+        String logged = logsOf(() -> saga.execute(invoiceStep(withInvoice(true, "80012345", "7", "Comercial López S.A."))),
+                OrderPaidSaga.class);
 
-            @Override
-            public void close() {
-            }
-        };
-        sagaLog.addHandler(capture);
-        try {
-            when(pos.resolveCustomer(any(), any(), any(), any(), any())).thenThrow(new ConnectorException(
-                    new ConnectorError(ErrorKind.REJECTED, "invalid-ruc", "El RUC 80012345-7 no es válido", 400, null)));
+        assertThat(logged).contains("[NEXUS-ORDER]", "invalid-ruc");
+        assertThat(logged).doesNotContain("80012345").doesNotContain("981123456")
+                .doesNotContain("María López").doesNotContain("Comercial López");
+    }
 
-            saga.execute(invoiceStep(withInvoice(true, "80012345", "7", "Comercial López S.A.")));
-        } finally {
-            sagaLog.removeHandler(capture);
-        }
+    /** The POS echoes the order's personal data in its detail: the runner's manual-reconciliation line keeps only the code. */
+    @Test
+    void should_log_only_codes_when_the_runner_sends_a_rejected_payment_to_manual_reconciliation() {
+        StepContext context = context(withInvoice(true, "80012345", "7", "Comercial López S.A."));
+        when(pos.payChannelOrder(any(), any(), any(), any(), any(), any())).thenThrow(new ConnectorException(new ConnectorError(
+                ErrorKind.REJECTED, "amount-mismatch", "El monto de María López (" + PHONE + ", RUC 80012345, Comercial López S.A.) no coincide",
+                409, null)));
+        SagaRunner runner = runnerFor(context);
 
-        assertThat(logged).anyMatch(line -> line.contains("invalid-ruc"));
-        assertThat(String.join("\n", logged)).doesNotContain("80012345");
+        String logged = logsOf(() -> runner.run(context.operation()), SagaRunner.class, OrderPaidSaga.class);
+
+        assertThat(logged).contains("[NEXUS-ORDER]", "conciliación manual (amount-mismatch)", "motivo=" + ManualReconciliationRequired.REASON);
+        assertThat(logged).doesNotContain("80012345").doesNotContain("981123456")
+                .doesNotContain("María López").doesNotContain("Comercial López");
     }
 
     @Test
@@ -490,6 +500,52 @@ class OrderPaidSagaTest {
 
         assertThat(((StepResult.Completed) result).result()).containsEntry("saleNumber", "SALE-00000042")
                 .containsEntry("invoiceQueued", false);
+    }
+
+    private SagaRunner runnerFor(StepContext context) {
+        IntegrationRepository integrations = mock(IntegrationRepository.class);
+        ConnectionRepository connections = mock(ConnectionRepository.class);
+        SecretCipherPort cipher = mock(SecretCipherPort.class);
+        RateLimiterPort rateLimiter = mock(RateLimiterPort.class);
+        TransactionRunner tx = mock(TransactionRunner.class);
+        when(integrations.findById(TENANT, context.integration().id())).thenReturn(Optional.of(context.integration()));
+        when(connections.findById(TENANT, context.source().connection().id())).thenReturn(Optional.of(context.source().connection()));
+        when(connections.findById(TENANT, context.target().connection().id())).thenReturn(Optional.of(context.target().connection()));
+        when(cipher.open(any(), any())).thenReturn(new ConnectionCredentials(Map.of("apiKey", "k")));
+        when(rateLimiter.tryAcquire(any(), any())).thenReturn(true);
+        when(tx.inTransaction(any())).thenAnswer(call -> call.<Supplier<?>>getArgument(0).get());
+        when(operations.update(any(), any())).thenReturn(true);
+        return new SagaRunner(List.of(saga), operations, integrations, connections, cipher, rateLimiter,
+                mock(OperationMetrics.class), mock(AuditRepository.class), Instant::now, tx);
+    }
+
+    /** Captures what the given classes log through {@link System.Logger}, which falls back to java.util.logging here. */
+    private static String logsOf(Runnable work, Class<?>... sources) {
+        List<String> logged = new ArrayList<>();
+        Handler capture = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                logged.add(new MessageFormat(record.getMessage()).format(record.getParameters())
+                        + (record.getThrown() == null ? "" : " " + record.getThrown()));
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        List<java.util.logging.Logger> loggers = Arrays.stream(sources)
+                .map(source -> java.util.logging.Logger.getLogger(source.getName())).toList();
+        loggers.forEach(logger -> logger.addHandler(capture));
+        try {
+            work.run();
+        } finally {
+            loggers.forEach(logger -> logger.removeHandler(capture));
+        }
+        return String.join("\n", logged);
     }
 
     private void createOrderEnded(Operation created) {
