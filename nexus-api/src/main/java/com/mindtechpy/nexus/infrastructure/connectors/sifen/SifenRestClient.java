@@ -6,6 +6,7 @@ import com.mindtechpy.nexus.domain.fiscal.InvoiceRequest;
 import com.mindtechpy.nexus.domain.fiscal.SifenDocument;
 import com.mindtechpy.nexus.domain.operation.ConnectorError;
 import com.mindtechpy.nexus.domain.operation.ErrorKind;
+import com.mindtechpy.nexus.domain.operation.ErrorMessages;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
@@ -38,7 +39,6 @@ class SifenRestClient implements SifenPort {
 
     static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     static final Duration KUDE_TIMEOUT = Duration.ofSeconds(10);
-    private static final int MAX_DETAIL = 500;
 
     /** SIFEN error body ({@code ApiErrorBody}). */
     record ErrorBody(String code, String message) {
@@ -149,9 +149,8 @@ class SifenRestClient implements SifenPort {
         }
         ErrorBody error = errorBody(response.body());
         String code = error.code() != null ? error.code() : "HTTP_" + status;
-        String detail = truncate(error.message() != null ? error.message() : "SIFEN respondió HTTP " + status);
         Duration retryAfter = response.headers().firstValue("Retry-After").flatMap(SifenRestClient::seconds).orElse(null);
-        return new Failed<>(new ConnectorError(classify(status, code, call.isWrite()), code, detail, status, retryAfter));
+        return new Failed<>(new ConnectorError(classify(status, code, call.isWrite()), code, ErrorMessages.describe(code), status, retryAfter));
     }
 
     /**
@@ -194,10 +193,6 @@ class SifenRestClient implements SifenPort {
         } catch (NumberFormatException e) {
             return Optional.empty();
         }
-    }
-
-    private static String truncate(String value) {
-        return value.length() <= MAX_DETAIL ? value : value.substring(0, MAX_DETAIL);
     }
 
     private static String outcome(Result<?> result) {

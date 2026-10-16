@@ -150,14 +150,12 @@ class GiftHubRestClient implements GiftHubPort {
             return response.body();
         }
         String code = text(response.body(), "code");
-        String message = text(response.body(), "error");
-        ConnectorError common = ConnectorHttp.commonError(response, code == null ? "gifthub-http-" + response.status() : code, message);
+        ConnectorError common = ConnectorHttp.commonError(response, code == null ? "gifthub-http-" + response.status() : code);
         if (common != null) {
             throw new ConnectorException(common);
         }
         ErrorKind kind = "IDEMPOTENCY_CONFLICT".equals(code) ? ErrorKind.UNCERTAIN : ErrorKind.REJECTED;
-        throw new ConnectorException(ConnectorHttp.error(kind, code == null ? "gifthub-http-" + response.status() : code,
-                message, response));
+        throw new ConnectorException(ConnectorHttp.error(kind, code == null ? "gifthub-http-" + response.status() : code, response));
     }
 
     private static Order order(JsonNode body) {

@@ -4,6 +4,7 @@ import com.mindtechpy.nexus.application.port.out.ConnectorException;
 import com.mindtechpy.nexus.domain.connection.ConnectionCredentials;
 import com.mindtechpy.nexus.domain.operation.ConnectorError;
 import com.mindtechpy.nexus.domain.operation.ErrorKind;
+import com.mindtechpy.nexus.domain.operation.ErrorMessages;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.http.HttpHeaders;
@@ -39,7 +40,6 @@ import java.util.function.Supplier;
 public class ConnectorHttp {
 
     static final int CONNECT_SECONDS = 5;
-    private static final int MAX_DETAIL = 300;
 
     /** {@code body} is {@link MissingNode} when the response had no JSON body. */
     public record Response(int status, JsonNode body, String retryAfter) {
@@ -109,7 +109,7 @@ public class ConnectorHttp {
     }
 
     /** 401/403 → AUTH, 408/5xx → TRANSIENT (524 → UNCERTAIN), 429 → RATE_LIMITED; null for the rest. */
-    public static ConnectorError commonError(Response response, String code, String detail) {
+    public static ConnectorError commonError(Response response, String code) {
         int status = response.status();
         ErrorKind kind;
         if (status == 401 || status == 403) {
@@ -123,12 +123,12 @@ public class ConnectorHttp {
         } else {
             return null;
         }
-        return error(kind, code, detail, response);
+        return error(kind, code, response);
     }
 
-    public static ConnectorError error(ErrorKind kind, String code, String detail, Response response) {
-        String shortDetail = detail == null || detail.length() <= MAX_DETAIL ? detail : detail.substring(0, MAX_DETAIL);
-        return new ConnectorError(kind, code, shortDetail, response.status(), retryAfter(response.retryAfter()));
+    /** Remote failures keep only code, kind and HTTP status: the remote free text can carry PII. */
+    public static ConnectorError error(ErrorKind kind, String code, Response response) {
+        return new ConnectorError(kind, code, ErrorMessages.describe(code), response.status(), retryAfter(response.retryAfter()));
     }
 
     /** Text of {@code field}, joined when it is an array (NestJS validation messages). */

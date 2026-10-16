@@ -57,12 +57,11 @@ class PosRestClient implements PosPort {
                     "/api/integration/customers/resolve", apiKey(pos), body);
             String code = text(response.body(), "code");
             if ((response.status() == 400 && INVALID_RUC.equals(code)) || (response.status() == 409 && RUC_IN_USE.equals(code))) {
-                throw new ConnectorException(ConnectorHttp.error(ErrorKind.REJECTED, code, problemDetail(response), response));
+                throw new ConnectorException(ConnectorHttp.error(ErrorKind.REJECTED, code, response));
             }
             String customerId = text(requireSuccess(response, false), "customerId");
             if (customerId == null) {
-                throw new ConnectorException(ConnectorHttp.error(ErrorKind.UNCERTAIN, "pos-invalid-response",
-                        "El POS no devolvió customerId", response));
+                throw new ConnectorException(ConnectorHttp.error(ErrorKind.UNCERTAIN, "pos-invalid-response", response));
             }
             return customerId;
         });
@@ -107,19 +106,16 @@ class PosRestClient implements PosPort {
                                     "dv", payment.invoice().dv(), "businessName", payment.invoice().legalName())));
             int status = response.status();
             if (status == 408 || status >= 500) {
-                throw new ConnectorException(ConnectorHttp.error(ErrorKind.UNCERTAIN, "pos-http-" + status,
-                        problemDetail(response), response));
+                throw new ConnectorException(ConnectorHttp.error(ErrorKind.UNCERTAIN, "pos-http-" + status, response));
             }
             if (status == 400) {
                 String code = text(response.body(), "code");
-                throw new ConnectorException(ConnectorHttp.error(ErrorKind.REJECTED, code == null ? "pos-bad-request" : code,
-                        problemDetail(response), response));
+                throw new ConnectorException(ConnectorHttp.error(ErrorKind.REJECTED, code == null ? "pos-bad-request" : code, response));
             }
             if (status == 409) {
                 String code = text(response.body(), "code");
                 ErrorKind kind = "cash-session-closed".equals(code) ? ErrorKind.TRANSIENT : ErrorKind.REJECTED;
-                throw new ConnectorException(ConnectorHttp.error(kind, code == null ? "pos-conflict" : code,
-                        problemDetail(response), response));
+                throw new ConnectorException(ConnectorHttp.error(kind, code == null ? "pos-conflict" : code, response));
             }
             JsonNode body = requireSuccess(response, false);
             return new PaidSale(text(body, "saleId"), text(body, "saleNumber"), text(body, "status"),
@@ -136,8 +132,7 @@ class PosRestClient implements PosPort {
                 return Optional.empty();
             }
             if (response.status() == 409) {
-                throw new ConnectorException(ConnectorHttp.error(ErrorKind.REJECTED, "pos-order-not-pending",
-                        text(response.body(), "message"), response));
+                throw new ConnectorException(ConnectorHttp.error(ErrorKind.REJECTED, "pos-order-not-pending", response));
             }
             return Optional.of(order(requireSuccess(response, false)));
         });
@@ -150,8 +145,7 @@ class PosRestClient implements PosPort {
                     "/api/integration/catalog?page=" + page + "&limit=" + limit, apiKey(pos), null);
             JsonNode body = requireSuccess(response, false);
             if (!body.path("items").isArray() || !body.path("total").isNumber()) {
-                throw new ConnectorException(ConnectorHttp.error(ErrorKind.UNCERTAIN, "pos-invalid-response",
-                        "El catálogo del POS no trae items/total", response));
+                throw new ConnectorException(ConnectorHttp.error(ErrorKind.UNCERTAIN, "pos-invalid-response", response));
             }
             List<CatalogItem> items = new ArrayList<>();
             for (JsonNode item : body.path("items")) {
@@ -167,25 +161,18 @@ class PosRestClient implements PosPort {
         if (response.isSuccess()) {
             return response.body();
         }
-        String message = text(response.body(), "message");
-        ConnectorError common = ConnectorHttp.commonError(response, "pos-http-" + response.status(), message);
+        ConnectorError common = ConnectorHttp.commonError(response, "pos-http-" + response.status());
         if (common != null) {
             throw new ConnectorException(common);
         }
         String code = text(response.body(), "code");
         ConnectorError error = switch (response.status()) {
-            case 422 -> ConnectorHttp.error(ErrorKind.REJECTED, code == null ? "pos-unprocessable" : code, message, response);
-            case 404 -> ConnectorHttp.error(ErrorKind.REJECTED, "pos-not-found", message, response);
-            case 409 -> ConnectorHttp.error(creatingOrder ? ErrorKind.CONFLICT : ErrorKind.REJECTED, "pos-conflict", message, response);
-            default -> ConnectorHttp.error(ErrorKind.REJECTED, "pos-bad-request", message, response);
+            case 422 -> ConnectorHttp.error(ErrorKind.REJECTED, code == null ? "pos-unprocessable" : code, response);
+            case 404 -> ConnectorHttp.error(ErrorKind.REJECTED, "pos-not-found", response);
+            case 409 -> ConnectorHttp.error(creatingOrder ? ErrorKind.CONFLICT : ErrorKind.REJECTED, "pos-conflict", response);
+            default -> ConnectorHttp.error(ErrorKind.REJECTED, "pos-bad-request", response);
         };
         throw new ConnectorException(error);
-    }
-
-    /** The payment endpoint answers problem+json ({@code detail}); the rest of the POS uses {@code message}. */
-    private static String problemDetail(Response response) {
-        String detail = text(response.body(), "detail");
-        return detail != null ? detail : text(response.body(), "message");
     }
 
     private static Order order(JsonNode body) {
