@@ -200,6 +200,7 @@ class OrderSagaIT extends AbstractConnectorIT {
         assertThat(failed.result()).containsEntry("compensated", true);
         var cancel = giftHubRequests("POST", "/orders/" + orderId + "/status");
         assertThat(cancel).hasSize(1);
+        assertThat(jsonOf(cancel.getFirst()).get("status").asString()).isEqualTo("CANCELLED");
         assertThat(jsonOf(cancel.getFirst()).get("note").asString()).contains("Gs. 0");
     }
 
