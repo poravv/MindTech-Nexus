@@ -18,6 +18,7 @@ class PayloadRetentionIT extends AbstractOperationIT {
     void should_keep_payload_of_failed_and_dead_operations_when_clearing_old_payloads() {
         UUID integration = createIntegration(fastPolicy());
         Operation succeeded = finishedLongAgo(start(integration, "ret-ok-" + UUID.randomUUID()), "SUCCEEDED");
+        jdbc.sql("UPDATE operations SET kind = 'CREATE_ORDER' WHERE id = :id").param("id", succeeded.id()).update();
         Operation failed = finishedLongAgo(start(integration, "ret-failed-" + UUID.randomUUID()), "FAILED");
         Operation dead = finishedLongAgo(start(integration, "ret-dead-" + UUID.randomUUID()), "DEAD");
 

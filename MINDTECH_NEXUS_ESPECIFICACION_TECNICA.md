@@ -163,7 +163,7 @@ Todas las tablas de negocio llevan `tenant_id uuid NOT NULL` y `created_at/updat
 
 `policy` de integración (jsonb tipado en `IntegrationPolicy`): `{ "ratePerSecond": 2, "burst": 5, "maxInFlight": 2, "maxAttempts": 5, "baseDelaySeconds": 5, "maxDelaySeconds": 300, "readTimeoutMs": 150000, "scheduleEverySeconds": 300 }` (el último solo para `CATALOG`; `readTimeoutMs` por defecto 200000 en `FISCAL`). `readTimeoutMs` máximo 280 000: un paso hace a lo sumo dos llamadas (VERIFY + SUBMIT, lectura + push de catálogo; `ARCHIVE_MISSING` archiva un tramo de 500 por paso) y ambas caben en el lease de 10 min de la cola.
 
-Retención: `operations.payload` de operaciones `SUCCEEDED` se vacía a `null` 30 días después de `finished_at` (job diario), `result` queda; `FAILED` y `DEAD` conservan el payload para poder reprocesarlas. `inbound_events` 90 días.
+Retención: `operations.payload` de operaciones `SUCCEEDED` se vacía a `null` 30 días después de `finished_at` (job diario), `result` queda; `FAILED` y `DEAD` conservan el payload para poder reprocesarlas. `inbound_events` 90 días. Las corridas `CATALOG_SYNC` en `SUCCEEDED` se borran (con sus `operation_steps`) 7 días después de `finished_at`.
 
 ## 7. Motor de operaciones durable (solo Postgres)
 
