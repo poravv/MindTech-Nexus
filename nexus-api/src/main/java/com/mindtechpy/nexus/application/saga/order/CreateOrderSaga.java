@@ -47,7 +47,7 @@ public class CreateOrderSaga implements Saga {
 
     private static final System.Logger log = System.getLogger(CreateOrderSaga.class.getName());
     static final Pattern E164 = Pattern.compile("^\\+[1-9][0-9]{7,14}$");
-    private static final Set<String> CANCELS_IN_GIFTHUB = Set.of("insufficient-stock", "unknown-product");
+    private static final Set<String> CANCELS_IN_GIFTHUB = Set.of("insufficient-stock", "unknown-product", "zero-total");
     private static final Set<String> POS_PAYMENT_METHODS = Set.of("CASH", "CARD", "TRANSFER", "OTHER");
     private static final Set<String> CONFIRMED_OR_LATER = Set.of("CONFIRMED", "PREPARING", "READY", "OUT_FOR_DELIVERY", "DELIVERED");
     private static final String ORDER_CANCELLED_IN_GIFTHUB = "gifthub-order-cancelled";

@@ -186,6 +186,24 @@ class OrderSagaIT extends AbstractConnectorIT {
     }
 
     @Test
+    void should_cancel_in_gifthub_with_the_pos_message_when_pos_rejects_a_zero_total_order() {
+        stubPos(post(urlPathEqualTo(pos("/api/integration/orders"))).willReturn(jsonResponse(
+                "{\"code\":\"zero-total\",\"message\":\"El pedido no puede quedar en Gs. 0\"}", 422)));
+        stubGiftHub(get(urlPathEqualTo(gh("/orders/" + orderId))).willReturn(okJson(giftHubOrder(orderId, "PENDING", "PENDING", "DELIVERY"))));
+
+        Operation op = receiveOrder(maria());
+        drain();
+
+        Operation failed = reload(op.id());
+        assertThat(failed.status()).isEqualTo(OperationStatus.FAILED);
+        assertThat(failed.lastError().code()).isEqualTo("zero-total");
+        assertThat(failed.result()).containsEntry("compensated", true);
+        var cancel = giftHubRequests("POST", "/orders/" + orderId + "/status");
+        assertThat(cancel).hasSize(1);
+        assertThat(jsonOf(cancel.getFirst()).get("note").asString()).contains("Gs. 0");
+    }
+
+    @Test
     void should_not_cancel_and_ask_for_manual_reconciliation_when_rejected_order_is_already_paid_in_gifthub() {
         stubPos(post(urlPathEqualTo(pos("/api/integration/orders"))).willReturn(jsonResponse(
                 "{\"code\":\"insufficient-stock\",\"message\":\"Stock insuficiente\"}", 422)));
