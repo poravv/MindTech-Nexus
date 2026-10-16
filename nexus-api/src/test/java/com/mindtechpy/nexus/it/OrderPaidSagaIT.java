@@ -1,5 +1,9 @@
 package com.mindtechpy.nexus.it;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.ThrowableProxy;
+import ch.qos.logback.core.read.ListAppender;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import com.github.tomakehurst.wiremock.verification.LoggedRequest;
 import com.mindtechpy.nexus.domain.operation.ErrorKind;
@@ -7,9 +11,7 @@ import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.slf4j.LoggerFactory;
 import tools.jackson.databind.JsonNode;
 
 import java.util.HashMap;
@@ -337,24 +339,38 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
 
     /** Remote error details echo whatever they got: the logs keep codes, never the RUC, phone or names of the order. */
     @Test
-    @ExtendWith(OutputCaptureExtension.class)
-    void should_not_log_the_ruc_phone_or_names_when_the_pos_rejects_the_invoice_and_then_the_amount(CapturedOutput output) {
+    void should_not_log_the_ruc_phone_or_names_when_the_pos_rejects_the_invoice_and_then_the_amount() {
         stubPos(post(urlPathEqualTo(pos("/api/integration/customers/resolve"))).withRequestBody(containing("\"ruc\""))
                 .willReturn(jsonResponse("{\"code\":\"invalid-ruc\",\"message\":\"El RUC 80012345-6 de Comercial López S.A. no es válido\"}", 400)));
         stubPos(post(urlPathEqualTo(pos(paymentsPath))).willReturn(jsonResponse("{\"type\":\"about:blank\",\"status\":409,"
                 + "\"code\":\"amount-mismatch\",\"detail\":\"El monto de María López (+595981123456, RUC 80012345) no coincide\"}", 409)));
-        createOrder();
-        String delivery = UUID.randomUUID().toString();
-        JsonNode received = sendSigned(delivery, orderPaidWithInvoice(delivery, "80012345", "6"), 200);
-        drain();
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+        logs.start();
+        root.addAppender(logs);
+        JsonNode received;
+        try {
+            createOrder();
+            String delivery = UUID.randomUUID().toString();
+            received = sendSigned(delivery, orderPaidWithInvoice(delivery, "80012345", "6"), 200);
+            drain();
+        } finally {
+            root.detachAppender(logs);
+            logs.stop();
+        }
 
         assertThat(reload(UUID.fromString(received.get("operationId").asString())).deadReason()).isEqualTo("manual-reconciliation");
-        assertThat(output.getAll())
+        assertThat(logs.list.stream().map(this::describe).collect(java.util.stream.Collectors.joining("\n")))
                 .contains("[NEXUS-ORDER]", "invalid-ruc", "amount-mismatch")
                 .doesNotContain("80012345")
                 .doesNotContain("981123456")
                 .doesNotContain("María López")
                 .doesNotContain("Comercial López");
+    }
+
+    private String describe(ILoggingEvent event) {
+        String thrown = event.getThrowableProxy() instanceof ThrowableProxy proxy ? " " + proxy.getThrowable() : "";
+        return event.getFormattedMessage() + thrown;
     }
 
     @Test
