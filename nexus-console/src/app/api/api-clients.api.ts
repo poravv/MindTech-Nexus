@@ -3,7 +3,7 @@ import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { TenantScope } from '../core/tenant-scope.service';
 
-export const SCOPES = ['fiscal:issue', 'fiscal:read', 'orders:write', 'orders:read', 'catalog:read', 'operations:read'] as const;
+export const SCOPES = ['fiscal:issue', 'fiscal:read', 'orders:write', 'orders:read', 'catalog:read', 'catalog:sync', 'operations:read'] as const;
 
 export interface ApiClient {
   id: string;

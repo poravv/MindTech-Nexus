@@ -25,6 +25,7 @@ const SCOPE_HELP: Record<(typeof SCOPES)[number], string> = {
   'orders:write': 'Informar el estado de pedidos.',
   'orders:read': 'Consultar pedidos.',
   'catalog:read': 'Leer el catálogo.',
+  'catalog:sync': 'Pedir una sincronización inmediata del catálogo.',
   'operations:read': 'Consultar operaciones y su estado.',
 };
 
