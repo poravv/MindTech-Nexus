@@ -105,9 +105,10 @@ public class CancelInvoiceSaga implements Saga {
 
     /** Nothing to undo: a failed cancellation leaves the document as it was, which is what the POS expects. */
     @Override
-    public void compensate(StepContext context, ConnectorError cause) {
+    public boolean compensate(StepContext context, ConnectorError cause) {
         log(context.operation(), "compensación: sin efecto remoto que deshacer (el DE sigue vigente) causa="
                 + cause.kind() + ":" + cause.code());
+        return false;
     }
 
     private static boolean isCancelled(SifenDocument doc) {

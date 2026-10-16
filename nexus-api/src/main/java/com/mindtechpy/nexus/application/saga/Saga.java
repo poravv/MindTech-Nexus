@@ -29,7 +29,10 @@ public interface Saga {
      * and before that is persisted. It undoes remote effects that need undoing (e.g. cancel the order in
      * GiftHub) based on {@code context.step()} and the cause; if it throws, the operation ends DEAD with
      * reason {@code compensation-failed}. Flows without remote effects to undo keep the default.
+     *
+     * @return true when it undid a remote effect, recorded as {@code result.compensated = true}
      */
-    default void compensate(StepContext context, ConnectorError cause) {
+    default boolean compensate(StepContext context, ConnectorError cause) {
+        return false;
     }
 }

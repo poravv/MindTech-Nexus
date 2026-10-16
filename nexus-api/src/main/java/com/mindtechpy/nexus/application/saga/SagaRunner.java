@@ -167,7 +167,7 @@ public class SagaRunner {
             case CONFLICT -> endWithFailure(saga, context, claimed, op.dead("idempotency-conflict", error, now), error, step);
             case AUTH -> endWithFailure(saga, context, claimed, op.dead("credentials", error, now), error, step);
             case PLAN_LIMIT -> endWithFailure(saga, context, claimed, op.dead("plan-limit", error, now), error, step);
-            case EXPIRED -> endWithFailure(saga, context, claimed, op.dead(error.code(), error, now), error, step);
+            case EXPIRED, CONFIGURATION -> endWithFailure(saga, context, claimed, op.dead(error.code(), error, now), error, step);
             case IN_PROGRESS -> persist(claimed, op.retrying(error,
                     now.plus(error.retryAfter() != null ? error.retryAfter() : IN_PROGRESS_DELAY), false), step);
             case TRANSIENT, RATE_LIMITED, UNCERTAIN -> {
@@ -189,15 +189,17 @@ public class SagaRunner {
 
     /**
      * Single compensation point: asks the saga to undo remote effects (when there is a saga context) and
-     * then persists the terminal status. A failing compensation, or one that asks for manual
-     * reconciliation, turns the outcome into DEAD so a human reviews it.
+     * then persists the terminal status, with {@code result.compensated = true} when it undid them. A failing
+     * compensation, or one that asks for manual reconciliation, turns the outcome into DEAD so a human reviews it.
      */
     private void endWithFailure(Saga saga, StepContext context, Operation claimed, Operation terminal,
                                 ConnectorError cause, OperationStep step) {
         Operation outcome = terminal;
         if (saga != null) {
             try {
-                saga.compensate(context, cause);
+                if (saga.compensate(context, cause)) {
+                    outcome = terminal.compensated();
+                }
             } catch (ManualReconciliationRequired e) {
                 log.log(WARNING, "{0} op={1} conciliación manual: {2}", terminal.flow().logPrefix(), terminal.id(), e.getMessage());
                 outcome = terminal.dead(ManualReconciliationRequired.REASON, new ConnectorError(cause.kind(), cause.code(),

@@ -79,9 +79,10 @@ public class IssueInvoiceSaga implements Saga {
 
     /** Nothing to undo: an issued document is only voided by a {@code CANCEL_INVOICE} the POS asks for. */
     @Override
-    public void compensate(StepContext context, ConnectorError cause) {
+    public boolean compensate(StepContext context, ConnectorError cause) {
         log(context.operation(), "compensación: sin efecto remoto que deshacer (un DE emitido solo se anula con "
                 + "CANCEL_INVOICE) causa=" + cause.kind() + ":" + cause.code());
+        return false;
     }
 
     private StepResult submit(StepContext context) {

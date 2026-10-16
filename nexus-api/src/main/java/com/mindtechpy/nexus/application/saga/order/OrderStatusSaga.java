@@ -134,10 +134,11 @@ public class OrderStatusSaga implements Saga {
 
     /** A rejection means GiftHub and the POS disagree: never forced, always reconciled by a human. */
     @Override
-    public void compensate(StepContext context, ConnectorError cause) {
+    public boolean compensate(StepContext context, ConnectorError cause) {
         if (cause.kind() == ErrorKind.REJECTED) {
             throw new ManualReconciliationRequired(cause.detail());
         }
+        return false;
     }
 
     private GiftHubPort.Order current(OrderEndpoints endpoints, String orderId) {

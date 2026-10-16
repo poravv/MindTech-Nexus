@@ -34,8 +34,9 @@ import static java.lang.System.Logger.Level.WARNING;
  * blocks) → {@code NOTIFY_GIFTHUB} ({@code CONFIRMED} with the sale id and number). Compensation: a POS
  * rejection (stock, unknown product) cancels the order in GiftHub with the reason, unless it is already paid
  * there (manual reconciliation); an order cancelled in GiftHub before the confirmation cancels the pending POS
- * sale. A NOTIFY that exhausts its attempts ends DEAD without compensation: the sale exists and a replay only
- * re-runs NOTIFY.
+ * sale; either undo is recorded as {@code result.compensated = true}. An order without an E.164 phone on a connection
+ * without {@code defaultCustomerId} ends DEAD {@code customer-missing}, replayed once the connection is configured.
+ * A NOTIFY that exhausts its attempts ends DEAD without compensation: the sale exists and a replay only re-runs NOTIFY.
  */
 public class CreateOrderSaga implements Saga {
 
@@ -92,7 +93,8 @@ public class CreateOrderSaga implements Saga {
         if (phone == null || !E164.matcher(phone).matches()) {
             Object fallback = endpoints.pos().connection().settings().get("defaultCustomerId");
             if (fallback == null || fallback.toString().isBlank()) {
-                return rejected("customer-missing", "El pedido no trae un teléfono E.164 y la conexión POS no tiene defaultCustomerId");
+                return new StepResult.Failed(ConnectorError.of(ErrorKind.CONFIGURATION, "customer-missing",
+                        "El pedido no trae un teléfono E.164 y la conexión POS no tiene defaultCustomerId"));
             }
             logStep(context, "cliente por defecto de la conexión");
             return new StepResult.Next(CREATE_ORDER, null, "default", merge(context, Map.of("customerId", fallback.toString())));
@@ -182,14 +184,17 @@ public class CreateOrderSaga implements Saga {
      * Anything else needs no undo: the operation ends FAILED/DEAD for a human (replay resumes the step).
      */
     @Override
-    public void compensate(StepContext context, ConnectorError cause) {
+    public boolean compensate(StepContext context, ConnectorError cause) {
         if (CREATE_ORDER.equals(context.step()) && CANCELS_IN_GIFTHUB.contains(cause.code())) {
             cancelInGiftHub(context, cause);
-        } else if (NOTIFY_GIFTHUB.equals(context.step()) && ORDER_CANCELLED_IN_GIFTHUB.equals(cause.code())) {
-            cancelInPos(context);
-        } else {
-            logStep(context, "sin compensación para " + cause.kind() + ":" + cause.code());
+            return true;
         }
+        if (NOTIFY_GIFTHUB.equals(context.step()) && ORDER_CANCELLED_IN_GIFTHUB.equals(cause.code())) {
+            cancelInPos(context);
+            return true;
+        }
+        logStep(context, "sin compensación para " + cause.kind() + ":" + cause.code());
+        return false;
     }
 
     private void cancelInGiftHub(StepContext context, ConnectorError cause) {

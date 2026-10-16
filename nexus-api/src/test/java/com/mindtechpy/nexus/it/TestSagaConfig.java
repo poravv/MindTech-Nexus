@@ -102,12 +102,12 @@ public class TestSagaConfig {
         }
 
         @Override
-        public void compensate(StepContext context, ConnectorError cause) {
+        public boolean compensate(StepContext context, ConnectorError cause) {
             if (context.source() != null) {
-                real.compensate(context, cause);
-                return;
+                return real.compensate(context, cause);
             }
             compensations.add(new Compensation(context.operation().id(), context.step(), cause));
+            return false;
         }
     }
 

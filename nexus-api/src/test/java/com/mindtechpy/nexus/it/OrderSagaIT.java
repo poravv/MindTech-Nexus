@@ -1,6 +1,7 @@
 package com.mindtechpy.nexus.it;
 
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
+import com.mindtechpy.nexus.domain.operation.ErrorKind;
 import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationStatus;
 import com.mindtechpy.nexus.domain.operation.OperationStep;
@@ -157,6 +158,7 @@ class OrderSagaIT extends AbstractConnectorIT {
         assertThat(failed.status()).isEqualTo(OperationStatus.FAILED);
         assertThat(failed.lastError().code()).isEqualTo("unknown-product");
         assertThat(failed.lastError().detail()).contains("Extra cheddar");
+        assertThat(failed.result()).containsEntry("compensated", true);
         assertThat(posRequests("POST", "/api/integration/orders")).isEmpty();
         var cancel = giftHubRequests("POST", "/orders/" + orderId + "/status");
         assertThat(cancel).hasSize(1);
@@ -175,6 +177,7 @@ class OrderSagaIT extends AbstractConnectorIT {
         Operation failed = reload(op.id());
         assertThat(failed.status()).isEqualTo(OperationStatus.FAILED);
         assertThat(failed.lastError().code()).isEqualTo("insufficient-stock");
+        assertThat(failed.result()).containsEntry("compensated", true);
         var cancel = giftHubRequests("POST", "/orders/" + orderId + "/status");
         assertThat(cancel).hasSize(1);
         assertThat(jsonOf(cancel.getFirst()).get("status").asString()).isEqualTo("CANCELLED");
@@ -263,6 +266,30 @@ class OrderSagaIT extends AbstractConnectorIT {
     }
 
     @Test
+    void should_end_dead_and_create_the_sale_on_replay_when_the_order_has_no_phone_and_no_default_customer_is_configured() {
+        stubPos(post(urlPathEqualTo(pos("/api/integration/orders"))).willReturn(jsonResponse(SALE, 201)));
+        posSettings("{}");
+
+        Operation op = receiveOrder(null);
+        drain();
+
+        Operation dead = reload(op.id());
+        assertThat(dead.status()).isEqualTo(OperationStatus.DEAD);
+        assertThat(dead.deadReason()).isEqualTo("customer-missing");
+        assertThat(dead.lastError().kind()).isEqualTo(ErrorKind.CONFIGURATION);
+        assertThat(posRequests("POST", "/api/integration/orders")).isEmpty();
+        assertThat(giftHubRequests("POST", "/orders/" + orderId + "/status")).isEmpty();
+
+        posSettings("{\"defaultCustomerId\":\"c-default\"}");
+        perform(MockMvcRequestBuilders.post("/api/admin/operations/{id}/replay", op.id()).param("tenantId", tenant.toString())
+                .header("Authorization", bearer(admin)), 200);
+        drain();
+
+        assertThat(reload(op.id()).status()).isEqualTo(OperationStatus.SUCCEEDED);
+        assertThat(jsonOf(posRequests("POST", "/api/integration/orders").getFirst()).get("customerId").asString()).isEqualTo("c-default");
+    }
+
+    @Test
     void should_cancel_pos_sale_when_order_was_cancelled_in_gifthub_before_confirmation() {
         stubPos(post(urlPathEqualTo(pos("/api/integration/orders"))).willReturn(jsonResponse(SALE, 201)));
         stubGiftHub(post(urlPathEqualTo(gh("/orders/" + orderId + "/status"))).willReturn(jsonResponse(
@@ -277,6 +304,7 @@ class OrderSagaIT extends AbstractConnectorIT {
         Operation failed = reload(op.id());
         assertThat(failed.status()).isEqualTo(OperationStatus.FAILED);
         assertThat(failed.lastError().code()).isEqualTo("gifthub-order-cancelled");
+        assertThat(failed.result()).containsEntry("compensated", true);
         assertThat(posRequests("POST", "/api/integration/orders/GIFTHUB/" + orderId + "/cancel")).hasSize(1);
     }
 
@@ -285,6 +313,11 @@ class OrderSagaIT extends AbstractConnectorIT {
         JsonNode received = sendSigned(delivery, orderCreated(delivery, orderId, customer), 200);
         assertThat(received.get("outcome").asString()).isEqualTo("ACCEPTED");
         return reload(UUID.fromString(received.get("operationId").asString()));
+    }
+
+    private void posSettings(String settings) {
+        jdbc.sql("UPDATE connections SET settings = CAST(:settings AS jsonb) WHERE id = :id")
+                .param("settings", settings).param("id", posConnection).update();
     }
 
     private String mapping(String type, String internalId) {

@@ -35,9 +35,10 @@ import static java.lang.System.Logger.Level.WARNING;
  * POS) in the body: the POS freezes it on the sale, so a customer shared by several orders, or a replay resuming at
  * this step, never decides which RUC is invoiced; without it the invoice is consumidor final. Order gate: it only runs
  * once the sale exists, per {@code CREATE_ORDER}'s result or, failing that, a lookup in the POS. Without a sale it finishes
- * {@code SKIPPED no-sale} only when {@code CREATE_ORDER} ended FAILED (a confirmed rejection, already compensated);
- * while that one is running, or DEAD waiting for a replay, it retries and in the end goes DEAD too, so the console
- * replays {@code CREATE_ORDER} and then this one. The real effect is checked on both sides:
+ * {@code SKIPPED no-sale} only when {@code CREATE_ORDER} ended FAILED with {@code result.compensated} (the order
+ * cancelled in GiftHub); FAILED without it ends DEAD {@code manual-reconciliation} ({@code sale-rejected}); while
+ * it is running, or DEAD waiting for a replay, it retries and in the end goes DEAD too, so the console replays
+ * {@code CREATE_ORDER} and then this one. The real effect is checked on both sides:
  * the event must say {@code payment_status = PAID} (else {@code SKIPPED not-paid}) and the POS answer must leave
  * the sale {@code COMPLETED}. A sale already {@code COMPLETED} (idempotent retry, 409 {@code not-pending},
  * verification after a timeout) is success. Nothing is undone: the money was taken in GiftHub, so a POS rejection
@@ -169,20 +170,26 @@ public class OrderPaidSaga implements Saga {
 
     /** Nothing to undo: GiftHub already took the money. A POS rejection is settled by a human. */
     @Override
-    public void compensate(StepContext context, ConnectorError cause) {
+    public boolean compensate(StepContext context, ConnectorError cause) {
         if (cause.kind() == ErrorKind.REJECTED) {
             throw new ManualReconciliationRequired("El pedido está pagado en GiftHub pero el POS no registró el cobro ("
                     + cause.code() + (cause.detail() == null ? "" : ": " + cause.detail()) + "): cobrar o anular la venta a mano");
         }
+        return false;
     }
 
     /**
-     * No sale in the POS. CREATE_ORDER FAILED (rejected, the order cancelled in GiftHub): nothing to collect.
-     * Anything else (not here yet, running, DEAD until a replay) may still produce it: retry.
+     * No sale in the POS. CREATE_ORDER FAILED with its compensation confirmed (the order cancelled in GiftHub): nothing
+     * to collect. FAILED without it: the money was taken for an order the POS never got, a human settles it. Anything
+     * else (not here yet, running, DEAD until a replay) may still produce it: retry.
      */
     private StepResult saleMissing(StepContext context, Operation created) {
         if (created != null && created.status() == OperationStatus.FAILED) {
-            return skipped(context, "no-sale", "CREATE_ORDER terminó FAILED sin venta en el POS");
+            String cause = created.lastError() == null ? "sin error" : created.lastError().code();
+            if (created.result() != null && Boolean.TRUE.equals(created.result().get("compensated"))) {
+                return skipped(context, "no-sale", "CREATE_ORDER terminó FAILED (" + cause + ") y el pedido se canceló en GiftHub");
+            }
+            return rejected("sale-rejected", "CREATE_ORDER terminó FAILED (" + cause + ") sin venta en el POS ni cancelación en GiftHub");
         }
         return new StepResult.Failed(ConnectorError.of(ErrorKind.TRANSIENT, "sale-pending",
                 created == null ? "Todavía no llegó order.created" : "CREATE_ORDER sigue " + created.status() + " sin venta"));

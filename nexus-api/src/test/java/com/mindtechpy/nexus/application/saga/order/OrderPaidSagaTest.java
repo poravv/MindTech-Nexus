@@ -108,14 +108,29 @@ class OrderPaidSagaTest {
     }
 
     @Test
-    void should_skip_with_no_sale_when_create_order_was_rejected_and_the_pos_has_no_sale() {
+    void should_skip_with_no_sale_when_create_order_was_rejected_and_its_cancellation_in_gifthub_is_confirmed() {
         createOrderEnded(Operation.create(TENANT, UUID.randomUUID(), OperationKind.CREATE_ORDER, ORDER_ID, Map.of(), 5, null, Instant.now())
-                .atStep("CREATE_ORDER").failed(ConnectorError.of(ErrorKind.REJECTED, "insufficient-stock", "sin stock"), Instant.now()));
+                .atStep("CREATE_ORDER").failed(ConnectorError.of(ErrorKind.REJECTED, "insufficient-stock", "sin stock"), Instant.now())
+                .compensated());
 
         StepResult result = saga.execute(context(paid("CASH")));
 
         assertThat(((StepResult.Completed) result).result()).containsEntry("outcome", "SKIPPED").containsEntry("reason", "no-sale");
         verify(pos).findOrder(any(), any(), eq("GIFTHUB"), eq(ORDER_ID));
+        verify(pos, never()).payChannelOrder(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void should_ask_for_manual_reconciliation_when_create_order_was_rejected_without_compensation() {
+        createOrderEnded(Operation.create(TENANT, UUID.randomUUID(), OperationKind.CREATE_ORDER, ORDER_ID, Map.of(), 5, null, Instant.now())
+                .atStep("CREATE_ORDER").failed(ConnectorError.of(ErrorKind.REJECTED, "pos-bad-request", "sucursal inexistente"),
+                        Instant.now()));
+
+        ConnectorError error = failure(saga.execute(context(paid("CASH"))));
+
+        assertThat(error.kind()).isEqualTo(ErrorKind.REJECTED);
+        assertThat(error.code()).isEqualTo("sale-rejected");
+        assertThatThrownBy(() -> saga.compensate(context(paid("CASH")), error)).isInstanceOf(ManualReconciliationRequired.class);
         verify(pos, never()).payChannelOrder(any(), any(), any(), any(), any(), any());
     }
 

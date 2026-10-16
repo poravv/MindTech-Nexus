@@ -5,6 +5,7 @@ import com.mindtechpy.nexus.domain.shared.DomainException;
 import com.mindtechpy.nexus.domain.shared.TenantId;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -78,6 +79,13 @@ public record Operation(UUID id, TenantId tenantId, UUID integrationId, Operatio
 
     public Operation failed(ConnectorError error, Instant now) {
         return next(OperationStatus.FAILED, currentStep, attempts, nextRunAt, result, error, null, now);
+    }
+
+    /** The saga undid the remote effects of this ended operation: {@code result.compensated = true}. */
+    public Operation compensated() {
+        Map<String, Object> marked = new HashMap<>(result == null ? Map.of() : result);
+        marked.put("compensated", true);
+        return next(status, currentStep, attempts, nextRunAt, marked, lastError, deadReason, finishedAt);
     }
 
     public Operation dead(String reason, ConnectorError error, Instant now) {

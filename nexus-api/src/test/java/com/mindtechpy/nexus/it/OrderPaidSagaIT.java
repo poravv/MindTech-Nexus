@@ -131,6 +131,22 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
     }
 
     @Test
+    void should_end_dead_for_manual_reconciliation_when_the_order_was_rejected_without_cancelling_it_in_gifthub() {
+        stubPos(post(urlPathEqualTo(pos("/api/integration/orders"))).willReturn(jsonResponse(
+                "{\"type\":\"about:blank\",\"status\":400,\"code\":\"invalid-branch\",\"detail\":\"Sucursal inexistente\"}", 400)));
+        createOrder();
+
+        Operation paid = receivePaid(UUID.randomUUID().toString(), "CASH");
+        drain();
+
+        Operation dead = reload(paid.id());
+        assertThat(dead.status()).isEqualTo(OperationStatus.DEAD);
+        assertThat(dead.deadReason()).isEqualTo("manual-reconciliation");
+        assertThat(dead.lastError().code()).isEqualTo("sale-rejected");
+        assertThat(posRequests("POST", paymentsPath)).isEmpty();
+    }
+
+    @Test
     void should_succeed_when_the_pos_already_closed_the_sale_and_answers_not_pending() {
         stubPos(post(urlPathEqualTo(pos(paymentsPath))).willReturn(jsonResponse(
                 "{\"type\":\"about:blank\",\"status\":409,\"code\":\"not-pending\",\"detail\":\"La venta no está pendiente\"}", 409)));
