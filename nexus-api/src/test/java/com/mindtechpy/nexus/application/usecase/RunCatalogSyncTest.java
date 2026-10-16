@@ -56,7 +56,7 @@ class RunCatalogSyncTest {
     }
 
     @Test
-    void should_start_a_run_keyed_by_integration_and_minute() {
+    void should_start_a_run_keyed_by_integration_and_20_second_window() {
         Integration integration = catalogIntegration();
         when(integrations.findAll(tenant)).thenReturn(List.of(integration));
         Operation operation = operationOf(integration);
@@ -66,14 +66,14 @@ class RunCatalogSyncTest {
 
         ArgumentCaptor<StartOperation.Command> command = ArgumentCaptor.forClass(StartOperation.Command.class);
         verify(startOperation).execute(command.capture());
-        assertThat(command.getValue().idempotencyKey()).isEqualTo(integration.id() + ":pos:202610161405");
+        assertThat(command.getValue().idempotencyKey()).isEqualTo(integration.id() + ":pos:2026101614051");
         assertThat(command.getValue().kind()).isEqualTo(OperationKind.CATALOG_SYNC);
         assertThat(command.getValue().payload()).isEqualTo(Map.of("trigger", "pos"));
         assertThat(requested).containsExactly(new RunCatalogSync.Requested(integration.id(), operation.id(), true));
     }
 
     @Test
-    void should_report_created_false_when_the_run_of_this_minute_already_exists() {
+    void should_report_created_false_when_the_run_of_this_window_already_exists() {
         Integration integration = catalogIntegration();
         when(integrations.findAll(tenant)).thenReturn(List.of(integration));
         when(startOperation.execute(any())).thenReturn(new StartOperation.Started(operationOf(integration), false));

@@ -30,7 +30,8 @@ class CatalogSyncRequestIT extends AbstractConnectorIT {
     private RunCatalogSync runCatalogSync;
 
     @Test
-    void should_run_one_sync_when_the_pos_asks_and_reuse_it_within_the_same_minute() {
+    void should_run_one_sync_when_the_pos_asks_and_reuse_it_within_the_same_window_and_start_another_in_the_next() throws Exception {
+        waitForRoomInTheCurrentWindow();
         UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
         stubOnePageCatalogAndBulk();
         String token = clientToken(tenant, "catalog:sync");
@@ -53,6 +54,20 @@ class CatalogSyncRequestIT extends AbstractConnectorIT {
         assertThat(again.get(0).get("operationId").asString()).isEqualTo(operationId.toString());
         assertThat(again.get(0).get("created").asBoolean()).isFalse();
         assertThat(giftHubRequests("PUT", "/products/bulk")).hasSize(1);
+
+        jdbc.sql("UPDATE operations SET idempotency_key = :k WHERE id = :id")
+                .param("k", integration + ":pos:200001010000" + 0).param("id", operationId).update();
+        JsonNode next = body(requestSync(token, 202));
+
+        assertThat(next.get(0).get("operationId").asString()).isNotEqualTo(operationId.toString());
+        assertThat(next.get(0).get("created").asBoolean()).isTrue();
+    }
+
+    private void waitForRoomInTheCurrentWindow() throws InterruptedException {
+        long millisLeft = 20_000 - System.currentTimeMillis() % 20_000;
+        if (millisLeft < 5_000) {
+            Thread.sleep(millisLeft);
+        }
     }
 
     @Test

@@ -84,15 +84,16 @@ public class RunCatalogSync {
         return started;
     }
 
-    /** What the POS gets back per integration: {@code created} is false when this minute's run already existed. */
+    /** What the POS gets back per integration: {@code created} is false when this 20 s window's run already existed. */
     public record Requested(UUID integrationId, UUID operationId, boolean created) {
     }
 
     /**
      * The POS asks for an immediate sync (a product just sold out) for every ENABLED CATALOG integration of its
      * tenant. 404 {@code catalog-integration-not-found} if there is none; 409 {@code catalog-run-in-progress} if
-     * any of them has a run in flight, before starting any. The key is per minute, so a repeated request within
-     * the same minute is answered with the run already created.
+     * any of them has a run in flight, before starting any. The key is a 20 s window (the POS debounce), so a
+     * repeated request within the same window is answered with the run already created, while a stock change in
+     * the next window starts a new one.
      */
     public List<Requested> requestFromPos(TenantId tenantId) {
         List<Integration> enabled = integrations.findAll(tenantId).stream()
@@ -102,12 +103,13 @@ public class RunCatalogSync {
             throw new DomainException(DomainException.Kind.NOT_FOUND, "catalog-integration-not-found",
                     "El tenant no tiene una integración de catálogo habilitada");
         }
-        String minute = MINUTE.format(clock.now());
+        Instant now = clock.now();
+        String window = MINUTE.format(now) + now.atZone(ZoneOffset.UTC).getSecond() / 20;
         return tx.inTransaction(() -> {
             lockAndRequireIdle(enabled);
             return enabled.stream().map(integration -> {
                 log.log(INFO, "[NEXUS-CATALOG] sync pedido por el POS tenant={0} integración={1}", tenantId, integration.code());
-                StartOperation.Started started = start(integration, integration.id() + ":pos:" + minute, "pos");
+                StartOperation.Started started = start(integration, integration.id() + ":pos:" + window, "pos");
                 return new Requested(integration.id(), started.operation().id(), started.created());
             }).toList();
         });
