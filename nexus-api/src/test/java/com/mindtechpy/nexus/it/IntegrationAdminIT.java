@@ -5,11 +5,18 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import tools.jackson.databind.JsonNode;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 class IntegrationAdminIT extends AbstractOperationIT {
@@ -59,6 +66,27 @@ class IntegrationAdminIT extends AbstractOperationIT {
         JsonNode problem = createIntegration(tenant, admin, targetConnection, Map.of(), 409);
 
         assertThat(problem.get("code").asString()).isEqualTo("catalog-target-in-use");
+    }
+
+    @Test
+    void should_let_exactly_one_create_win_when_two_catalog_integrations_target_the_same_connection_at_once() throws Exception {
+        CountDownLatch go = new CountDownLatch(1);
+        Callable<Integer> create = () -> {
+            go.await();
+            Map<String, Object> request = Map.of("flow", "CATALOG", "code", "catalog-" + UUID.randomUUID().toString().substring(0, 8),
+                    "targetConnectionId", targetConnection.toString(), "policy", Map.of());
+            return mvc.perform(post("/api/admin/integrations").param("tenantId", tenant.toString())
+                    .header("Authorization", bearer(admin)).contentType(MediaType.APPLICATION_JSON)
+                    .content(toJson(request))).andReturn().getResponse().getStatus();
+        };
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<Integer>> results = List.of(pool.submit(create), pool.submit(create));
+            go.countDown();
+            assertThat(List.of(results.get(0).get(), results.get(1).get())).containsExactlyInAnyOrder(201, 409);
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test

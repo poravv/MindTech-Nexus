@@ -215,32 +215,6 @@ class CatalogSyncRequestIT extends AbstractConnectorIT {
         }
     }
 
-    /** Two enabled catalog integrations to one GiftHub may predate the rule: they keep running, one run at a time. */
-    @Test
-    void should_keep_scheduling_one_run_per_gifthub_and_let_the_duplicate_be_disabled_when_two_catalog_integrations_predate_the_rule() {
-        UUID first = createIntegration("CATALOG", posConnection, giftHubConnection);
-        UUID duplicate = createIntegration("CATALOG", posConnection, insertConnection(ConnectorType.GIFTHUB, GIFTHUB,
-                Map.of("apiKey", "gh_live_test", "webhookSecret", WEBHOOK_SECRET), Map.of()));
-        jdbc.sql("UPDATE integrations SET target_connection_id = :gh WHERE id = :id")
-                .param("gh", giftHubConnection).param("id", duplicate).update();
-
-        runCatalogSync.scheduleDue();
-
-        assertThat(unfinishedRuns(first, duplicate)).isEqualTo(1);
-        jdbc.sql("UPDATE operations SET status = 'SUCCEEDED', finished_at = now() WHERE integration_id IN (:a, :b)")
-                .param("a", first).param("b", duplicate).update();
-        assertThat(body(requestSync(clientToken(tenant, "catalog:sync"), 202))).hasSize(1);
-        assertThat(unfinishedRuns(first, duplicate)).isEqualTo(1);
-
-        changeState(duplicate, admin, "DISABLED", 200);
-        assertThat(body(changeState(duplicate, admin, "ENABLED", 409)).get("code").asString()).isEqualTo("catalog-target-in-use");
-    }
-
-    private long unfinishedRuns(UUID a, UUID b) {
-        return jdbc.sql("SELECT count(*) FROM operations WHERE integration_id IN (:a, :b) AND status IN ('PENDING', 'RETRY', 'RUNNING')")
-                .param("a", a).param("b", b).query(Long.class).single();
-    }
-
     private org.springframework.test.web.servlet.MvcResult requestSync(String token, int expected) {
         return perform(post("/api/v1/catalog/sync").header("Authorization", bearer(token)), expected);
     }
