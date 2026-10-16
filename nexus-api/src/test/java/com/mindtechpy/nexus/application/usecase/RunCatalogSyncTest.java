@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -93,6 +94,18 @@ class RunCatalogSyncTest {
                     assertThat(e.code()).isEqualTo("catalog-run-in-progress");
                 });
         verify(startOperation, never()).execute(any());
+    }
+
+    @Test
+    void should_start_one_run_per_target_connection_when_two_enabled_integrations_share_it() {
+        Integration first = catalogIntegration();
+        Integration second = Integration.create(tenant, Flow.CATALOG, "other-catalog", UUID.randomUUID(),
+                first.targetConnectionId(), null, NOW);
+        when(integrations.findAll(tenant)).thenReturn(List.of(first, second));
+        when(startOperation.execute(any())).thenReturn(new StartOperation.Started(operationOf(first), true));
+
+        assertThat(runCatalogSync.requestFromPos(tenant)).hasSize(1);
+        verify(startOperation, times(1)).execute(any());
     }
 
     private Integration catalogIntegration() {

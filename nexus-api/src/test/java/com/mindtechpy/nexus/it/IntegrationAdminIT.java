@@ -53,11 +53,20 @@ class IntegrationAdminIT extends AbstractOperationIT {
     }
 
     @Test
+    void should_return_409_when_a_second_catalog_integration_targets_the_same_connection() {
+        createIntegration(tenant, admin, targetConnection, Map.of(), 201);
+
+        JsonNode problem = createIntegration(tenant, admin, targetConnection, Map.of(), 409);
+
+        assertThat(problem.get("code").asString()).isEqualTo("catalog-target-in-use");
+    }
+
+    @Test
     void should_return_409_when_code_is_repeated_in_the_tenant() {
         JsonNode created = createIntegration(tenant, admin, targetConnection, Map.of(), 201);
 
         JsonNode problem = body(perform(put("/api/admin/integrations/{id}", UUID.fromString(
-                        createIntegration(tenant, admin, targetConnection, Map.of(), 201).get("id").asString()))
+                        createIntegration(Map.of()).toString()))
                 .param("tenantId", tenant.toString()).header("Authorization", bearer(admin))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(toJson(Map.of("code", created.get("code").asString(), "targetConnectionId", targetConnection.toString()))), 409));

@@ -279,14 +279,13 @@ class CatalogSyncIT extends AbstractConnectorIT {
     }
 
     @Test
-    void should_not_start_a_second_run_to_the_same_gifthub_while_one_is_unfinished() {
+    void should_not_start_a_manual_run_to_the_gifthub_while_a_scheduled_one_is_unfinished() {
         UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
-        UUID sameGiftHub = createIntegration("CATALOG", posConnection, giftHubConnection);
         runCatalogSync.scheduleDue();
-        long scheduled = jdbc.sql("SELECT count(*) FROM operations WHERE integration_id IN (:a, :b)")
-                .param("a", integration).param("b", sameGiftHub).query(Long.class).single();
+        long scheduled = jdbc.sql("SELECT count(*) FROM operations WHERE integration_id = :id")
+                .param("id", integration).query(Long.class).single();
 
-        JsonNode problem = body(perform(MockMvcRequestBuilders.post("/api/admin/integrations/{id}/run", sameGiftHub)
+        JsonNode problem = body(perform(MockMvcRequestBuilders.post("/api/admin/integrations/{id}/run", integration)
                 .param("tenantId", tenant.toString()).header("Authorization", bearer(admin)), 409));
 
         assertThat(scheduled).isEqualTo(1);
@@ -295,8 +294,9 @@ class CatalogSyncIT extends AbstractConnectorIT {
 
     @Test
     void should_guard_run_by_role_flow_and_tenant() {
-        UUID catalog = createIntegration("CATALOG", posConnection, giftHubConnection);
         UUID order = orderIntegration();
+        UUID catalog = jdbc.sql("SELECT id FROM integrations WHERE tenant_id = :tenant AND flow = 'CATALOG'")
+                .param("tenant", tenant).query(UUID.class).single();
         perform(MockMvcRequestBuilders.post("/api/admin/integrations/{id}/run", catalog).header("Authorization", bearer(tokenFor(Role.VIEWER, tenant))), 403);
         JsonNode mismatch = body(perform(MockMvcRequestBuilders.post("/api/admin/integrations/{id}/run", order).param("tenantId", tenant.toString())
                 .header("Authorization", bearer(admin)), 422));

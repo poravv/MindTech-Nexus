@@ -6,6 +6,7 @@ import com.mindtechpy.nexus.application.port.out.IntegrationRepository;
 import com.mindtechpy.nexus.application.port.out.TransactionRunner;
 import com.mindtechpy.nexus.domain.audit.AuditEvent;
 import com.mindtechpy.nexus.domain.identity.Actor;
+import com.mindtechpy.nexus.domain.integration.Flow;
 import com.mindtechpy.nexus.domain.integration.Integration;
 import com.mindtechpy.nexus.domain.integration.IntegrationState;
 import com.mindtechpy.nexus.domain.shared.DomainException;
@@ -41,11 +42,21 @@ public class ChangeIntegrationState {
         return tx.inTransaction(() -> {
             Integration current = integrations.findById(tenantId, id).orElseThrow(() -> DomainException.notFound("Integración"));
             Integration changed = current.changeState(actor, target, clock.now());
+            if (changed.flow() == Flow.CATALOG && changed.state() == IntegrationState.ENABLED && targetInUse(changed)) {
+                throw DomainException.conflict("catalog-target-in-use",
+                        "Ya hay una integración CATALOG habilitada hacia esa conexión GiftHub");
+            }
             integrations.update(changed);
             audit.append(AuditEvent.of(actor, tenantId, "integration.state-changed", "integration", id.toString(),
                     Map.of("state", current.state().name()),
                     Map.of("state", changed.state().name(), "reason", reason.strip()), clock.now()));
             return changed;
         });
+    }
+
+    private boolean targetInUse(Integration catalog) {
+        return integrations.findAll(catalog.tenantId()).stream().anyMatch(other -> other.flow() == Flow.CATALOG
+                && other.state() == IntegrationState.ENABLED && !other.id().equals(catalog.id())
+                && other.targetConnectionId().equals(catalog.targetConnectionId()));
     }
 }

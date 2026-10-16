@@ -20,9 +20,11 @@ import com.mindtechpy.nexus.domain.shared.TenantId;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static java.lang.System.Logger.Level.INFO;
 import static java.lang.System.Logger.Level.WARNING;
@@ -90,7 +92,7 @@ public class RunCatalogSync {
 
     /**
      * The POS asks for an immediate sync (a product just sold out) for every ENABLED CATALOG integration of its
-     * tenant. 404 {@code catalog-integration-not-found} if there is none; 409 {@code catalog-run-in-progress} if
+     * tenant, at most one per target GiftHub. 404 {@code catalog-integration-not-found} if there is none; 409 {@code catalog-run-in-progress} if
      * any of them has a run in flight, before starting any. The key is a 20 s window (the POS debounce), so a
      * repeated request within the same window is answered with the run already created, while a stock change in
      * the next window starts a new one.
@@ -98,7 +100,9 @@ public class RunCatalogSync {
     public List<Requested> requestFromPos(TenantId tenantId) {
         List<Integration> enabled = integrations.findAll(tenantId).stream()
                 .filter(integration -> integration.flow() == Flow.CATALOG && integration.state() == IntegrationState.ENABLED)
-                .toList();
+                .collect(Collectors.toMap(Integration::targetConnectionId, integration -> integration, (first, second) -> first,
+                        LinkedHashMap::new))
+                .values().stream().toList();
         if (enabled.isEmpty()) {
             throw new DomainException(DomainException.Kind.NOT_FOUND, "catalog-integration-not-found",
                     "El tenant no tiene una integración de catálogo habilitada");

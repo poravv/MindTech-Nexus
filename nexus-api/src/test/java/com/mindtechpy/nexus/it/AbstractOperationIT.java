@@ -55,9 +55,13 @@ abstract class AbstractOperationIT extends AbstractPostgresIT {
         saga.reset();
         admin = platformAdminToken();
         tenant = createTenant(admin);
-        targetConnection = UUID.fromString(body(perform(post("/api/admin/connections").param("tenantId", tenant.toString())
+        targetConnection = createGiftHubConnection();
+    }
+
+    private UUID createGiftHubConnection() {
+        return UUID.fromString(body(perform(post("/api/admin/connections").param("tenantId", tenant.toString())
                 .header("Authorization", bearer(admin)).contentType(MediaType.APPLICATION_JSON)
-                .content(toJson(Map.of("connector", "GIFTHUB", "name", "gifthub",
+                .content(toJson(Map.of("connector", "GIFTHUB", "name", "gifthub-" + UUID.randomUUID().toString().substring(0, 8),
                         "baseUrl", "http://api.comercio-central.svc.cluster.local:3000",
                         "credentials", Map.of("apiKey", "gh_live_test")))), 201)).get("id").asString());
     }
@@ -75,7 +79,7 @@ abstract class AbstractOperationIT extends AbstractPostgresIT {
     }
 
     protected UUID createIntegration(Map<String, Object> policy) {
-        return UUID.fromString(createIntegration(tenant, admin, targetConnection, policy, 201).get("id").asString());
+        return UUID.fromString(createIntegration(tenant, admin, createGiftHubConnection(), policy, 201).get("id").asString());
     }
 
     protected JsonNode createIntegration(UUID tenantId, String token, UUID target, Map<String, Object> policy, int expected) {
