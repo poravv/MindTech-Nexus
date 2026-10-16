@@ -62,24 +62,28 @@ jobs:
           INPUT_API: ${{ github.event.inputs.deploy_api }}
           INPUT_CONSOLE: ${{ github.event.inputs.deploy_console }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
         run: |
+          # En push la base es el tag pineado en el manifiesto (lo último desplegado), no el push anterior:
+          # si un run falla, lo que quedó sin desplegar se sigue detectando en los pushes siguientes.
+          changed_since() {
+            sha=$(grep -o 'sha-[0-9a-f]\{7,\}' "$1" | head -1 | cut -d- -f2)
+            git cat-file -e "$sha^{commit}" 2>/dev/null || sha=HEAD~1
+            git diff --name-only "$sha" HEAD
+          }
           if [ "$EVENT" = "workflow_dispatch" ]; then
             API="$INPUT_API"; CONSOLE="$INPUT_CONSOLE"
           else
-            BASE_SHA="$PUSH_BEFORE"
-            [ "$EVENT" = "pull_request" ] && BASE_SHA="$PR_BASE"
-            if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
-              BASE_SHA="HEAD~1"
+            if [ "$EVENT" = "pull_request" ]; then
+              CHANGED_API=$(git diff --name-only "$PR_BASE" HEAD); CHANGED_CONSOLE="$CHANGED_API"
+            else
+              CHANGED_API=$(changed_since k8s/api-deployment.yaml)
+              CHANGED_CONSOLE=$(changed_since k8s/console-deployment.yaml)
             fi
-            CHANGED=$(git diff --name-only "$BASE_SHA" HEAD)
-            echo "Archivos cambiados:"; echo "$CHANGED"
-            API=$(echo "$CHANGED" | grep -q '^nexus-api/' && echo true || echo false)
-            CONSOLE=$(echo "$CHANGED" | grep -q '^nexus-console/' && echo true || echo false)
+            echo "Cambios api:"; echo "$CHANGED_API"; echo "Cambios console:"; echo "$CHANGED_CONSOLE"
             # Un cambio del workflow rebuildea ambas imágenes: así el primer deploy pinea las dos.
-            if echo "$CHANGED" | grep -q '^\.github/workflows/deploy\.yml'; then
-              API=true; CONSOLE=true
-            fi
+            WORKFLOW='^\.github/workflows/deploy\.yml'
+            API=$(echo "$CHANGED_API" | grep -Eq "^nexus-api/|$WORKFLOW" && echo true || echo false)
+            CONSOLE=$(echo "$CHANGED_CONSOLE" | grep -Eq "^nexus-console/|$WORKFLOW" && echo true || echo false)
           fi
           # La consola llega en S6: sin su Dockerfile no hay imagen que construir.
           [ -f nexus-console/Dockerfile ] || CONSOLE=false
