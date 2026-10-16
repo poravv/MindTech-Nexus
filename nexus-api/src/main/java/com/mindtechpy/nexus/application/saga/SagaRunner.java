@@ -201,7 +201,7 @@ public class SagaRunner {
                     outcome = terminal.compensated();
                 }
             } catch (ManualReconciliationRequired e) {
-                log.log(WARNING, "{0} op={1} conciliación manual: {2}", terminal.flow().logPrefix(), terminal.id(), e.getMessage());
+                log.log(WARNING, "{0} op={1} conciliación manual ({2})", terminal.flow().logPrefix(), terminal.id(), cause.code());
                 outcome = terminal.dead(ManualReconciliationRequired.REASON, new ConnectorError(cause.kind(), cause.code(),
                         e.getMessage(), cause.httpStatus(), null), clock.now());
             } catch (RuntimeException e) {

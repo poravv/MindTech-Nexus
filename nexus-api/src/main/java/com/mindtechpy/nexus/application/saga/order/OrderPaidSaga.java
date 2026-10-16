@@ -107,7 +107,7 @@ public class OrderPaidSaga implements Saga {
         try {
             invoice = InvoiceData.from(context.operation().payload().get("invoice"));
         } catch (DomainException e) {
-            return invoiceWithoutRuc(context, e.getMessage());
+            return invoiceWithoutRuc(context, e.code());
         }
         if (invoice == null) {
             return new StepResult.Next(PAY_POS, null, null, null);
@@ -127,7 +127,7 @@ public class OrderPaidSaga implements Saga {
                     name.length() <= 100 ? name : name.substring(0, 100), invoice);
         } catch (ConnectorException e) {
             if (INVALID_RUC.equals(e.error().code())) {
-                return invoiceWithoutRuc(context, INVALID_RUC + ": " + e.error().detail());
+                return invoiceWithoutRuc(context, INVALID_RUC);
             }
             warn(context, "el cliente POS no se actualizó con los datos de factura (" + e.error().kind() + ":" + e.error().code()
                     + "): la venta igual se factura con ellos");
@@ -217,8 +217,8 @@ public class OrderPaidSaga implements Saga {
     }
 
     /** The invoice data is not a valid RUC: the payment goes on without it and the invoice stays consumidor final. */
-    private static StepResult invoiceWithoutRuc(StepContext context, String detail) {
-        warn(context, "factura sin RUC válido (" + detail + "): se emite a consumidor final");
+    private static StepResult invoiceWithoutRuc(StepContext context, String code) {
+        warn(context, "factura sin RUC válido (" + code + "): se emite a consumidor final");
         return new StepResult.Next(PAY_POS, null, null, Map.of(INVOICE_REFUSED, true));
     }
 

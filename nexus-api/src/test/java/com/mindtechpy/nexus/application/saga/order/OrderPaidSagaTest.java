@@ -22,7 +22,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -321,6 +323,38 @@ class OrderPaidSagaTest {
         StepResult result = saga.execute(invoiceStep(withInvoice(true, "80012345", "7", "Comercial López S.A.")));
 
         assertThat(next(result).externalRef()).isNull();
+    }
+
+    @Test
+    void should_not_log_the_pos_error_detail_when_the_ruc_is_invalid() {
+        List<String> logged = new ArrayList<>();
+        java.util.logging.Logger sagaLog = java.util.logging.Logger.getLogger(OrderPaidSaga.class.getName());
+        java.util.logging.Handler capture = new java.util.logging.Handler() {
+            @Override
+            public void publish(java.util.logging.LogRecord record) {
+                logged.add(new java.text.MessageFormat(record.getMessage()).format(record.getParameters()));
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        sagaLog.addHandler(capture);
+        try {
+            when(pos.resolveCustomer(any(), any(), any(), any(), any())).thenThrow(new ConnectorException(
+                    new ConnectorError(ErrorKind.REJECTED, "invalid-ruc", "El RUC 80012345-7 no es válido", 400, null)));
+
+            saga.execute(invoiceStep(withInvoice(true, "80012345", "7", "Comercial López S.A.")));
+        } finally {
+            sagaLog.removeHandler(capture);
+        }
+
+        assertThat(logged).anyMatch(line -> line.contains("invalid-ruc"));
+        assertThat(String.join("\n", logged)).doesNotContain("80012345");
     }
 
     @Test
