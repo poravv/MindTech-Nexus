@@ -39,6 +39,8 @@ class SifenRestClient implements SifenPort {
 
     static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     static final Duration KUDE_TIMEOUT = Duration.ofSeconds(10);
+    private static final String BUSINESS_RULE = "BUSINESS_RULE";
+    private static final int MAX_DETAIL = 300;
 
     /** SIFEN error body ({@code ApiErrorBody}). */
     record ErrorBody(String code, String message) {
@@ -150,7 +152,19 @@ class SifenRestClient implements SifenPort {
         ErrorBody error = errorBody(response.body());
         String code = error.code() != null ? error.code() : "HTTP_" + status;
         Duration retryAfter = response.headers().firstValue("Retry-After").flatMap(SifenRestClient::seconds).orElse(null);
-        return new Failed<>(new ConnectorError(classify(status, code, call.isWrite()), code, ErrorMessages.describe(code), status, retryAfter));
+        return new Failed<>(new ConnectorError(classify(status, code, call.isWrite()), code, detail(code, error.message()), status, retryAfter));
+    }
+
+    /**
+     * Only a {@code BUSINESS_RULE} keeps SIFEN's text: it names the issuer's own setup (timbrado, certificate,
+     * cancellation window) and never the receptor, and the operator needs it to fix the cause. Validation
+     * messages can echo the receptor's RUC or name, so every other code gets the fixed message.
+     */
+    private static String detail(String code, String message) {
+        if (!BUSINESS_RULE.equals(code) || message == null) {
+            return ErrorMessages.describe(code);
+        }
+        return message.length() <= MAX_DETAIL ? message : message.substring(0, MAX_DETAIL);
     }
 
     /**
