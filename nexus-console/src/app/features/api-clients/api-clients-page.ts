@@ -75,7 +75,7 @@ export default class ApiClientsPage {
   protected readonly pending = signal<PendingAction | null>(null);
   /** Kept only while the dialog is open; the API will never return it again. */
   protected readonly issued = signal<IssuedSecret | null>(null);
-  protected readonly posScopes = 'fiscal:issue fiscal:read orders:read orders:write';
+  protected readonly posScopes = 'fiscal:issue fiscal:read orders:read orders:write catalog:sync';
 
   /** The secret stays a shell variable: the command is safe to paste in a ticket or chat. */
   protected tokenCurl(clientId: string): string {
