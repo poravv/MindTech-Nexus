@@ -425,6 +425,39 @@ class OrderPaidSagaTest {
                 eq(new PosPort.Payment("CASH", 91000, "GiftHub #BH-1", null)));
     }
 
+    @Test
+    void should_pay_again_without_invoice_and_succeed_when_the_payment_is_refused_with_invalid_ruc() {
+        Map<String, Object> payload = withInvoice(true, "80012345", "6", "Comercial López S.A.");
+        InvoiceData invoice = new InvoiceData("80012345", "6", "Comercial López S.A.");
+        PosPort.Payment withInvoice = new PosPort.Payment("CASH", 91000, "GiftHub #BH-1", invoice);
+        PosPort.Payment withoutInvoice = new PosPort.Payment("CASH", 91000, "GiftHub #BH-1", null);
+        when(pos.payChannelOrder(any(), any(), eq(KEY), any(), any(), eq(withInvoice))).thenThrow(new ConnectorException(
+                new ConnectorError(ErrorKind.REJECTED, "invalid-ruc", "El DV no corresponde al RUC", 400, null)));
+        when(pos.payChannelOrder(any(), any(), eq(KEY), any(), any(), eq(withoutInvoice))).thenReturn(PAID);
+        StepContext payStep = context(payload);
+
+        StepResult.Next refused = next(saga.execute(payStep));
+        Operation retried = payStep.operation().advanced(OrderPaidSaga.PAY_POS, refused.result(), Instant.now());
+        StepResult result = saga.execute(new StepContext(retried, payStep.integration(), payStep.source(), payStep.target()));
+
+        assertThat(refused.result()).containsEntry("invoiceRefused", true);
+        assertThat(((StepResult.Completed) result).result()).containsEntry("saleNumber", "SALE-00000042")
+                .containsEntry("invoiceRefused", true);
+        verify(pos, times(1)).payChannelOrder(any(), any(), eq(KEY), any(), any(), eq(withoutInvoice));
+    }
+
+    @Test
+    void should_succeed_without_retrying_when_verification_finds_the_sale_paid_and_the_repeat_hits_a_closed_cash_session() {
+        when(pos.findOrder(any(), any(), eq("GIFTHUB"), eq(ORDER_ID))).thenReturn(Optional.of(COMPLETED_SALE));
+        when(pos.payChannelOrder(any(), any(), any(), any(), any(), any())).thenThrow(new ConnectorException(
+                ConnectorError.of(ErrorKind.TRANSIENT, "cash-session-closed", "Caja cerrada")));
+
+        StepResult result = saga.execute(uncertain(context(paid("CASH"))));
+
+        assertThat(((StepResult.Completed) result).result()).containsEntry("saleNumber", "SALE-00000042")
+                .containsEntry("invoiceQueued", false);
+    }
+
     private void createOrderEnded(Operation created) {
         when(operations.findByKey(TENANT, OperationKind.CREATE_ORDER, ORDER_ID)).thenReturn(Optional.of(created));
     }

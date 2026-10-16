@@ -16,6 +16,7 @@ import com.mindtechpy.nexus.domain.order.InvoiceData;
 import com.mindtechpy.nexus.domain.order.OrderPayment;
 import com.mindtechpy.nexus.domain.shared.DomainException;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -43,7 +44,9 @@ import static java.lang.System.Logger.Level.WARNING;
  * the sale {@code COMPLETED}. A sale already {@code COMPLETED} (idempotent retry, 409 {@code not-pending}) is
  * success; when the verification after an uncertain attempt finds it {@code COMPLETED}, the same-key payment is
  * still sent once so the POS enqueues the invoice if that attempt left it missing (200 or {@code not-pending} =
- * success; any other rejection of a sale already paid = success with a WARN; a transient failure retries).
+ * success; any other non-uncertain failure of a sale already paid, rejected or transient = success with a WARN).
+ * A payment refused with {@code invalid-ruc} while carrying the invoice is not registered by the POS: the step runs
+ * again with the same key and no invoice ({@code result.invoiceRefused}), so the sale is invoiced consumidor final.
  * Nothing is undone: the money was taken in GiftHub, so a POS rejection ({@code amount-mismatch},
  * {@code sale-cancelled}, {@code insufficient-stock}, sale not found) ends DEAD for manual reconciliation; a closed
  * cash session is retried with backoff until the attempts run out.
@@ -148,23 +151,28 @@ public class OrderPaidSaga implements Saga {
                     ? "verificación: la venta ya está cobrada en el POS, se repite el pago con la misma clave para que complete la factura"
                     : "verificación: la venta sigue pendiente en el POS, se reenvía con la misma clave");
         }
+        InvoiceData invoice = saleInvoice(context.operation());
         PosPort.PaidSale sale;
         try {
             sale = pos.payChannelOrder(endpoints.pos(), endpoints.readTimeout(), CHANNEL + ":" + payment.orderId() + ":paid",
                     CHANNEL, payment.orderId(), new PosPort.Payment(payment.posMethod(), payment.totalPyg(), payment.reference(),
-                            saleInvoice(context.operation())));
+                            invoice));
         } catch (ConnectorException e) {
-            if (verified.isPresent() && e.error().kind() == ErrorKind.REJECTED && !NOT_PENDING.equals(e.error().code())) {
-                warn(context, "la venta está cobrada pero el POS rechazó repetir el pago (" + e.error().code()
-                        + "): revisar que tenga factura");
-                return completed(payment, verified.get().saleId(), verified.get().saleNumber(), false);
+            if (verified.isPresent() && e.error().kind() != ErrorKind.UNCERTAIN && !NOT_PENDING.equals(e.error().code())) {
+                warn(context, "la venta está cobrada pero el POS no aceptó repetir el pago (" + e.error().kind() + ":"
+                        + e.error().code() + "): revisar que tenga factura");
+                return completed(context, payment, verified.get().saleId(), verified.get().saleNumber(), false);
+            }
+            if (invoice != null && INVALID_RUC.equals(e.error().code())) {
+                warn(context, "factura sin RUC (invalid-ruc), se cobra a consumidor final");
+                return new StepResult.Next(PAY_POS, null, null, Map.of(INVOICE_REFUSED, true));
             }
             if (!NOT_PENDING.equals(e.error().code())) {
                 throw e;
             }
             PosPort.Order completed = completedSale(endpoints, payment.orderId()).orElseThrow(() -> e);
             logStep(context, "el POS ya tenía la venta " + completed.saleNumber() + " cobrada");
-            return completed(payment, completed.saleId(), completed.saleNumber(), false);
+            return completed(context, payment, completed.saleId(), completed.saleNumber(), false);
         }
         if (!COMPLETED.equals(sale.status())) {
             return new StepResult.Failed(ConnectorError.of(ErrorKind.UNCERTAIN, "pos-payment-not-applied",
@@ -172,7 +180,7 @@ public class OrderPaidSaga implements Saga {
         }
         logStep(context, "venta POS " + sale.saleNumber() + " cobrada " + payment.posMethod() + " Gs. " + payment.totalPyg()
                 + (sale.invoiceQueued() ? ", factura encolada" : ""));
-        return completed(payment, sale.saleId(), sale.saleNumber(), sale.invoiceQueued());
+        return completed(context, payment, sale.saleId(), sale.saleNumber(), sale.invoiceQueued());
     }
 
     /** Nothing to undo: GiftHub already took the money. A POS rejection is settled by a human. */
@@ -231,9 +239,16 @@ public class OrderPaidSaga implements Saga {
                 .filter(sale -> COMPLETED.equals(sale.status()));
     }
 
-    private static StepResult completed(OrderPayment payment, String saleId, String saleNumber, boolean invoiceQueued) {
-        return new StepResult.Completed(saleId, Map.of("saleId", saleId, "saleNumber", saleNumber, "method", payment.posMethod(),
-                "amount", payment.totalPyg(), "invoiceQueued", invoiceQueued));
+    /** Keeps {@code invoiceRefused} so the console shows why a requested invoice went out consumidor final. */
+    private static StepResult completed(StepContext context, OrderPayment payment, String saleId, String saleNumber,
+                                        boolean invoiceQueued) {
+        Map<String, Object> result = new HashMap<>(Map.of("saleId", saleId, "saleNumber", saleNumber,
+                "method", payment.posMethod(), "amount", payment.totalPyg(), "invoiceQueued", invoiceQueued));
+        Map<String, Object> previous = context.operation().result();
+        if (previous != null && Boolean.TRUE.equals(previous.get(INVOICE_REFUSED))) {
+            result.put(INVOICE_REFUSED, true);
+        }
+        return new StepResult.Completed(saleId, result);
     }
 
     private static StepResult skipped(StepContext context, String reason, String detail) {

@@ -297,6 +297,26 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
     }
 
     @Test
+    void should_pay_again_without_the_invoice_when_the_pos_refuses_the_ruc_on_the_payment() {
+        stubPos(post(urlPathEqualTo(pos(paymentsPath))).withRequestBody(containing("\"invoice\""))
+                .willReturn(jsonResponse("{\"type\":\"about:blank\",\"status\":400,\"code\":\"invalid-ruc\",\"detail\":\"El DV no corresponde al RUC\"}", 400)));
+        stubPos(post(urlPathEqualTo(pos(paymentsPath))).withRequestBody(notContaining("\"invoice\"")).willReturn(okJson(PAID_SALE)));
+        createOrder();
+        String delivery = UUID.randomUUID().toString();
+        JsonNode received = sendSigned(delivery, orderPaidWithInvoice(delivery, "80012345", "6"), 200);
+        drain();
+
+        Operation done = reload(UUID.fromString(received.get("operationId").asString()));
+        assertThat(done.status()).isEqualTo(OperationStatus.SUCCEEDED);
+        assertThat(done.result()).containsEntry("saleNumber", "SALE-00000042").containsEntry("invoiceRefused", true);
+        var payments = posRequests("POST", paymentsPath);
+        assertThat(payments).hasSize(2)
+                .allSatisfy(request -> assertThat(request.getHeader("Idempotency-Key")).isEqualTo("GIFTHUB:" + orderId + ":paid"));
+        assertThat(jsonOf(payments.get(0)).has("invoice")).isTrue();
+        assertThat(jsonOf(payments.get(1)).has("invoice")).isFalse();
+    }
+
+    @Test
     void should_still_register_the_payment_when_another_pos_customer_already_has_the_ruc() {
         stubPos(post(urlPathEqualTo(pos("/api/integration/customers/resolve"))).withRequestBody(containing("\"ruc\""))
                 .willReturn(jsonResponse("{\"type\":\"about:blank\",\"status\":409,\"code\":\"ruc-in-use\","

@@ -33,8 +33,8 @@ import static com.mindtechpy.nexus.infrastructure.connectors.ConnectorHttp.text;
  * changed) → REJECTED with that code. The payment POST classifies on its own:
  * 408/5xx → UNCERTAIN (a gateway may fail after the POS took the payment: the saga reads the sale before resending);
  * 409 → REJECTED with the POS {@code code} ({@code cash-session-closed} → TRANSIENT: the cashier opens the session and
- * the retry closes the sale); 400 → REJECTED {@code pos-bad-request}, only a validation error of our body, which the
- * POS should no longer answer for a well-formed payment.
+ * the retry closes the sale); 400 → REJECTED with the POS {@code code} ({@code invalid-ruc}: the invoice RUC fails its DV,
+ * the payment is not registered), {@code pos-bad-request} when it brings none.
  */
 @Component
 class PosRestClient implements PosPort {
@@ -111,7 +111,8 @@ class PosRestClient implements PosPort {
                         problemDetail(response), response));
             }
             if (status == 400) {
-                throw new ConnectorException(ConnectorHttp.error(ErrorKind.REJECTED, "pos-bad-request",
+                String code = text(response.body(), "code");
+                throw new ConnectorException(ConnectorHttp.error(ErrorKind.REJECTED, code == null ? "pos-bad-request" : code,
                         problemDetail(response), response));
             }
             if (status == 409) {
