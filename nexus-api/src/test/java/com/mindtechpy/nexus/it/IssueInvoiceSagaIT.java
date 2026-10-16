@@ -3,6 +3,7 @@ package com.mindtechpy.nexus.it;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import com.github.tomakehurst.wiremock.verification.LoggedRequest;
 import com.mindtechpy.nexus.domain.operation.ErrorKind;
+import com.mindtechpy.nexus.domain.operation.ErrorMessages;
 import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationStatus;
 import com.mindtechpy.nexus.infrastructure.connectors.sifen.SifenHmacSigner;
@@ -213,10 +214,10 @@ class IssueInvoiceSagaIT extends AbstractFiscalIT {
     }
 
     @ParameterizedTest
-    @CsvSource({"400, VALIDATION_ERROR", "409, BUSINESS_RULE", "422, UNPROCESSABLE"})
-    void should_fail_without_retry_and_expose_sifen_detail_when_sifen_refuses_the_request(int status, String code) {
+    @CsvSource({"400, VALIDATION_ERROR", "400, INVALID_ARGUMENT", "422, UNPROCESSABLE"})
+    void should_fail_without_retry_and_show_a_fixed_message_when_sifen_refuses_the_request_echoing_the_receptor(int status, String code) {
         String ref = newSourceRef();
-        stubSubmit(ref, sifenError(status, code, "receptor.numeroDocumento invalido"));
+        stubSubmit(ref, sifenError(status, code, "receptor.numeroDocumento 80012345-6 de María López (+595981123456) invalido"));
         Operation op = issue(ref);
 
         drain();
@@ -227,7 +228,25 @@ class IssueInvoiceSagaIT extends AbstractFiscalIT {
         JsonNode state = invoiceState(ref);
         assertThat(state.get("status").asString()).isEqualTo("FAILED");
         assertThat(state.get("error").get("code").asString()).isEqualTo(code);
-        assertThat(state.get("error").get("detail").asString()).isEqualTo("receptor.numeroDocumento invalido");
+        assertThat(state.get("error").get("detail").asString()).isEqualTo(ErrorMessages.describe(code));
+        JsonNode shown = operationDetail(op.id());
+        assertThat(shown.at("/lastError/detail").asString()).isEqualTo(ErrorMessages.describe(code));
+        assertThat(storedOutcome(op.id()) + shown + state).doesNotContain("80012345").doesNotContain("981123456")
+                .doesNotContain("María López");
+        assertThat(count(submitsOf(ref))).isEqualTo(1);
+    }
+
+    @Test
+    void should_fail_without_retry_and_keep_sifen_text_when_sifen_refuses_by_a_business_rule_of_the_issuer() {
+        String ref = newSourceRef();
+        stubSubmit(ref, sifenError(409, "BUSINESS_RULE", "El timbrado 12345678 vencio el 2026-09-30"));
+        Operation op = issue(ref);
+
+        drain();
+
+        assertThat(reload(op.id()).status()).isEqualTo(OperationStatus.FAILED);
+        assertThat(invoiceState(ref).get("error").get("detail").asString()).isEqualTo("El timbrado 12345678 vencio el 2026-09-30");
+        assertThat(operationDetail(op.id()).at("/lastError/detail").asString()).isEqualTo("El timbrado 12345678 vencio el 2026-09-30");
         assertThat(count(submitsOf(ref))).isEqualTo(1);
     }
 

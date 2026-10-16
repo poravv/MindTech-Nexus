@@ -2,6 +2,7 @@ package com.mindtechpy.nexus.it;
 
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import com.mindtechpy.nexus.application.usecase.StartOperation;
+import com.mindtechpy.nexus.domain.operation.ErrorMessages;
 import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationKind;
 import com.mindtechpy.nexus.domain.operation.OperationStatus;
@@ -101,6 +102,26 @@ class OrderStatusIT extends AbstractConnectorIT {
         assertThat(dead.status()).isEqualTo(OperationStatus.DEAD);
         assertThat(dead.deadReason()).isEqualTo("manual-reconciliation");
         assertThat(giftHubRequests("POST", "/orders/" + orderId + "/status")).isEmpty();
+    }
+
+    @Test
+    void should_store_and_show_only_the_code_and_a_fixed_message_when_gifthub_refuses_the_change_echoing_the_customer() {
+        stubGiftHub(get(urlPathEqualTo(gh("/orders/" + orderId))).willReturn(okJson(giftHubOrder(orderId, "CONFIRMED", "PENDING", "PICKUP"))));
+        stubGiftHub(post(urlPathEqualTo(gh("/orders/" + orderId + "/status"))).willReturn(aResponse().withStatus(422)
+                .withHeader("Content-Type", "application/problem+json").withBody("""
+                        {"code":"TRANSITION_NOT_ALLOWED","error":"El pedido de María López (+595981123456, RUC 80012345-6) no se puede cancelar",
+                         "detail":"El pedido de María López (+595981123456, RUC 80012345-6) no se puede cancelar"}""")));
+
+        UUID opId = UUID.fromString(report("CANCELLED", 202).get("operationId").asString());
+        drain();
+
+        Operation dead = reload(opId);
+        assertThat(dead.status()).isEqualTo(OperationStatus.DEAD);
+        assertThat(dead.deadReason()).isEqualTo("manual-reconciliation");
+        assertThat(dead.lastError().code()).isEqualTo("TRANSITION_NOT_ALLOWED");
+        JsonNode shown = operationDetail(opId);
+        assertThat(shown.at("/lastError/detail").asString()).isEqualTo(ErrorMessages.describe("TRANSITION_NOT_ALLOWED"));
+        assertThat(storedOutcome(opId) + shown).doesNotContain("80012345").doesNotContain("981123456").doesNotContain("María López");
     }
 
     @Test

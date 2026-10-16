@@ -2,6 +2,7 @@ package com.mindtechpy.nexus.it;
 
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import com.mindtechpy.nexus.domain.operation.ErrorKind;
+import com.mindtechpy.nexus.domain.operation.ErrorMessages;
 import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationStatus;
 import com.mindtechpy.nexus.domain.operation.OperationStep;
@@ -181,7 +182,8 @@ class OrderSagaIT extends AbstractConnectorIT {
         var cancel = giftHubRequests("POST", "/orders/" + orderId + "/status");
         assertThat(cancel).hasSize(1);
         assertThat(jsonOf(cancel.getFirst()).get("status").asString()).isEqualTo("CANCELLED");
-        assertThat(jsonOf(cancel.getFirst()).get("note").asString()).contains("Stock insuficiente");
+        assertThat(jsonOf(cancel.getFirst()).get("note").asString())
+                .isEqualTo("No se pudo tomar el pedido: " + ErrorMessages.describe("insufficient-stock"));
         assertThat(cancel.getFirst().getHeader("Idempotency-Key")).isEqualTo("nexus:" + op.id() + ":CANCELLED");
     }
 

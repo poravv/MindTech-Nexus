@@ -3,6 +3,7 @@ package com.mindtechpy.nexus.it;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import com.github.tomakehurst.wiremock.verification.LoggedRequest;
 import com.mindtechpy.nexus.domain.operation.ErrorKind;
+import com.mindtechpy.nexus.domain.operation.ErrorMessages;
 import com.mindtechpy.nexus.domain.operation.Operation;
 import com.mindtechpy.nexus.domain.operation.OperationStatus;
 import org.junit.jupiter.api.BeforeEach;
@@ -176,7 +177,7 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
         assertThat(dead.status()).isEqualTo(OperationStatus.DEAD);
         assertThat(dead.deadReason()).isEqualTo("manual-reconciliation");
         assertThat(dead.lastError().code()).isEqualTo("amount-mismatch");
-        assertThat(dead.lastError().detail()).contains("El monto no coincide");
+        assertThat(dead.lastError().detail()).contains(ErrorMessages.describe("amount-mismatch")).doesNotContain("El monto no coincide con el total");
         assertThat(posRequests("POST", paymentsPath)).hasSize(1);
         assertThat(posRequests("POST", "/api/integration/orders/GIFTHUB/" + orderId + "/cancel")).isEmpty();
     }
@@ -334,15 +335,17 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
 
     /**
      * An invalid RUC goes on to consumidor final and a rejected amount ends in manual reconciliation. The steps and the result
-     * keep codes, never the RUC, phone or names the POS echoed. The log side is covered by OrderPaidSagaTest: here the
-     * saga's System.Logger (java.util.logging) loses its bridge to Logback whenever another cached context is closed.
+     * keep codes, the error and the console detail a fixed message: never the RUC, phone or names the POS echoed. The log
+     * side is covered by OrderPaidSagaTest: here the saga's System.Logger (java.util.logging) loses its bridge to Logback
+     * whenever another cached context is closed.
      */
     @Test
-    void should_keep_only_codes_in_steps_and_result_when_the_pos_rejects_the_invoice_and_then_the_amount() {
+    void should_keep_only_codes_and_fixed_messages_when_the_pos_rejects_the_invoice_and_then_the_amount() {
         stubPos(post(urlPathEqualTo(pos("/api/integration/customers/resolve"))).withRequestBody(containing("\"ruc\""))
                 .willReturn(jsonResponse("{\"code\":\"invalid-ruc\",\"message\":\"El RUC 80012345-6 de Comercial López S.A. no es válido\"}", 400)));
-        stubPos(post(urlPathEqualTo(pos(paymentsPath))).willReturn(jsonResponse("{\"type\":\"about:blank\",\"status\":409,"
-                + "\"code\":\"amount-mismatch\",\"detail\":\"El monto de María López (+595981123456, RUC 80012345) no coincide\"}", 409)));
+        stubPos(post(urlPathEqualTo(pos(paymentsPath))).willReturn(aResponse().withStatus(409)
+                .withHeader("Content-Type", "application/problem+json").withBody("{\"type\":\"about:blank\",\"status\":409,"
+                        + "\"code\":\"amount-mismatch\",\"detail\":\"El monto de María López (+595981123456, RUC 80012345) no coincide\"}")));
         createOrder();
         String delivery = UUID.randomUUID().toString();
         JsonNode received = sendSigned(delivery, orderPaidWithInvoice(delivery, "80012345", "6"), 200);
@@ -353,10 +356,10 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
         assertThat(dead.deadReason()).isEqualTo("manual-reconciliation");
         assertThat(dead.lastError().code()).isEqualTo("amount-mismatch");
         assertThat(dead.result()).containsEntry("invoiceRefused", true);
-        List<String> steps = jdbc.sql("SELECT row_to_json(s)::text FROM operation_steps s WHERE operation_id = :id ORDER BY started_at")
-                .param("id", dead.id()).query(String.class).list();
-        assertThat(String.join("\n", steps)).contains("amount-mismatch");
-        assertThat(String.join("\n", steps) + dead.result())
+        JsonNode shown = operationDetail(dead.id());
+        assertThat(shown.at("/lastError/detail").asString()).contains(ErrorMessages.describe("amount-mismatch"));
+        assertThat(storedOutcome(dead.id())).contains("amount-mismatch");
+        assertThat(storedOutcome(dead.id()) + shown)
                 .doesNotContain("80012345")
                 .doesNotContain("981123456")
                 .doesNotContain("María López")

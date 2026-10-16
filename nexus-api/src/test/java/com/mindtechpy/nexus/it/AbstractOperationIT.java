@@ -26,6 +26,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
@@ -132,6 +133,21 @@ abstract class AbstractOperationIT extends AbstractPostgresIT {
 
     protected Operation reload(UUID id) {
         return operations.findById(new TenantId(tenant), id).orElseThrow();
+    }
+
+    /** What Nexus stored about how the operation went: its error, result, dead reason and steps (not the payload). */
+    protected String storedOutcome(UUID id) {
+        String operation = jdbc.sql("SELECT concat_ws(' ', last_error::text, result::text, dead_reason) FROM operations WHERE id = :id")
+                .param("id", id).query(String.class).single();
+        List<String> steps = jdbc.sql("SELECT row_to_json(s)::text FROM operation_steps s WHERE operation_id = :id")
+                .param("id", id).query(String.class).list();
+        return operation + "\n" + String.join("\n", steps);
+    }
+
+    /** The operation detail as the console reads it. */
+    protected JsonNode operationDetail(UUID id) {
+        return body(perform(get("/api/admin/operations/{id}", id).param("tenantId", tenant.toString())
+                .header("Authorization", bearer(admin)), 200));
     }
 
     protected void makeDue(UUID id) {
