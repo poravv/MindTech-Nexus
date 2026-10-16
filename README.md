@@ -71,6 +71,7 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/admin/tenants
 - `/api/admin/integrations` (`GET`, `POST`, `GET/PUT /{id}`, `POST /{id}/state {state, reason}`): sin `DELETE`, `DISABLED` retira una integración conservando su historial. `EMERGENCY_STOP` (entrar y salir) solo `platform_admin`; `DISABLED` requiere `tenant_admin`; `operator` alterna `ENABLED/PAUSED/DRAINING`.
 - `/api/admin/operations?flow&status&from&to&q&page&size`, `/summary?from` (por estado/flujo + tamaño de la DLQ), `/{id}` (con `steps`), `POST /{id}/replay` (solo `DEAD`, auditado), `POST /{id}/discard` (solo `DEAD` → `DISCARDED` terminal: sale de la DLQ sin reprocesar, auditado).
 - `GET /api/v1/operations/{id}` — runtime m2m, scope `operations:read`, solo operaciones del tenant del token.
+- `POST /api/v1/catalog/sync` — runtime m2m, scope `catalog:sync`: el POS pide sincronizar ya el catálogo de cada integración `CATALOG` `ENABLED` del tenant (clave `{integrationId}:pos:{yyyyMMddHHmm}`). 202 `[{integrationId, operationId, created}]` si creó una corrida; 200 si la de este minuto ya existía y terminó; 404 `catalog-integration-not-found`; 409 `catalog-run-in-progress` mientras haya una corrida sin terminar hacia ese GiftHub. No respeta el backoff del scheduler tras corridas `DEAD` (alguien acaba de cambiar stock), igual que el run manual.
 - OpenAPI (solo perfil `local`): `/v3/api-docs`, `/swagger-ui.html`. Management (puerto 8081): `/actuator/health/{liveness,readiness}`, `/actuator/prometheus`.
 
 ### Motor de operaciones (S2)
