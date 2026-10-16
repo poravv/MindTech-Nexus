@@ -173,6 +173,74 @@ class CatalogSyncRequestIT extends AbstractConnectorIT {
         }
     }
 
+    /** A replay is one more trigger: racing the POS and the scheduler, it must not leave two unfinished runs to one GiftHub. */
+    @Test
+    void should_leave_a_single_unfinished_run_when_a_replay_races_pos_requests_and_the_scheduler() throws Exception {
+        String token = clientToken(tenant, "catalog:sync");
+        for (int round = 0; round < 10; round++) {
+            UUID integration = createIntegration("CATALOG", posConnection, giftHubConnection);
+            UUID dead = deadRun(integration, Instant.now().minus(Duration.ofDays(2)));
+            CyclicBarrier start = new CyclicBarrier(6);
+            List<Future<Integer>> statuses = new ArrayList<>();
+            try (ExecutorService pool = Executors.newFixedThreadPool(6)) {
+                statuses.add(pool.submit(() -> {
+                    start.await();
+                    return mvc.perform(post("/api/admin/operations/{id}/replay", dead).param("tenantId", tenant.toString())
+                            .header("Authorization", bearer(admin))).andReturn().getResponse().getStatus();
+                }));
+                for (int i = 0; i < 4; i++) {
+                    statuses.add(pool.submit(() -> {
+                        start.await();
+                        return mvc.perform(post("/api/v1/catalog/sync").header("Authorization", bearer(token)))
+                                .andReturn().getResponse().getStatus();
+                    }));
+                }
+                statuses.add(pool.submit(() -> {
+                    start.await();
+                    runCatalogSync.scheduleDue();
+                    return 0;
+                }));
+            }
+            List<Integer> codes = new ArrayList<>();
+            for (Future<Integer> status : statuses) {
+                codes.add(status.get());
+            }
+
+            assertThat(codes).as("round %d", round).allMatch(code -> List.of(0, 200, 202, 409).contains(code));
+            assertThat(jdbc.sql("SELECT count(*) FROM operations WHERE integration_id = :i AND status IN ('PENDING', 'RETRY', 'RUNNING')")
+                    .param("i", integration).query(Long.class).single()).as("round %d %s", round, codes).isEqualTo(1);
+            jdbc.sql("UPDATE operations SET status = 'SUCCEEDED', finished_at = now() WHERE integration_id = :i")
+                    .param("i", integration).update();
+            changeState(integration, admin, "DISABLED", 200);
+        }
+    }
+
+    /** Two enabled catalog integrations to one GiftHub may predate the rule: they keep running, one run at a time. */
+    @Test
+    void should_keep_scheduling_one_run_per_gifthub_and_let_the_duplicate_be_disabled_when_two_catalog_integrations_predate_the_rule() {
+        UUID first = createIntegration("CATALOG", posConnection, giftHubConnection);
+        UUID duplicate = createIntegration("CATALOG", posConnection, insertConnection(ConnectorType.GIFTHUB, GIFTHUB,
+                Map.of("apiKey", "gh_live_test", "webhookSecret", WEBHOOK_SECRET), Map.of()));
+        jdbc.sql("UPDATE integrations SET target_connection_id = :gh WHERE id = :id")
+                .param("gh", giftHubConnection).param("id", duplicate).update();
+
+        runCatalogSync.scheduleDue();
+
+        assertThat(unfinishedRuns(first, duplicate)).isEqualTo(1);
+        jdbc.sql("UPDATE operations SET status = 'SUCCEEDED', finished_at = now() WHERE integration_id IN (:a, :b)")
+                .param("a", first).param("b", duplicate).update();
+        assertThat(body(requestSync(clientToken(tenant, "catalog:sync"), 202))).hasSize(1);
+        assertThat(unfinishedRuns(first, duplicate)).isEqualTo(1);
+
+        changeState(duplicate, admin, "DISABLED", 200);
+        assertThat(body(changeState(duplicate, admin, "ENABLED", 409)).get("code").asString()).isEqualTo("catalog-target-in-use");
+    }
+
+    private long unfinishedRuns(UUID a, UUID b) {
+        return jdbc.sql("SELECT count(*) FROM operations WHERE integration_id IN (:a, :b) AND status IN ('PENDING', 'RETRY', 'RUNNING')")
+                .param("a", a).param("b", b).query(Long.class).single();
+    }
+
     private org.springframework.test.web.servlet.MvcResult requestSync(String token, int expected) {
         return perform(post("/api/v1/catalog/sync").header("Authorization", bearer(token)), expected);
     }
@@ -182,13 +250,15 @@ class CatalogSyncRequestIT extends AbstractConnectorIT {
                 .param("t", tenant).query(Long.class).single();
     }
 
-    private void deadRun(UUID integration, Instant finishedAt) {
+    private UUID deadRun(UUID integration, Instant finishedAt) {
+        UUID id = UUID.randomUUID();
         jdbc.sql("""
                 INSERT INTO operations (id, tenant_id, integration_id, flow, kind, idempotency_key, request_hash, status,
                                         attempts, max_attempts, next_run_at, payload, created_at, updated_at, finished_at)
-                VALUES (gen_random_uuid(), :t, :i, 'CATALOG', 'CATALOG_SYNC', :key, 'h', 'DEAD', 1, 5, :at, '{}', :at, :at, :at)""")
-                .param("t", tenant).param("i", integration).param("key", integration + ":manual:" + UUID.randomUUID())
+                VALUES (:id, :t, :i, 'CATALOG', 'CATALOG_SYNC', :key, 'h', 'DEAD', 1, 5, :at, '{}', :at, :at, :at)""")
+                .param("id", id).param("t", tenant).param("i", integration).param("key", integration + ":manual:" + UUID.randomUUID())
                 .param("at", finishedAt.atOffset(ZoneOffset.UTC)).update();
+        return id;
     }
 
     private void stubOnePageCatalogAndBulk() {
