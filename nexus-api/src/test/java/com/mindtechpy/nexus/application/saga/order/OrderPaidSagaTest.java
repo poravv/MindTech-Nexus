@@ -73,7 +73,7 @@ class OrderPaidSagaTest {
         assertThat(done.result()).containsEntry("saleNumber", "SALE-00000042").containsEntry("method", "CASH")
                 .containsEntry("amount", 91000L).containsEntry("invoiceQueued", true);
         verify(pos).payChannelOrder(any(), any(), eq(KEY), eq("GIFTHUB"), eq(ORDER_ID),
-                eq(new PosPort.Payment("CASH", 91000, "GiftHub #BH-1")));
+                eq(new PosPort.Payment("CASH", 91000, "GiftHub #BH-1", null)));
     }
 
     @Test
@@ -85,8 +85,8 @@ class OrderPaidSagaTest {
         saga.execute(context(paid("TRANSFER")));
 
         verify(pos, times(2)).payChannelOrder(any(), any(), any(), any(), any(),
-                eq(new PosPort.Payment("OTHER", 91000, "GiftHub #BH-1")));
-        verify(pos).payChannelOrder(any(), any(), any(), any(), any(), eq(new PosPort.Payment("TRANSFER", 91000, "GiftHub #BH-1")));
+                eq(new PosPort.Payment("OTHER", 91000, "GiftHub #BH-1", null)));
+        verify(pos).payChannelOrder(any(), any(), any(), any(), any(), eq(new PosPort.Payment("TRANSFER", 91000, "GiftHub #BH-1", null)));
     }
 
     @Test
@@ -336,14 +336,53 @@ class OrderPaidSagaTest {
     }
 
     @Test
-    void should_retry_the_invoice_data_when_the_pos_is_unavailable() {
+    void should_go_on_to_the_payment_when_the_pos_cannot_update_the_customer() {
         when(pos.resolveCustomer(any(), any(), any(), any(), any())).thenThrow(new ConnectorException(
                 ConnectorError.of(ErrorKind.TRANSIENT, "pos-http-503", "Service Unavailable")));
 
-        ConnectorError error = failure(saga.execute(invoiceStep(withInvoice(true, "80012345", "6", "Comercial López S.A."))));
+        StepResult.Next result = next(saga.execute(invoiceStep(withInvoice(true, "80012345", "6", "Comercial López S.A."))));
 
-        assertThat(error.kind()).isEqualTo(ErrorKind.TRANSIENT);
+        assertThat(result.result()).isNull();
         verify(pos, never()).payChannelOrder(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void should_send_the_order_invoice_data_with_the_payment_when_the_customer_requested_an_invoice() {
+        when(pos.payChannelOrder(any(), any(), any(), any(), any(), any())).thenReturn(PAID);
+
+        saga.execute(context(withInvoice(true, "80012345", "6", "  Comercial López S.A.  ")));
+
+        verify(pos).payChannelOrder(any(), any(), eq(KEY), eq("GIFTHUB"), eq(ORDER_ID), eq(new PosPort.Payment("CASH", 91000,
+                "GiftHub #BH-1", new InvoiceData("80012345", "6", "Comercial López S.A."))));
+    }
+
+    @Test
+    void should_send_the_invoice_data_with_the_payment_even_when_the_sale_is_on_the_default_customer() {
+        Map<String, Object> payload = withInvoice(true, "80012345", "6", "Comercial López S.A.");
+        payload.remove("customer");
+        when(pos.payChannelOrder(any(), any(), any(), any(), any(), any())).thenReturn(PAID);
+
+        saga.execute(context(payload));
+
+        verify(pos).payChannelOrder(any(), any(), any(), any(), any(), eq(new PosPort.Payment("CASH", 91000, "GiftHub #BH-1",
+                new InvoiceData("80012345", "6", "Comercial López S.A."))));
+    }
+
+    @Test
+    void should_pay_without_invoice_data_when_it_is_malformed_or_the_pos_refused_the_ruc() {
+        when(pos.resolveCustomer(any(), any(), any(), any(), any())).thenThrow(new ConnectorException(
+                new ConnectorError(ErrorKind.REJECTED, "invalid-ruc", "El DV no corresponde al RUC", 400, null)));
+        when(pos.payChannelOrder(any(), any(), any(), any(), any(), any())).thenReturn(PAID);
+        Map<String, Object> wrongDv = withInvoice(true, "80012345", "7", "Comercial López S.A.");
+        StepResult.Next refused = next(saga.execute(invoiceStep(wrongDv)));
+        StepContext payStep = context(wrongDv);
+        Operation afterRefusal = payStep.operation().advanced(OrderPaidSaga.PAY_POS, refused.result(), Instant.now());
+
+        saga.execute(new StepContext(afterRefusal, payStep.integration(), payStep.source(), payStep.target()));
+        saga.execute(context(withInvoice(true, "8001-2345", "6", "Comercial López S.A.")));
+
+        verify(pos, times(2)).payChannelOrder(any(), any(), any(), any(), any(),
+                eq(new PosPort.Payment("CASH", 91000, "GiftHub #BH-1", null)));
     }
 
     private void createOrderEnded(Operation created) {

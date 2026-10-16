@@ -102,7 +102,9 @@ class PosRestClient implements PosPort {
             Response response = http.call(pos.connection().baseUrl(), readTimeout, HttpMethod.POST,
                     orderPath(channel, externalRef) + "/payments",
                     apiKey(pos).andThen(headers -> headers.set("Idempotency-Key", idempotencyKey)),
-                    object("method", payment.method(), "amount", payment.amount(), "reference", payment.reference()));
+                    object("method", payment.method(), "amount", payment.amount(), "reference", payment.reference(),
+                            "invoice", payment.invoice() == null ? null : object("ruc", payment.invoice().ruc(),
+                                    "dv", payment.invoice().dv(), "businessName", payment.invoice().legalName())));
             int status = response.status();
             if (status == 408 || status >= 500) {
                 throw new ConnectorException(ConnectorHttp.error(ErrorKind.UNCERTAIN, "pos-http-" + status,

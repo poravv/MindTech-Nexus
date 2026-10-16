@@ -25,16 +25,16 @@ import static java.lang.System.Logger.Level.WARNING;
 
 /**
  * {@code [NEXUS-ORDER]} GiftHub collected a channel order → the POS registers the payment and closes the sale.
- * {@code APPLY_INVOICE_DATA}: when the customer asked for an invoice ({@code invoice.requested} with RUC, DV and legal
- * name) the POS customer of the order's phone gets them ({@code POST /api/integration/customers/resolve}, idempotent)
- * before the sale closes, so the invoice the POS emits on completion goes to that RUC; the sale already references
- * that customer. It never blocks the payment: malformed data or a POS {@code invalid-ruc} logs a WARN and the invoice
- * stays consumidor final (also {@code ruc-in-use}, another POS customer has that RUC, and any POS rejection of the
- * update); no invoice requested skips it; an order without an E.164 phone (sale on the connection's
- * {@code defaultCustomerId}) skips it with a WARN so the generic customer never gets a RUC.
+ * {@code APPLY_INVOICE_DATA} (best effort, never blocks): when the customer asked for an invoice ({@code invoice.requested}
+ * with RUC, DV and legal name) the POS customer of the order's phone gets them ({@code POST /api/integration/customers/resolve},
+ * idempotent) so its record is useful for future orders. Any failure logs a WARN and goes on to the payment; a POS
+ * {@code invalid-ruc} is remembered so the payment does not carry that RUC; no invoice requested, an order without an
+ * E.164 phone or a sale on the connection's {@code defaultCustomerId} skip it, so the generic customer never gets a RUC.
  * {@code PAY_POS}: {@code POST /api/integration/orders/GIFTHUB/{orderId}/payments},
- * {@code Idempotency-Key = GIFTHUB:{orderId}:paid}. Order gate: it only runs once the sale exists, per
- * {@code CREATE_ORDER}'s result or, failing that, a lookup in the POS. Without a sale it finishes
+ * {@code Idempotency-Key = GIFTHUB:{orderId}:paid}, with the order's own invoice data (well formed and not refused by the
+ * POS) in the body: the POS freezes it on the sale, so a customer shared by several orders, or a replay resuming at
+ * this step, never decides which RUC is invoiced; without it the invoice is consumidor final. Order gate: it only runs
+ * once the sale exists, per {@code CREATE_ORDER}'s result or, failing that, a lookup in the POS. Without a sale it finishes
  * {@code SKIPPED no-sale} only when {@code CREATE_ORDER} ended FAILED (a confirmed rejection, already compensated);
  * while that one is running, or DEAD waiting for a replay, it retries and in the end goes DEAD too, so the console
  * replays {@code CREATE_ORDER} and then this one. The real effect is checked on both sides:
@@ -51,7 +51,8 @@ public class OrderPaidSaga implements Saga {
     static final String SKIPPED = "SKIPPED";
     static final String NOT_PENDING = "not-pending";
     private static final String COMPLETED = "COMPLETED";
-    private static final String RUC_IN_USE = "ruc-in-use";
+    private static final String INVALID_RUC = "invalid-ruc";
+    private static final String INVOICE_REFUSED = "invoiceRefused";
 
     private static final System.Logger log = System.getLogger(OrderPaidSaga.class.getName());
 
@@ -109,7 +110,7 @@ public class OrderPaidSaga implements Saga {
         boolean onDefaultCustomer = saleCustomer != null
                 && saleCustomer.equals(String.valueOf(endpoints.pos().connection().settings().get("defaultCustomerId")));
         if (phone == null || !CreateOrderSaga.E164.matcher(phone).matches() || onDefaultCustomer) {
-            warn(context, "factura pedida pero la venta va al cliente por defecto: se emite a consumidor final");
+            warn(context, "factura pedida con la venta en el cliente por defecto: no se le pone el RUC, la venta se factura con los datos del pedido");
             return new StepResult.Next(PAY_POS, null, null, null);
         }
         String name = payment.customer().name() == null ? "Cliente GiftHub" : payment.customer().name();
@@ -118,20 +119,14 @@ public class OrderPaidSaga implements Saga {
             customerId = pos.resolveCustomer(endpoints.pos(), endpoints.readTimeout(), phone,
                     name.length() <= 100 ? name : name.substring(0, 100), invoice);
         } catch (ConnectorException e) {
-            if (e.error().kind() != ErrorKind.REJECTED) {
-                throw e;
+            if (INVALID_RUC.equals(e.error().code())) {
+                return invoiceWithoutRuc(context, INVALID_RUC + ": " + e.error().detail());
             }
-            if (RUC_IN_USE.equals(e.error().code())) {
-                warn(context, "factura sin RUC aplicado (ruc-in-use): otro cliente del POS ya tiene ese RUC, se emite a consumidor final");
-                return new StepResult.Next(PAY_POS, null, null, null);
-            }
-            return invoiceWithoutRuc(context, e.error().code() + ": " + e.error().detail());
+            warn(context, "el cliente POS no se actualizó con los datos de factura (" + e.error().kind() + ":" + e.error().code()
+                    + "): la venta igual se factura con ellos");
+            return new StepResult.Next(PAY_POS, null, null, null);
         }
-        if (saleCustomer != null && !saleCustomer.equals(customerId)) {
-            warn(context, "datos de factura en el cliente POS " + customerId + " pero la venta referencia a " + saleCustomer);
-        } else {
-            logStep(context, "datos de factura en el cliente POS " + customerId);
-        }
+        logStep(context, "datos de factura en el cliente POS " + customerId);
         return new StepResult.Next(PAY_POS, null, customerId, null);
     }
 
@@ -153,7 +148,8 @@ public class OrderPaidSaga implements Saga {
         PosPort.PaidSale sale;
         try {
             sale = pos.payChannelOrder(endpoints.pos(), endpoints.readTimeout(), CHANNEL + ":" + payment.orderId() + ":paid",
-                    CHANNEL, payment.orderId(), new PosPort.Payment(payment.posMethod(), payment.totalPyg(), payment.reference()));
+                    CHANNEL, payment.orderId(), new PosPort.Payment(payment.posMethod(), payment.totalPyg(), payment.reference(),
+                            saleInvoice(context.operation())));
         } catch (ConnectorException e) {
             if (!NOT_PENDING.equals(e.error().code())) {
                 throw e;
@@ -198,10 +194,22 @@ public class OrderPaidSaga implements Saga {
                 .map(Operation::result).map(result -> (String) result.get("customerId")).orElse(null);
     }
 
-    /** The invoice data could not reach the POS customer: the payment goes on and the invoice stays consumidor final. */
+    /** The invoice data is not a valid RUC: the payment goes on without it and the invoice stays consumidor final. */
     private static StepResult invoiceWithoutRuc(StepContext context, String detail) {
         warn(context, "factura sin RUC válido (" + detail + "): se emite a consumidor final");
-        return new StepResult.Next(PAY_POS, null, null, null);
+        return new StepResult.Next(PAY_POS, null, null, Map.of(INVOICE_REFUSED, true));
+    }
+
+    /** This order's invoice data for its sale; null when none was requested, it is malformed or the POS refused its RUC. */
+    private static InvoiceData saleInvoice(Operation op) {
+        if (op.result() != null && Boolean.TRUE.equals(op.result().get(INVOICE_REFUSED))) {
+            return null;
+        }
+        try {
+            return InvoiceData.from(op.payload().get("invoice"));
+        } catch (DomainException e) {
+            return null;
+        }
     }
 
     private Optional<PosPort.Order> completedSale(OrderEndpoints endpoints, String orderId) {

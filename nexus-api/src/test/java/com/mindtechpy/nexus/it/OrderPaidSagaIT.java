@@ -226,6 +226,37 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
         assertThat(body.get("ruc").asString()).isEqualTo("80012345");
         assertThat(body.get("dv").asString()).isEqualTo("6");
         assertThat(body.get("businessName").asString()).isEqualTo("Comercial López S.A.");
+        JsonNode invoice = jsonOf(calls.get(payment)).get("invoice");
+        assertThat(invoice.propertyNames()).containsExactlyInAnyOrder("ruc", "dv", "businessName");
+        assertThat(invoice.get("ruc").asString()).isEqualTo("80012345");
+        assertThat(invoice.get("dv").asString()).isEqualTo("6");
+        assertThat(invoice.get("businessName").asString()).isEqualTo("Comercial López S.A.");
+    }
+
+    @Test
+    void should_invoice_each_sale_to_its_own_ruc_when_two_orders_of_the_same_phone_ask_for_different_rucs() {
+        stubPos(post(urlPathMatching(pos("/api/integration/orders/GIFTHUB/[^/]+/payments"))).willReturn(okJson(PAID_SALE)));
+        String first = orderId;
+        createOrder();
+        String second = UUID.randomUUID().toString();
+        orderId = second;
+        stubGiftHub(post(urlPathEqualTo(gh("/orders/" + second + "/status")))
+                .willReturn(okJson(giftHubOrder(second, "CONFIRMED", "PENDING", "DELIVERY"))));
+        stubPos(post(urlPathEqualTo(pos("/api/integration/orders"))).withRequestBody(containing(second))
+                .willReturn(jsonResponse(SALE.replace("sale-1", "sale-2").replace("00000042", "00000043"), 201)));
+        createOrder();
+
+        String delivery = UUID.randomUUID().toString();
+        sendSigned(delivery, orderPaidWithInvoice(delivery, "80022222", "2"), 200);
+        orderId = first;
+        delivery = UUID.randomUUID().toString();
+        sendSigned(delivery, orderPaidWithInvoice(delivery, "80011111", "1"), 200);
+        drain();
+
+        assertThat(jsonOf(posRequests("POST", "/api/integration/orders/GIFTHUB/" + first + "/payments").getFirst())
+                .path("invoice").path("ruc").asString()).isEqualTo("80011111");
+        assertThat(jsonOf(posRequests("POST", "/api/integration/orders/GIFTHUB/" + second + "/payments").getFirst())
+                .path("invoice").path("ruc").asString()).isEqualTo("80022222");
     }
 
     @Test
@@ -242,6 +273,7 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
         assertThat(done.status()).isEqualTo(OperationStatus.SUCCEEDED);
         assertThat(done.result()).containsEntry("saleNumber", "SALE-00000042");
         assertThat(posRequests("POST", paymentsPath)).hasSize(1);
+        assertThat(jsonOf(posRequests("POST", paymentsPath).getFirst()).has("invoice")).isFalse();
     }
 
     @Test
@@ -257,6 +289,7 @@ class OrderPaidSagaIT extends AbstractConnectorIT {
 
         assertThat(reload(UUID.fromString(received.get("operationId").asString())).status()).isEqualTo(OperationStatus.SUCCEEDED);
         assertThat(posRequests("POST", paymentsPath)).hasSize(1);
+        assertThat(jsonOf(posRequests("POST", paymentsPath).getFirst()).path("invoice").path("ruc").asString()).isEqualTo("80077777");
     }
 
     @Test

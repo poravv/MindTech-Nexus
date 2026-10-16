@@ -34,8 +34,11 @@ public interface PosPort {
     record Order(String saleId, String saleNumber, long total, String status) {
     }
 
-    /** A payment to register on a channel sale: {@code amount} in whole guaraníes, {@code reference} optional (≤ 100). */
-    record Payment(String method, long amount, String reference) {
+    /**
+     * A payment to register on a channel sale: {@code amount} in whole guaraníes, {@code reference} optional (≤ 100).
+     * {@code invoice} (null = none): the POS freezes it on the sale in the same transaction and invoices to that RUC.
+     */
+    record Payment(String method, long amount, String reference, InvoiceData invoice) {
     }
 
     /** The sale after the POS took the payment; {@code status} is {@code COMPLETED} when it really closed. */

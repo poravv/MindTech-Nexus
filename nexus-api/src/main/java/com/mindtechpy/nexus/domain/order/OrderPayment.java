@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
  * ({@code data.payment} under {@code payment}), so {@link #from} parses both the webhook and the stored payload.
  * {@code totalPyg} is what GiftHub charged, in guaraníes. {@code paidWith}/{@code paidReference} come from
  * {@code data.payment}: null when it is missing (payloads stored before it was kept). The payload also keeps
- * {@code customer} and {@code invoice}, so the POS customer gets the invoice data before the sale closes
+ * {@code customer} and {@code invoice}, so the payment carries the order's invoice data to its sale
  * ({@link InvoiceData#from}); {@code customer} is null when the order has none.
  */
 public record OrderPayment(String orderId, String number, String paymentStatus, String paymentMethod, Long totalPyg,
