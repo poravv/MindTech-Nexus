@@ -34,7 +34,7 @@ import static java.lang.System.Logger.Level.WARNING;
  * blocks) → {@code NOTIFY_GIFTHUB} ({@code CONFIRMED} with the sale id and number). Compensation: a POS
  * rejection (stock, unknown product) cancels the order in GiftHub with the reason, unless it is already paid
  * there (manual reconciliation); an order cancelled in GiftHub before the confirmation cancels the pending POS
- * sale; either undo is recorded as {@code result.compensated = true}. An order without an E.164 phone on a connection
+ * sale (one the cashier already collected goes to manual reconciliation: the POS would void it); either undo is recorded as {@code result.compensated = true}. An order without an E.164 phone on a connection
  * without {@code defaultCustomerId} ends DEAD {@code customer-missing}, replayed once the connection is configured.
  * A NOTIFY that exhausts its attempts ends DEAD without compensation: the sale exists and a replay only re-runs NOTIFY.
  */
@@ -220,13 +220,18 @@ public class CreateOrderSaga implements Saga {
     private void cancelInPos(StepContext context) {
         OrderEndpoints endpoints = OrderEndpoints.of(context);
         String orderId = ChannelOrder.from(context.operation().payload()).orderId();
+        String notPending = "El pedido se canceló en GiftHub pero la venta del POS ya no está pendiente: revisar el cobro";
+        PosPort.Order sale = pos.findOrder(endpoints.pos(), endpoints.readTimeout(), CHANNEL, orderId).orElse(null);
+        if (sale != null && "COMPLETED".equals(sale.status())) {
+            throw new ManualReconciliationRequired(notPending);
+        }
         try {
             pos.cancelOrder(endpoints.pos(), endpoints.readTimeout(), CHANNEL, orderId, "Pedido cancelado en GiftHub");
         } catch (ConnectorException e) {
-            if (!"pos-order-not-pending".equals(e.error().code())) {
+            if (e.error().kind() != ErrorKind.REJECTED) {
                 throw e;
             }
-            throw new ManualReconciliationRequired("El pedido se canceló en GiftHub pero la venta del POS ya no está pendiente: revisar el cobro");
+            throw new ManualReconciliationRequired(notPending);
         }
         logStep(context, "compensación: venta del POS anulada");
     }
