@@ -22,7 +22,8 @@ import static java.lang.System.Logger.Level.INFO;
  *   <li>{@code COMPLETED} (POS collected the sale): GiftHub paid, then forward one valid transition per step
  *   ({@code CONFIRMED → PREPARING → READY → [OUT_FOR_DELIVERY →] DELIVERED}); GiftHub has no shortcut.</li>
  *   <li>{@code CANCELLED} (POS voided the sale): GiftHub {@code CANCELLED}.</li>
- *   <li>{@code POS_CANCELLED} (GiftHub cancelled the order): void the pending POS sale.</li>
+ *   <li>{@code POS_CANCELLED} (GiftHub cancelled the order): void the POS sale. A collected sale is only voided
+ *   when GiftHub already refunded the payment ({@code CANCELLED} + {@code REFUNDED}); an invoiced one is refused by the POS.</li>
  * </ul>
  * Single step {@code SYNC}: it reads the current GiftHub order, applies the next action and repeats until
  * the target is reached, so a retry always starts from the real state. When the systems disagree (POS
@@ -119,14 +120,38 @@ public class OrderStatusSaga implements Saga {
     }
 
     private StepResult cancelInPos(StepContext context, OrderEndpoints endpoints, String orderId) {
+        logStep(context, "GiftHub canceló el pedido " + orderId + ": se lee la venta en el POS");
+        PosPort.Order sale = pos.findOrder(endpoints.pos(), endpoints.readTimeout(), CreateOrderSaga.CHANNEL, orderId).orElse(null);
+        if (sale == null) {
+            logStep(context, "el POS no tiene la venta: nada que anular");
+            return new StepResult.Completed("POS_NOT_FOUND", null);
+        }
+        if ("CANCELLED".equals(sale.status())) {
+            logStep(context, "la venta del POS ya estaba anulada");
+            return new StepResult.Completed("POS_CANCELLED", null);
+        }
+        boolean isCollected = "COMPLETED".equals(sale.status());
+        if (isCollected) {
+            GiftHubPort.Order order = current(endpoints, orderId);
+            boolean isRefunded = "CANCELLED".equals(order.status()) && "REFUNDED".equals(order.paymentStatus());
+            logStep(context, "venta cobrada; GiftHub status=" + order.status() + " payment=" + order.paymentStatus()
+                    + " -> " + (isRefunded ? "se pide la anulación al POS" : "desacuerdo, sin anular"));
+            if (!isRefunded) {
+                return disagreement("pos-order-not-pending", "El pedido se canceló en GiftHub pero la venta del POS ya se cobró "
+                        + "y GiftHub no devolvió el pago: reembolsar en el panel y anular la venta");
+            }
+        }
         try {
             boolean found = pos.cancelOrder(endpoints.pos(), endpoints.readTimeout(), CreateOrderSaga.CHANNEL, orderId,
                     "Pedido cancelado en GiftHub").isPresent();
-            logStep(context, found ? "venta del POS anulada" : "el POS no tiene la venta: nada que anular");
+            logStep(context, found ? "el POS anuló la venta" : "el POS no tiene la venta: nada que anular");
             return new StepResult.Completed(found ? "POS_CANCELLED" : "POS_NOT_FOUND", null);
         } catch (ConnectorException e) {
             if ("pos-order-not-pending".equals(e.error().code())) {
-                return disagreement("pos-order-not-pending", "El pedido se canceló en GiftHub pero la venta del POS ya se cobró");
+                logStep(context, "el POS rechazó la anulación (409)");
+                return disagreement("pos-order-not-pending", isCollected
+                        ? "Venta facturada: requiere nota de crédito en el POS"
+                        : "El pedido se canceló en GiftHub pero la venta del POS ya se cobró");
             }
             throw e;
         }

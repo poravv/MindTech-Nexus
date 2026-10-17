@@ -123,6 +123,8 @@ class GiftHubWebhookIT extends AbstractConnectorIT {
                 .willReturn(jsonResponse("{\"saleId\":\"s-9\",\"saleNumber\":\"SALE-9\",\"total\":1,\"status\":\"PENDING\"}", 201)));
         stubGiftHub(post(urlPathEqualTo(gh("/orders/" + orderId + "/status")))
                 .willReturn(okJson(giftHubOrder(orderId, "CONFIRMED", "PENDING", "PICKUP"))));
+        stubPos(get(urlPathEqualTo(pos("/api/integration/orders/GIFTHUB/" + orderId)))
+                .willReturn(okJson("{\"saleId\":\"s-9\",\"saleNumber\":\"SALE-9\",\"total\":1,\"status\":\"PENDING\"}")));
         stubPos(post(urlPathEqualTo(pos("/api/integration/orders/GIFTHUB/" + orderId + "/cancel")))
                 .willReturn(okJson("{\"saleId\":\"s-9\",\"saleNumber\":\"SALE-9\",\"total\":1,\"status\":\"CANCELLED\"}")));
         sendSigned("d-c1", orderCreated("d-c1", orderId, maria()), 200);
