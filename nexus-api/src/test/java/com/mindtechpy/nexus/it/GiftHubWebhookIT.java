@@ -1,5 +1,8 @@
 package com.mindtechpy.nexus.it;
 
+import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
+import com.mindtechpy.nexus.domain.operation.Operation;
+import com.mindtechpy.nexus.domain.operation.OperationStatus;
 import com.mindtechpy.nexus.infrastructure.connectors.gifthub.GiftHubWebhookSignature;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -117,28 +120,121 @@ class GiftHubWebhookIT extends AbstractConnectorIT {
 
     @Test
     void should_void_pos_sale_when_gifthub_cancels_an_order_whose_sale_exists() {
-        String orderId = UUID.randomUUID().toString();
-        stubPos(post(urlPathEqualTo(pos("/api/integration/customers/resolve"))).willReturn(okJson("{\"customerId\":\"c-1\"}")));
-        stubPos(post(urlPathEqualTo(pos("/api/integration/orders")))
-                .willReturn(jsonResponse("{\"saleId\":\"s-9\",\"saleNumber\":\"SALE-9\",\"total\":1,\"status\":\"PENDING\"}", 201)));
-        stubGiftHub(post(urlPathEqualTo(gh("/orders/" + orderId + "/status")))
-                .willReturn(okJson(giftHubOrder(orderId, "CONFIRMED", "PENDING", "PICKUP"))));
-        stubPos(get(urlPathEqualTo(pos("/api/integration/orders/GIFTHUB/" + orderId)))
-                .willReturn(okJson("{\"saleId\":\"s-9\",\"saleNumber\":\"SALE-9\",\"total\":1,\"status\":\"PENDING\"}")));
-        stubPos(post(urlPathEqualTo(pos("/api/integration/orders/GIFTHUB/" + orderId + "/cancel")))
-                .willReturn(okJson("{\"saleId\":\"s-9\",\"saleNumber\":\"SALE-9\",\"total\":1,\"status\":\"CANCELLED\"}")));
-        sendSigned("d-c1", orderCreated("d-c1", orderId, maria()), 200);
-        drain();
+        String orderId = orderWithSale("PENDING");
+        stubPosCancel(orderId, okJson(sale("CANCELLED")));
 
-        String cancelled = toJson(Map.of("id", "d-c2", "type", "order.cancelled",
-                "data", Map.of("order", Map.of("id", orderId, "status", "CANCELLED", "previous_status", "CONFIRMED"))));
-        JsonNode received = sendSigned("d-c2", cancelled, 200);
-        drain();
+        Operation op = cancelledInGiftHub(orderId);
 
-        assertThat(received.get("outcome").asString()).isEqualTo("ACCEPTED");
-        assertThat(reload(UUID.fromString(received.get("operationId").asString())).status().name()).isEqualTo("SUCCEEDED");
+        assertThat(op.status()).isEqualTo(OperationStatus.SUCCEEDED);
         assertThat(jsonOf(posRequests("POST", "/api/integration/orders/GIFTHUB/" + orderId + "/cancel").getFirst())
                 .get("reason").asString()).isEqualTo("Pedido cancelado en GiftHub");
+        assertThat(giftHubRequests("GET", "/orders/" + orderId)).isEmpty();
+    }
+
+    @Test
+    void should_void_a_collected_pos_sale_when_gifthub_cancelled_and_refunded_the_order() {
+        String orderId = orderWithSale("COMPLETED");
+        stubGiftHub(get(urlPathEqualTo(gh("/orders/" + orderId))).willReturn(okJson(giftHubOrder(orderId, "CANCELLED", "REFUNDED", "PICKUP"))));
+        stubPosCancel(orderId, okJson(sale("CANCELLED")));
+
+        Operation op = cancelledInGiftHub(orderId);
+
+        assertThat(op.status()).isEqualTo(OperationStatus.SUCCEEDED);
+        assertThat(posRequests("POST", "/api/integration/orders/GIFTHUB/" + orderId + "/cancel")).hasSize(1);
+    }
+
+    @Test
+    void should_end_dead_without_calling_the_pos_when_gifthub_did_not_refund_a_collected_sale() {
+        String orderId = orderWithSale("COMPLETED");
+        stubGiftHub(get(urlPathEqualTo(gh("/orders/" + orderId))).willReturn(okJson(giftHubOrder(orderId, "CANCELLED", "PAID", "PICKUP"))));
+
+        Operation op = cancelledInGiftHub(orderId);
+
+        assertThat(op.status()).isEqualTo(OperationStatus.DEAD);
+        assertThat(op.deadReason()).isEqualTo("manual-reconciliation");
+        assertThat(op.lastError().code()).isEqualTo("gifthub-payment-not-refunded");
+        assertThat(posRequests("POST", "/api/integration/orders/GIFTHUB/" + orderId + "/cancel")).isEmpty();
+    }
+
+    @Test
+    void should_end_dead_asking_for_a_credit_note_when_the_pos_refuses_an_invoiced_sale() {
+        String orderId = orderWithSale("COMPLETED");
+        stubGiftHub(get(urlPathEqualTo(gh("/orders/" + orderId))).willReturn(okJson(giftHubOrder(orderId, "CANCELLED", "REFUNDED", "PICKUP"))));
+        stubPosCancel(orderId, jsonResponse("{\"code\":\"invoiced\",\"message\":\"La venta está facturada: emití una nota de crédito\"}", 409));
+
+        Operation op = cancelledInGiftHub(orderId);
+
+        assertThat(op.status()).isEqualTo(OperationStatus.DEAD);
+        assertThat(op.deadReason()).isEqualTo("manual-reconciliation");
+        assertThat(op.lastError().code()).isEqualTo("invoiced");
+        assertThat(op.lastError().detail()).isEqualTo("Venta facturada: requiere nota de crédito en el POS");
+        assertThat(op.attempts()).isEqualTo(1);
+    }
+
+    @Test
+    void should_retry_the_void_when_the_pos_has_no_open_register_for_the_refund() {
+        String orderId = orderWithSale("COMPLETED");
+        stubGiftHub(get(urlPathEqualTo(gh("/orders/" + orderId))).willReturn(okJson(giftHubOrder(orderId, "CANCELLED", "REFUNDED", "PICKUP"))));
+        stubPosCancel(orderId, jsonResponse("{\"code\":\"cash-session-closed\",\"message\":\"No hay caja abierta\"}", 409));
+
+        Operation op = cancelledInGiftHub(orderId);
+
+        assertThat(op.status()).isEqualTo(OperationStatus.RETRY);
+        assertThat(op.lastError().code()).isEqualTo("cash-session-closed");
+    }
+
+    @Test
+    void should_succeed_without_calling_the_pos_cancel_when_the_sale_is_already_cancelled() {
+        String orderId = orderWithSale("CANCELLED");
+
+        Operation op = cancelledInGiftHub(orderId);
+
+        assertThat(op.status()).isEqualTo(OperationStatus.SUCCEEDED);
+        assertThat(posRequests("POST", "/api/integration/orders/GIFTHUB/" + orderId + "/cancel")).isEmpty();
+    }
+
+    @Test
+    void should_retry_without_calling_the_pos_cancel_when_gifthub_is_down_for_a_collected_sale() {
+        String orderId = orderWithSale("COMPLETED");
+        stubGiftHub(get(urlPathEqualTo(gh("/orders/" + orderId))).willReturn(aResponse().withStatus(503)));
+
+        Operation op = cancelledInGiftHub(orderId);
+
+        assertThat(op.status()).isEqualTo(OperationStatus.RETRY);
+        assertThat(posRequests("POST", "/api/integration/orders/GIFTHUB/" + orderId + "/cancel")).isEmpty();
+    }
+
+    /** Creates the order through the webhook (POS sale PENDING, GiftHub CONFIRMED); the POS then reports {@code saleStatus}. */
+    private String orderWithSale(String saleStatus) {
+        String orderId = UUID.randomUUID().toString();
+        stubPos(post(urlPathEqualTo(pos("/api/integration/customers/resolve"))).willReturn(okJson("{\"customerId\":\"c-1\"}")));
+        stubPos(post(urlPathEqualTo(pos("/api/integration/orders"))).willReturn(jsonResponse(sale("PENDING"), 201)));
+        stubGiftHub(post(urlPathEqualTo(gh("/orders/" + orderId + "/status")))
+                .willReturn(okJson(giftHubOrder(orderId, "CONFIRMED", "PENDING", "PICKUP"))));
+        String delivery = "d-" + UUID.randomUUID();
+        sendSigned(delivery, orderCreated(delivery, orderId, maria()), 200);
+        drain();
+        stubPos(get(urlPathEqualTo(pos("/api/integration/orders/GIFTHUB/" + orderId)))
+                .willReturn(okJson(sale(saleStatus))));
+        return orderId;
+    }
+
+    private void stubPosCancel(String orderId, ResponseDefinitionBuilder response) {
+        stubPos(post(urlPathEqualTo(pos("/api/integration/orders/GIFTHUB/" + orderId + "/cancel"))).willReturn(response));
+    }
+
+    private Operation cancelledInGiftHub(String orderId) {
+        String delivery = "d-" + UUID.randomUUID();
+        String cancelled = toJson(Map.of("id", delivery, "type", "order.cancelled",
+                "data", Map.of("order", Map.of("id", orderId, "status", "CANCELLED", "previous_status", "CONFIRMED"))));
+        JsonNode received = sendSigned(delivery, cancelled, 200);
+        assertThat(received.get("outcome").asString()).isEqualTo("ACCEPTED");
+        drain();
+        return reload(UUID.fromString(received.get("operationId").asString()));
+    }
+
+    private static String sale(String status) {
+        return "{\"saleId\":\"s-9\",\"saleNumber\":\"SALE-9\",\"total\":1,\"status\":\"" + status + "\"}";
     }
 
     private long operationsOfTenant() {

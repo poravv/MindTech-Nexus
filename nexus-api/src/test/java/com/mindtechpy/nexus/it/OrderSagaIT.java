@@ -329,6 +329,23 @@ class OrderSagaIT extends AbstractConnectorIT {
         assertThat(posRequests("POST", "/api/integration/orders/GIFTHUB/" + orderId + "/cancel")).hasSize(1);
     }
 
+    @Test
+    void should_not_void_and_ask_for_manual_reconciliation_when_order_cancelled_before_confirmation_was_already_collected() {
+        stubPos(post(urlPathEqualTo(pos("/api/integration/orders"))).willReturn(jsonResponse(SALE, 201)));
+        stubGiftHub(post(urlPathEqualTo(gh("/orders/" + orderId + "/status"))).willReturn(jsonResponse(
+                "{\"error\":\"La transición de estado no está permitida\",\"code\":\"TRANSITION_NOT_ALLOWED\"}", 409)));
+        stubGiftHub(get(urlPathEqualTo(gh("/orders/" + orderId))).willReturn(okJson(giftHubOrder(orderId, "CANCELLED", "PENDING", "DELIVERY"))));
+        stubPos(get(urlPathEqualTo(pos("/api/integration/orders/GIFTHUB/" + orderId))).willReturn(okJson(SALE.replace("PENDING", "COMPLETED"))));
+
+        Operation op = receiveOrder(maria());
+        drain();
+
+        Operation dead = reload(op.id());
+        assertThat(dead.status()).isEqualTo(OperationStatus.DEAD);
+        assertThat(dead.deadReason()).isEqualTo("manual-reconciliation");
+        assertThat(posRequests("POST", "/api/integration/orders/GIFTHUB/" + orderId + "/cancel")).isEmpty();
+    }
+
     private Operation receiveOrder(Map<String, Object> customer) {
         String delivery = UUID.randomUUID().toString();
         JsonNode received = sendSigned(delivery, orderCreated(delivery, orderId, customer), 200);
