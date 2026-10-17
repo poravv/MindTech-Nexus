@@ -34,7 +34,9 @@ import static com.mindtechpy.nexus.infrastructure.connectors.ConnectorHttp.text;
  * 408/5xx → UNCERTAIN (a gateway may fail after the POS took the payment: the saga reads the sale before resending);
  * 409 → REJECTED with the POS {@code code} ({@code cash-session-closed} → TRANSIENT: the cashier opens the session and
  * the retry closes the sale); 400 → REJECTED with the POS {@code code} ({@code invalid-ruc}: the invoice RUC fails its DV,
- * the payment is not registered), {@code pos-bad-request} when it brings none.
+ * the payment is not registered), {@code pos-bad-request} when it brings none. The cancel POST: 409 → REJECTED with the
+ * POS {@code code} ({@code invoiced}, {@code not-cancellable}; {@code pos-order-not-pending} when it brings none, as a POS
+ * that only voids pending sales answers), {@code cash-session-closed} → TRANSIENT (no register for the cash refund yet).
  */
 @Component
 class PosRestClient implements PosPort {
@@ -132,7 +134,9 @@ class PosRestClient implements PosPort {
                 return Optional.empty();
             }
             if (response.status() == 409) {
-                throw new ConnectorException(ConnectorHttp.error(ErrorKind.REJECTED, "pos-order-not-pending", response));
+                String code = text(response.body(), "code");
+                ErrorKind kind = "cash-session-closed".equals(code) ? ErrorKind.TRANSIENT : ErrorKind.REJECTED;
+                throw new ConnectorException(ConnectorHttp.error(kind, code == null ? "pos-order-not-pending" : code, response));
             }
             return Optional.of(order(requireSuccess(response, false)));
         });

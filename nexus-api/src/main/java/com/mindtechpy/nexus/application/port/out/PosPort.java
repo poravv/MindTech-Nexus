@@ -79,8 +79,10 @@ public interface PosPort {
                              Payment payment);
 
     /**
-     * Cancels a channel sale that is still pending (repeating it answers the cancelled sale). Empty when the
-     * POS has no such sale; a sale that is no longer pending fails {@code REJECTED pos-order-not-pending}.
+     * Voids a pending or collected channel sale (repeating it answers the cancelled sale). Empty when the POS has
+     * no such sale. 409 fails {@code REJECTED} with the POS code: {@code invoiced} (needs a credit note),
+     * {@code not-cancellable}, or {@code pos-order-not-pending} when the POS brings no code; {@code cash-session-closed}
+     * (no register for the cash refund) is {@code TRANSIENT}.
      */
     Optional<Order> cancelOrder(Endpoint pos, Duration readTimeout, String channel, String externalRef, String reason);
 
